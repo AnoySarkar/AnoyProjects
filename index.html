@@ -1,9 +1,16 @@
 <!DOCTYPE html>
 
-<html>
+<html lang="en">
 
   <head>
+
+    <meta charset="UTF-8">
+    <meta name="viewpont"
+    content="width=device-width,initial-scale=1.0">
+
       <style>
+        body{text-align: center}
+           
         .moveIcon {
           height: 50px;
         }
@@ -32,7 +39,6 @@
   </head>
 
   <body>
-
 
     <h2>
       You
@@ -70,19 +76,6 @@
     ">
     <img src="scissors-emoji.png" class="moveIcon"> </button>
 
-    <button class="resetButton" onclick="
-        score.Win = 0;
-        score.Lose = 0;
-        score.Tie = 0;
-
-        document.getElementById('result1').textContent='Never Give Up!';
-        console.log(`Win:${score.Win},Lose:${score.Lose},Tie:${score.Tie}`)
-        
-        document.getElementById('win').textContent=score.Win;
-          document.getElementById('lose').textContent=score.Lose;
-          document.getElementById('tie').textContent=score.Tie;
-    ">
-    <img src="reset.png" class="moveIcon"></button>
 
       <script>
 
@@ -195,6 +188,16 @@
           document.getElementById("lose").textContent=score.Lose;
           document.getElementById("tie").textContent=score.Tie;
 
+          if(score.Win+score.Lose+score.Tie === 10) {
+            document.getElementById("result1").textContent=score.Win;
+            imgg.src="you.jpg";
+            img2.src="avi.jpg";
+
+            score.Win = 0;
+            score.Lose = 0;
+            score.Tie = 0;
+          }
+
         }
 
 
@@ -214,6 +217,20 @@
           Tie : <span id="tie">0</span>  
         </h2>
         <hr>
+
+        <button class="resetButton" onclick="
+        score.Win = 0;
+        score.Lose = 0;
+        score.Tie = 0;
+
+        document.getElementById('result1').textContent='Good Luck!';
+        console.log(`Win:${score.Win},Lose:${score.Lose},Tie:${score.Tie}`)
+        
+        document.getElementById('win').textContent=score.Win;
+          document.getElementById('lose').textContent=score.Lose;
+          document.getElementById('tie').textContent=score.Tie;
+    ">
+    <img src="reset.png" class="moveIcon"></button>
 
   </body>
 
