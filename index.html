@@ -5,6 +5,7 @@
   <head>
 
     <h2>🪨📜✂️</h2>
+
     <meta charset="UTF-8">
     <meta name="viewpont"
     content="width=device-width,initial-scale=1.0">
@@ -13,8 +14,7 @@
         
         body{
         text-align: center;
-        background-color: rgb(230, 240, 250);
-
+        background-color: rgb(184, 222, 240);
 
         }
            
@@ -29,11 +29,10 @@
 
         }
         button:hover{
-          background-color: rgb(34, 172, 0);
+          background-color: rgb(82, 233, 97);
         }
         .resetButton{
           background-color: rgb(31, 154, 243);
-;
         }
         .winscore{
           color: rgb(89, 221, 89);
@@ -95,6 +94,11 @@
 
       <script>
 
+      let higest = 0;
+      let backSound = new Audio("back.mp3");
+      let restartSound = new Audio("restart.wav");
+      let sound = 0;
+
       let comMove;
       let round = 10;
       let playerMove;
@@ -129,6 +133,10 @@
           let imgg = document.getElementById("player");
           let img2 = document.getElementById("com");
 
+          let winSound = new Audio("Win.wav");
+          let loseSound = new Audio("Lose.wav");
+          let tieSound = new Audio("Draw.wav");
+          let endSound = new Audio("End.wav");
 
 
           if(plyMove==='Rock'){
@@ -206,19 +214,45 @@
           document.getElementById("lose").textContent=score.Lose;
           document.getElementById("tie").textContent=score.Tie;
 
-          if(score.Win+score.Lose+score.Tie === 10) {
+          if(round === 1) {
             document.getElementById("result1").textContent=score.Win;
             imgg.src="hearts.png";
             img2.src="happy.png";
 
+            endSound.play();
+            
             score.Win = 0;
             score.Lose = 0;
             score.Tie = 0;
+            round=10;
+              document.getElementById("round")
+              .innerHTML=round;
           }
-          round--;
-          document.getElementById("round")
+          else if (round===0) {
+            document.getElementById("round")
             .innerHTML=round;
+
+            
+          }
+          else {
+          round--;
+            document.getElementById("round")
+            .innerHTML=round;
+          }
+
+
+            if (result === 'You Win!') {
+              winSound.play();
+            }
+            else if (result === 'You Lose!') {
+              loseSound.play();
+            }
+            else if (result === 'Tie!') {
+              tieSound.play();
+            }
+            
         }
+
 
 
         let imgg = document.getElementById("player");
@@ -248,7 +282,7 @@
         round = 10;
         document.getElementById('round')
           .innerHTML=round;
-          
+        restartSound.play();
 
         document.getElementById('result1').textContent='Good Luck!';
           imgg.src='hearts.png';
@@ -257,8 +291,22 @@
         document.getElementById('win').textContent=score.Win;
           document.getElementById('lose').textContent=score.Lose;
           document.getElementById('tie').textContent=score.Tie;
-    ">
-    <img src="reset.png" class="moveIcon"></button>
+        ">
+        <img src="reset.png" class="moveIcon"></button>
+
+
+        <button class="resetButton" onclick="
+        console.log(sound);
+          if (sound === 0) {
+            sound = 1;
+            backSound.loop = true;
+            backSound.play();
+          }
+          else {
+            sound = 0;
+            backSound.pause();
+          }
+        "><img src="sound.png" alt="sound" class="moveIcon"></button>
 
   </body>
 
