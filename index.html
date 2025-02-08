@@ -209,8 +209,15 @@
             }
           }
 
-          console.log(`Win:${score.Win},Lose:${score.Lose},Tie:${score.Tie}`)
-          
+          if (result === 'You Win!') {
+              winSound.play();
+            }
+            else if (result === 'You Lose!') {
+              loseSound.play();
+            }
+            else if (result === 'Tie!') {
+              tieSound.play();
+            }
 
           document.getElementById("result1").textContent=result;
           document.getElementById("win").textContent=score.Win;
@@ -243,16 +250,6 @@
             .innerHTML=round;
           }
 
-
-            if (result === 'You Win!') {
-              winSound.play();
-            }
-            else if (result === 'You Lose!') {
-              loseSound.play();
-            }
-            else if (result === 'Tie!') {
-              tieSound.play();
-            }
             
         }
 
