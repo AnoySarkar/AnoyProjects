@@ -4,7 +4,7 @@
 
   <head>
 
-    <h1>Rock Paper Scissor</h1>
+    <h1>Rock-Paper-Scissor</h1>
 
     <meta charset="UTF-8">
     <meta name="viewpont"
@@ -20,6 +20,9 @@
            
         .moveIcon {
           height: 100px;
+        }
+        .setIcon {
+          height: 50px;
         }
         button{
           background-color: rgb(137, 207, 240);
@@ -292,7 +295,7 @@
           document.getElementById('lose').textContent=score.Lose;
           document.getElementById('tie').textContent=score.Tie;
         ">
-        <img src="reset.png" class="moveIcon"></button>
+        <img src="reset.png" class="setIcon"></button>
 
 
         <button class="resetButton" onclick="
@@ -306,7 +309,7 @@
             sound = 0;
             backSound.pause();
           }
-        "><img src="sound.png" alt="sound" class="moveIcon"></button>
+        "><img src="sound.png" alt="sound" class="setIcon"></button>
 
   </body>
 
