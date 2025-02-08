@@ -9,17 +9,28 @@
     content="width=device-width,initial-scale=1.0">
 
       <style>
-        body{text-align: center}
+        
+        body{
+        text-align: center;
+        background-color: wheat;
+
+        }
            
         .moveIcon {
-          height: 50px;
+          height: 100px;
         }
         button{
-          background-color: rgb(110, 232, 94);
-          border-radius: 50%;
+          background-color: rgb(97, 97, 97);
+          border-radius: 5px; 
+          padding: 30px 30px;
+          margin: 10px;
+
+        }
+        button:hover{
+          background-color: rgb(34, 172, 0);
         }
         .resetButton{
-          background-color: blue;
+          background-color: rgb(97, 97, 97);
         }
         .winscore{
           color: rgb(89, 221, 89);
@@ -42,9 +53,9 @@
 
     <h2>
       You
-      <img id="player" src="you.jpg" alt="cart" height="275px"> 
+      <img id="player" src="hearts.png" alt="cart" height="250px"> 
       vs
-      <img id="com" src="avi.jpg" alt="cart" height="275px">
+      <img id="com" src="happy.png" alt="cart" height="250px">
       Avi
     </h2>
 
@@ -52,7 +63,8 @@
       <h1> 
         <span id="result1">Good Luck!</span>
       </h1>
-    <hr>
+        <h3 id="round" >10</h3>
+      <hr>
 
     <button onclick="
         playerMove = 'Rock';
@@ -74,12 +86,14 @@
         comMove = pickRandom();
         winner(playerMove,comMove);
     ">
-    <img src="scissors-emoji.png" class="moveIcon"> </button>
+    <img src="scissors-emoji.png" class="moveIcon"> 
+    </button>
 
 
       <script>
 
       let comMove;
+      let round = 10;
       let playerMove;
       let score = {
         Win: 0,
@@ -111,6 +125,7 @@
           let result ='';
           let imgg = document.getElementById("player");
           let img2 = document.getElementById("com");
+
 
 
           if(plyMove==='Rock'){
@@ -190,16 +205,21 @@
 
           if(score.Win+score.Lose+score.Tie === 10) {
             document.getElementById("result1").textContent=score.Win;
-            imgg.src="you.jpg";
-            img2.src="avi.jpg";
+            imgg.src="hearts.png";
+            img2.src="happy.png";
 
             score.Win = 0;
             score.Lose = 0;
             score.Tie = 0;
           }
-
+          round--;
+          document.getElementById("round")
+            .innerHTML=round;
         }
 
+
+        let imgg = document.getElementById("player");
+        let img2 = document.getElementById("com");
 
      </script>
 
@@ -222,9 +242,14 @@
         score.Win = 0;
         score.Lose = 0;
         score.Tie = 0;
+        round = 10;
+        document.getElementById('round')
+          .innerHTML=round;
+          
 
         document.getElementById('result1').textContent='Good Luck!';
-        console.log(`Win:${score.Win},Lose:${score.Lose},Tie:${score.Tie}`)
+          imgg.src='hearts.png';
+          img2.src='happy.png';
         
         document.getElementById('win').textContent=score.Win;
           document.getElementById('lose').textContent=score.Lose;
