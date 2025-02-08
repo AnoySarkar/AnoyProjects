@@ -100,7 +100,7 @@
       let higest = 0;
       let backSound = new Audio("back.mp3");
       let restartSound = new Audio("restart.wav");
-      let sound = 0;
+      let sound = 1;
 
       let comMove;
       let round = 10;
@@ -110,6 +110,11 @@
         Lose: 0,
         Tie: 0
       }
+        
+        if (sound === 1){
+            backSound.loop = true;
+            backSound.play();
+        }
 
 
         function pickRandom()
