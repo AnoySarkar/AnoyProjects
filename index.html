@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avijit Sarkar | Portfolio</title>
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<link
+href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=s
+wap" rel="stylesheet">
+<style>
+/* Color Variables */
+:root {
+--primary-color: #2ecc71;
+--secondary-color: #27ae60;
+--dark-bg: #111;
+--light-text: #ecf0f1;
+--card-bg: rgba(255, 255, 255, 0.1);
+}
+* {
+margin: 0;
+padding: 0;
+box-sizing: border-box;
+font-family: 'Inter', sans-serif;
+}
+/* 🔥 Animated Background */
+body {
+background: linear-gradient(-45deg, #2c3e50, #34495e, #16a085, #27ae60);
+background-size: 400% 400%;
+animation: gradientBG 8s ease infinite;
+color: var(--light-text);
+line-height: 1.6;
+overflow-x: hidden;
+}
+@keyframes gradientBG {
+0% { background-position: 0% 50%; }
+50% { background-position: 100% 50%; }
+100% { background-position: 0% 50%; }
+}
+.container {
+max-width: 1200px;
+margin: 0 auto;
+padding: 2rem;
+}
+/* 🔥 Header with Glow Effect */
+header {
+text-align: center;
+padding: 4rem 0;
+background: rgba(0, 0, 0, 0.8);
+box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+.header-content h1 {
+font-size: 3rem;
+color: #fff;
+text-shadow: 0px 0px 20px var(--primary-color);
+}
+.header-content p {
+font-size: 1.2rem;
+opacity: 0.9;
+}
+/* 🔥 Animated Project Cards */
+.projects-grid {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+gap: 2rem;
+margin-top: 3rem;
+}
+.project-card {
+background: var(--card-bg);
+border-radius: 15px;
+padding: 1.5rem;
+transition: transform 0.4s ease, box-shadow 0.3s ease;
+position: relative;
+overflow: hidden;
+box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+}
+.project-card:hover {
+transform: scale(1.05);
+box-shadow: 0px 10px 30px rgba(0, 255, 100, 0.5);
+}
+/* 🔥 Project Image */
+.project-image {
+width: 100%;
+height: 200px;
+object-fit: cover;
+border-radius: 8px;
+margin-bottom: 1rem;
+transition: transform 0.3s ease;
+}
+.project-card:hover .project-image {
+transform: scale(1.1);
+}
+/* 🔥 Buttons with Neon Glow */
+.btn {
+padding: 0.5rem 1.5rem;
+border-radius: 5px;
+text-decoration: none;
+display: inline-flex;
+align-items: center;
+gap: 0.5rem;
+transition: all 0.3s ease-in-out;
+font-weight: bold;
+}
+.btn-primary {
+background: var(--primary-color);
+color: white;
+box-shadow: 0 0 10px var(--primary-color);
+}
+.btn-primary:hover {
+background: var(--secondary-color);
+box-shadow: 0 0 20px var(--secondary-color);
+}
+.btn-ghost {
+border: 1px solid var(--primary-color);
+color: var(--primary-color);
+}
+.btn-ghost:hover {
+background: var(--primary-color);
+color: white;
+}
+/* 🔥 Footer */
+footer {
+text-align: center;
+padding: 2rem;
+margin-top: 4rem;
+border-top: 1px solid rgba(255, 255, 255, 0.1);
+font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+<header>
+<div class="header-content">
+<h1>Avijit Sarkar</h1>
+<p>A Visionary Developer</p>
+<div class="social-links" style="margin-top: 1rem;">
+<a href="https://github.com/AnoySarkar" class="btn btn-ghost"><i class="fab fa-github"></i> GitHub</a>
+<a href="#" class="btn btn-ghost"><i class="fab fa-linkedin"></i> LinkedIn</a>
+</div>
+</div>
+</header>
+<div class="container">
+<h2 style="text-align: center; font-size: 2.5rem; text-shadow: 0 0 10px
+var(--primary-color);">Featured Projects</h2>
+<div class="projects-grid" id="projects-container">
+<!-- Projects will be injected here by JavaScript -->
+</div>
+</div>
+<footer>
+<p>&copy; 2025 Avijit Sarkar. All rights reserved.</p>
+</footer>
+<script>
+// Project data - simply add new projects here
+const projects = [
+{
+title: "Rock Paper Scissor",
+description: "My First Ever JavaScript Project",
+image: "RPS_ss.png",
+tags: ["HTML", "CSS", "JavaScript"],
+demo: "RockPaperScissor.html",
+code: "#"
+},
+{
+title: "Upcoming Project",
+description: "Exciting new project coming soon!",
+image: "placeholder.jpg",
+tags: ["Coming Soon"],
+demo: "#",
+code: "#"
+}
+];
+// Generate project cards dynamically
+const projectsContainer = document.getElementById('projects-container');
+projects.forEach(project => {
+const projectCard = document.createElement('div');
+projectCard.className = 'project-card';
+projectCard.innerHTML = `
+<img src="${project.image}" alt="${project.title}" class="project-image">
+<h3>${project.title}</h3>
+<p>${project.description}</p>
+<div class="project-links">
+<a href="${project.demo}" class="btn btn-primary" target="_blank"><i class="fas
+fa-external-link-alt"></i> Demo</a>
+<a href="${project.code}" class="btn btn-ghost" target="_blank"><i class="fab
+fa-github"></i> Code</a>
+</div>
+`;
+projectsContainer.appendChild(projectCard);
+});
+</script>
+</body>
+</html>
