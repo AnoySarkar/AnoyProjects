@@ -75,6 +75,12 @@
         playerMove = 'Rock';
         comMove = pickRandom();
         winner(playerMove,comMove);
+      
+        if (sound === 2){
+            sound = 0;
+            backSound.loop = true;
+            backSound.play();
+        }
 
     ">
     <img src="rock-emoji.png" class="moveIcon"> </button>
@@ -83,6 +89,12 @@
         playerMove = 'Paper'
         comMove = pickRandom();
         winner(playerMove,comMove);
+      
+        if (sound === 2){
+            sound = 0;
+            backSound.loop = true;
+            backSound.play();
+              }
     ">
     <img src="paper-emoji.png" class="moveIcon"> </button>
     
@@ -90,6 +102,12 @@
         playerMove = 'Scissor'
         comMove = pickRandom();
         winner(playerMove,comMove);
+
+        if (sound === 2){
+            sound = 0;
+            backSound.loop = true;
+            backSound.play();
+              }
     ">
     <img src="scissors-emoji.png" class="moveIcon"> 
     </button>
@@ -100,7 +118,7 @@
       let higest = 0;
       let backSound = new Audio("back.mp3");
       let restartSound = new Audio("restart.wav");
-      let sound = 1;
+      let sound = 2;
 
       let comMove;
       let round = 10;
@@ -110,11 +128,7 @@
         Lose: 0,
         Tie: 0
       }
-        
-        if (sound === 1){
-            backSound.loop = true;
-            backSound.play();
-        }
+       
 
 
         function pickRandom()
@@ -304,12 +318,13 @@
         console.log(sound);
           if (sound === 0) {
             sound = 1;
-            backSound.loop = true;
-            backSound.play();
+            backSound.pause();
+           
           }
           else {
             sound = 0;
-            backSound.pause();
+            backSound.loop = true;
+            backSound.play();
           }
         "><img src="sound.png" alt="sound" class="setIcon"></button>
 
