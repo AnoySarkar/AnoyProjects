@@ -1,335 +1,225 @@
 <!DOCTYPE html>
-
 <html lang="en">
-
-  <head>
-
-    <h1>Rock-Paper-Scissor</h1>
-
-    <meta charset="UTF-8">
-    <meta name="viewpont"
-    content="width=device-width,initial-scale=1.0">
-
-      <style>
-        
-        body{
-        text-align: center;
-        background-color: rgb(184, 222, 240);
-
-        }
-           
-        .moveIcon {
-          height: 100px;
-        }
-        .setIcon {
-          height: 50px;
-          width: 50px;
-          border-radius: 50%;
-        }
-        button{
-          background-color: rgb(137, 207, 240);
-          border-radius: 5px; 
-          padding: 30px 30px;
-          margin: 10px;
-
-        }
-        button:hover{
-          background-color: rgb(82, 233, 97);
-        }
-        .resetButton{
-          background-color: rgb(31, 154, 243);
-        }
-        .winscore{
-          color: rgb(89, 221, 89);
-        }
-        .losescore{
-          color: rgb(248, 58, 58);
-        }
-        .tiescore{
-          color: grey;
-        }
-
-
-          
-      </style>
-
-      <title>Rock Paper Scissors by Avii</title>
-  </head>
-
-  <body>
-
-    <h2>
-      You
-      <img id="player" src="hearts.png" alt="cart" height="250px"> 
-      vs
-      <img id="com" src="happy.png" alt="cart" height="250px">
-      Avi
-    </h2>
-
-    <hr>
-      <h1> 
-        <span id="result1">Good Luck!</span>
-      </h1>
-        <h3 id="round" >10</h3>
-      <hr>
-
-    <button onclick="
-        playerMove = 'Rock';
-        comMove = pickRandom();
-        winner(playerMove,comMove);
-      
-        if (sound === 2){
-            sound = 0;
-            backSound.loop = true;
-            backSound.play();
-        }
-
-    ">
-    <img src="rock-emoji.png" class="moveIcon"> </button>
-
-    <button onclick="
-        playerMove = 'Paper'
-        comMove = pickRandom();
-        winner(playerMove,comMove);
-      
-        if (sound === 2){
-            sound = 0;
-            backSound.loop = true;
-            backSound.play();
-              }
-    ">
-    <img src="paper-emoji.png" class="moveIcon"> </button>
-    
-    <button onclick="
-        playerMove = 'Scissor'
-        comMove = pickRandom();
-        winner(playerMove,comMove);
-
-        if (sound === 2){
-            sound = 0;
-            backSound.loop = true;
-            backSound.play();
-              }
-    ">
-    <img src="scissors-emoji.png" class="moveIcon"> 
-    </button>
-
-
-      <script>
-
-      let higest = 0;
-      let backSound = new Audio("back.mp3");
-      let restartSound = new Audio("restart.wav");
-      let sound = 2;
-
-      let comMove;
-      let round = 10;
-      let playerMove;
-      let score = {
-        Win: 0,
-        Lose: 0,
-        Tie: 0
-      }
-       
-
-
-        function pickRandom()
-        {
-          const temp = Math.random();
-          let comMove = '';
-
-          if (temp > 0 && temp < 1/3) {
-            comMove = 'Rock';
-          }
-          else if (temp > 1/3 && temp < 2/3) {
-            comMove = 'Paper';
-          }
-          else if (temp > 2/3 && temp < 1) {
-            comMove = 'Scissor';
-          }
-
-          return (comMove)
-        }
-
-        function winner(plyMove,comMove)
-        {
-          let result ='';
-          let imgg = document.getElementById("player");
-          let img2 = document.getElementById("com");
-
-          let winSound = new Audio("Win.wav");
-          let loseSound = new Audio("Lose.wav");
-          let tieSound = new Audio("Draw.wav");
-          let endSound = new Audio("End.wav");
-
-
-          if(plyMove==='Rock'){
-            imgg.src="rock-emoji.png";
-          }
-          else if(plyMove==='Paper'){
-            imgg.src="paper-emoji.png";
-          }
-          else if(plyMove==='Scissor'){
-            imgg.src="scissors-emoji.png";
-          }
-
-          if(comMove==='Rock'){
-            img2.src="rock-emoji.png";
-          }
-          else if(comMove==='Paper'){
-            img2.src="paper-emoji.png";
-          }
-          else if(comMove==='Scissor'){
-            img2.src="scissors-emoji.png";
-          }
-
-
-          if (comMove === 'Rock') {
-            if (plyMove === 'Rock') {
-              result = 'Tie!'
-              score.Tie++;
-
-            }
-            if (plyMove === 'Paper') {
-              result = 'You Win!'
-              score.Win++;
-            }
-            if (plyMove === 'Scissor') {
-              result = 'You Lose!'
-              score.Lose++;
-            }
-          }
-
-          else if (comMove === 'Paper') {
-            if (plyMove === 'Rock') {
-              result = 'You Lose!'
-              score.Lose++;
-            }
-            if (plyMove === 'Paper') {
-              result = 'Tie!'
-              score.Tie++;
-            }
-            if (plyMove === 'Scissor') {
-              result = 'You Win!'
-              score.Win++;
-            }
-          }
-
-          else if (comMove === 'Scissor') {
-            if (plyMove === 'Rock') {
-              result = 'You Win!'
-              score.Win++;
-            }
-            if (plyMove === 'Paper') {
-              result = 'You Lose!'
-              score.Lose++;
-            }
-            if (plyMove === 'Scissor') {
-              result = 'Tie!'
-              score.Tie++;
-            }
-          }
-
-          if (result === 'You Win!') {
-              winSound.play();
-            }
-            else if (result === 'You Lose!') {
-              loseSound.play();
-            }
-            else if (result === 'Tie!') {
-              tieSound.play();
-            }
-
-          document.getElementById("result1").textContent=result;
-          document.getElementById("win").textContent=score.Win;
-          document.getElementById("lose").textContent=score.Lose;
-          document.getElementById("tie").textContent=score.Tie;
-
-          if(round === 1) {
-            document.getElementById("result1").textContent=score.Win;
-            imgg.src="hearts.png";
-            img2.src="happy.png";
-
-            endSound.play();
-            
-            score.Win = 0;
-            score.Lose = 0;
-            score.Tie = 0;
-            round=10;
-              document.getElementById("round")
-              .innerHTML=round;
-          }
-          else if (round===0) {
-            document.getElementById("round")
-            .innerHTML=round;
-
-            
-          }
-          else {
-          round--;
-            document.getElementById("round")
-            .innerHTML=round;
-          }
-
-            
-        }
-
-
-
-        let imgg = document.getElementById("player");
-        let img2 = document.getElementById("com");
-
-     </script>
-
-        <hr>
-        <h2 class="winscore">
-              
-          Win : <span id="win">0</span> 
-        </h2>
-
-        <h2 class="losescore">
-          Lose: <span id="lose">0</span> 
-        </h2>
-
-        <h2 class="tiescore">
-          Tie : <span id="tie">0</span>  
-        </h2>
-        <hr>
-
-        <button class="resetButton" onclick="
-        score.Win = 0;
-        score.Lose = 0;
-        score.Tie = 0;
-        round = 10;
-        document.getElementById('round')
-          .innerHTML=round;
-        restartSound.play();
-
-        document.getElementById('result1').textContent='Good Luck!';
-          imgg.src='hearts.png';
-          img2.src='happy.png';
-        
-        document.getElementById('win').textContent=score.Win;
-          document.getElementById('lose').textContent=score.Lose;
-          document.getElementById('tie').textContent=score.Tie;
-        ">
-        <img src="reset.png" class="setIcon"></button>
-
-
-        <button class="resetButton" onclick="
-        console.log(sound);
-          if (sound === 0) {
-            sound = 1;
-            backSound.pause();
-           
-          }
-          else {
-            sound = 0;
-            backSound.loop = true;
-            backSound.play();
-          }
-        "><img src="sound.png" alt="sound" class="setIcon"></button>
-
-  </body>
-
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avijit Sarkar | Portfolio</title>
+<link rel="stylesheet"
+href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<link
+href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=s
+wap" rel="stylesheet">
+<style>
+/* Color Variables */
+:root {
+--primary-color: #2ecc71;
+--secondary-color: #27ae60;
+--dark-bg: #111;
+--light-text: #ecf0f1;
+--card-bg: rgba(255, 255, 255, 0.1);
+}
+* {
+margin: 0;
+padding: 0;
+box-sizing: border-box;
+font-family: 'Inter', sans-serif;
+}
+/* 🔥 Animated Background */
+body {
+background: linear-gradient(-45deg, #2c3e50, #34495e, #16a085, #27ae60);
+background-size: 400% 400%;
+animation: gradientBG 8s ease infinite;
+color: var(--light-text);
+line-height: 1.6;
+overflow-x: hidden;
+}
+@keyframes gradientBG {
+0% { background-position: 0% 50%; }
+50% { background-position: 100% 50%; }
+100% { background-position: 0% 50%; }
+}
+.container {
+max-width: 1200px;
+margin: 0 auto;
+padding: 2rem;
+}
+/* 🔥 Header with Glow Effect */
+header {
+text-align: center;
+padding: 4rem 0;
+background: rgba(0, 0, 0, 0.8);
+box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+.header-content h1 {
+font-size: 3rem;
+color: #fff;
+text-shadow: 0px 0px 20px var(--primary-color);
+}
+.header-content p {
+font-size: 1.2rem;
+opacity: 0.9;
+}
+/* 🔥 Animated Project Cards */
+.projects-grid {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+gap: 2rem;
+margin-top: 3rem;
+}
+.project-card {
+background: var(--card-bg);
+border-radius: 15px;
+padding: 1.5rem;
+transition: transform 0.4s ease, box-shadow 0.3s ease;
+position: relative;
+overflow: hidden;
+box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+}
+.project-card:hover {
+transform: scale(1.05);
+box-shadow: 0px 10px 30px rgba(0, 255, 100, 0.5);
+}
+/* 🔥 Project Image */
+.project-image {
+width: 100%;
+height: 200px;
+object-fit: cover;
+border-radius: 8px;
+margin-bottom: 1rem;
+transition: transform 0.3s ease;
+}
+.project-card:hover .project-image {
+transform: scale(1.1);
+}
+/* 🔥 Buttons with Neon Glow */
+.btn {
+padding: 0.5rem 1.5rem;
+border-radius: 5px;
+text-decoration: none;
+display: inline-flex;
+align-items: center;
+gap: 0.5rem;
+transition: all 0.3s ease-in-out;
+font-weight: bold;
+}
+.btn-primary {
+background: var(--primary-color);
+color: white;
+box-shadow: 0 0 10px var(--primary-color);
+}
+.btn-primary:hover {
+background: var(--secondary-color);
+box-shadow: 0 0 20px var(--secondary-color);
+}
+.btn-ghost {
+border: 1px solid var(--primary-color);
+color: var(--primary-color);
+}
+.btn-ghost:hover {
+background: var(--primary-color);
+color: white;
+}
+/* 🔥 Footer */
+footer {
+text-align: center;
+padding: 2rem;
+margin-top: 4rem;
+border-top: 1px solid rgba(255, 255, 255, 0.1);
+font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+<header>
+<div class="header-content">
+<h1>Avijit Sarkar</h1>
+<p>A Visionary Software Developer</p>
+<div class="social-links" style="margin-top: 1rem;">
+<a href="https://github.com/AnoySarkar" class="btn btn-ghost"><i class="fab fa-github"></i> GitHub</a>
+<a href="#" class="btn btn-ghost"><i class="fab fa-linkedin"></i> LinkedIn</a>
+</div>
+</div>
+</header>
+<div class="container">
+<h2 style="text-align: center; font-size: 2.5rem; text-shadow: 0 0 10px
+var(--primary-color);">Featured Projects</h2>
+<div class="projects-grid" id="projects-container">
+<!-- Projects will be injected here by JavaScript -->
+</div>
+</div>
+<footer>
+<p>&copy; 2025 Avijit Sarkar. All rights reserved.</p>
+</footer>
+<script>
+// Project data - simply add new projects here
+const projects = [
+{
+title: "Rock Paper Scissor",
+description: "My First Ever JavaScript Project",
+image: "RPS_ss.png",
+tags: ["HTML", "CSS", "JavaScript"],
+demo: "RockPaperScissor.html",
+code: "https://github.com/AnoySarkar/AnoyProjects/blob/main/RockPaperScissor.html"
+},
+{
+title: "The Bowl Game",
+description: "My CS50 course's scratch project",
+image: "tbg_ss.png",
+tags: ["Scratch"],
+demo: "https://scratch.mit.edu/projects/798036340/",
+code: "https://scratch.mit.edu/projects/798036340/editor/"
+},
+{
+title: "Upcoming Project",
+description: "Exciting new projects coming soon!",
+image: "avi.jpg",
+tags: ["Coming Soon"],
+demo: "#",
+code: "#"
+},
+{
+title: "Upcoming Project",
+description: "Exciting new projects coming soon!",
+image: "avi.jpg",
+tags: ["Coming Soon"],
+demo: "#",
+code: "#"
+},
+{
+title: "Upcoming Project",
+description: "Exciting new projects coming soon!",
+image: "avi.jpg",
+tags: ["Coming Soon"],
+demo: "#",
+code: "#"
+},
+{
+title: "Upcoming Project",
+description: "Exciting new projects coming soon!",
+image: "avi.jpg",
+tags: ["Coming Soon"],
+demo: "#",
+code: "#"
+}
+];
+// Generate project cards dynamically
+const projectsContainer = document.getElementById('projects-container');
+projects.forEach(project => {
+const projectCard = document.createElement('div');
+projectCard.className = 'project-card';
+projectCard.innerHTML = `
+<img src="${project.image}" alt="${project.title}" class="project-image">
+<h3>${project.title}</h3>
+<p>${project.description}</p>
+<div class="project-links">
+<a href="${project.demo}" class="btn btn-primary" target="_blank"><i class="fas
+fa-external-link-alt"></i> Demo</a>
+<a href="${project.code}" class="btn btn-ghost" target="_blank"><i class="fab
+fa-github"></i> Code</a>
+</div>
+`;
+projectsContainer.appendChild(projectCard);
+});
+</script>
+</body>
 </html>
