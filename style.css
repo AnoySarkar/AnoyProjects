@@ -12,11 +12,24 @@ width: 20vmin;
 border-radius: 5%;
 cursor: pointer;
 transition: box-shadow 0.3s ease-in-out;
+font-size: 15vmin;
+color: white;
 
 }
 .box:hover {
 box-shadow: 0 0 15px #ffffff;
 
+}
+
+.restart {
+  height: 60px;
+  background-color: rgb(27, 27, 27);
+  color: white;
+  width: 120px;
+  font-size: 20px;
+  border-radius: 20%;
+  cursor: pointer;
+  transition: box-shadow 0.3s ease-in-out;
 }
 
 .container{
