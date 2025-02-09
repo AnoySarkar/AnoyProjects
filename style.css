@@ -1,7 +1,12 @@
 body{
   text-align: center;
+  background: radial-gradient(circle, purple, rgb(24, 7, 22));
+  height: 100vh;
+  margin: 0;
   color: white;
-  background: radial-gradient(circle, #333, black);
+  background-image: url(b5.png);
+  background-size: cover;
+  background-position: center;
  
 }
 
