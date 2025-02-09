@@ -14,7 +14,9 @@
         
         body{
         text-align: center;
-        background-color: rgb(184, 222, 240);
+        background: radial-gradient(circle, #87CEEB, #4682B4);
+    height: 100vh;
+    margin: 0;
 
         }
            
@@ -31,38 +33,34 @@
           border-radius: 5px; 
           padding: 30px 30px;
           margin: 10px;
+        transition: background 2 ease-in-out;
 
         }
         button:hover{
-          background-color: rgb(82, 233, 97);
+          background-color: rgb(32, 55, 159);
+          cursor: pointer;
         }
         .resetButton{
           background-color: rgb(31, 154, 243);
         }
-        .winscore{
-          color: rgb(89, 221, 89);
-        }
-        .losescore{
-          color: rgb(248, 58, 58);
-        }
-        .tiescore{
-          color: grey;
-        }
+
 
 
           
       </style>
 
       <title>Rock Paper Scissors by Avii</title>
+      <h3> Your Highest Score: <span id="high-score">0</span></h3>
+
   </head>
 
   <body>
 
     <h2>
       You
-      <img id="player" src="hearts.png" alt="cart" height="250px"> 
+      <img id="player" src="hearts.png" alt="cart" height="350px"> 
       vs
-      <img id="com" src="happy.png" alt="cart" height="250px">
+      <img id="com" src="happy.png" alt="cart" height="350px">
       Avi
     </h2>
 
@@ -162,6 +160,10 @@
           let tieSound = new Audio("Draw.wav");
           let endSound = new Audio("End.wav");
 
+          
+          // Retrieve highest score from local storage or set to 0 if not available
+          let highestScore = localStorage.getItem("highestScore") || 0;
+          document.getElementById("high-score").innerText = highestScore;
 
           if(plyMove==='Rock'){
             imgg.src="rock-emoji.png";
@@ -245,6 +247,7 @@
           document.getElementById("lose").textContent=score.Lose;
           document.getElementById("tie").textContent=score.Tie;
 
+
           if(round === 1) {
             document.getElementById("result1").textContent=score.Win;
             imgg.src="hearts.png";
@@ -252,12 +255,16 @@
 
             endSound.play();
             
+          updateScore(score.Win);
+
             score.Win = 0;
             score.Lose = 0;
             score.Tie = 0;
             round=10;
               document.getElementById("round")
               .innerHTML=round;
+
+
           }
           else if (round===0) {
             document.getElementById("round")
@@ -270,6 +277,17 @@
             document.getElementById("round")
             .innerHTML=round;
           }
+
+
+            // Function to update score
+            function updateScore(currentScore) {
+                if (currentScore > highestScore) {
+                    highestScore = currentScore;
+                    localStorage.setItem("highestScore", highestScore);
+                    document.getElementById("high-score").innerText = highestScore;
+                }
+            }
+
 
             
         }
@@ -329,6 +347,11 @@
             backSound.play();
           }
         "><img src="sound.png" alt="sound" class="setIcon"></button>
+        <h1> . </h1>
+        <h1> . </h1>
+      
+
+        <a href="rps_squidgame.html"><h2>Check out the Squid Game version here!</h2></a>
 
   </body>
 
