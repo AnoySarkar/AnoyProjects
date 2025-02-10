@@ -16,7 +16,7 @@ border-radius: 5%;
 cursor: pointer;
 transition: box-shadow 0.3s ease-in-out;
 font-size: 15vmin;
-color: white;
+color: black;
 
 }
 .box:hover {
