@@ -27,12 +27,12 @@ boxes.forEach((box) => {
    if(turnO){
       box.innerText = "O";
       turnO = false;
-      box.style.backgroundColor = "yellow";
+      box.style.backgroundColor = "#96BBBB";
     } 
     else{
       box.innerText = "X";
       turnO = true;
-      box.style.backgroundColor = "blue";
+      box.style.backgroundColor = "#C19875";
     }
     box.disabled = true;
 
