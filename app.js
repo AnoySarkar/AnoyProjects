@@ -27,12 +27,12 @@ boxes.forEach((box) => {
    if(turnO){
       box.innerText = "O";
       turnO = false;
-      box.style.backgroundColor = "#87D3F8";
+      
     } 
     else{
       box.innerText = "X";
       turnO = true;
-      box.style.backgroundColor = "#7B68EE";
+      
     }
     box.disabled = true;
 
@@ -79,9 +79,9 @@ const checkWinner = () => {
         if (pos1 === 'O' && pos2 === 'O' && pos3 === 'O'){
           winSound.play();
           document.querySelector(".winner").innerText = 'O wins!';
-          boxes[pattern[0]].style.backgroundColor = 'green';
-          boxes[pattern[1]].style.backgroundColor = 'green';
-          boxes[pattern[2]].style.backgroundColor = 'green';
+          boxes[pattern[0]].style.backgroundColor = '#35e865';
+          boxes[pattern[1]].style.backgroundColor = '#35e865';
+          boxes[pattern[2]].style.backgroundColor = '#35e865';
 
           disableBoxes();
           
@@ -89,9 +89,9 @@ const checkWinner = () => {
         else if (pos1 === 'X' && pos2 === 'X' && pos3 === 'X'){
           winSound.play();
           document.querySelector(".winner").innerText = 'X wins!';
-          boxes[pattern[0]].style.backgroundColor = 'green';
-          boxes[pattern[1]].style.backgroundColor = 'green';
-          boxes[pattern[2]].style.backgroundColor = 'green';
+          boxes[pattern[0]].style.backgroundColor = '#35e865';
+          boxes[pattern[1]].style.backgroundColor = '#35e865';
+          boxes[pattern[2]].style.backgroundColor = '#35e865';
 
           disableBoxes();
 
