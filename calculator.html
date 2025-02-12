@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="stylesheet" href="calculator.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Calculator by Avii</title>
+</head>
+
+
+<body>
+  <p></p>
+
+  <div class="body"> 
+    <div class="heading">
+      <h1>Calculator</h1>
+    </div>
+    <div class="top"></div>
+    <div class="show" ></div>
+    <div class="bottom">
+      <div class="buttons">
+
+      <button class="extra-buttons3" onclick="
+        document.querySelector('.top')
+          .innerText = 'take love!'
+        ">A</button>
+
+      <button class="extra-buttons3"  onclick="
+      document.querySelector('.top')
+        .innerText = 'take more love!'
+      ">V</button>
+
+      <button class="extra-buttons3"  onclick="
+      document.querySelector('.top')
+        .innerText = 'take love 3000!'
+      ">I</button>
+      
+      <button class="extra-buttons1" onclick="
+        cal('ac');
+      ">ac</button>
+
+      <button onclick="
+      cal('7');
+      ">7</button>
+      
+      <button onclick="
+      cal('8');
+      ">8</button>
+      
+      <button  onclick="
+      cal('9');
+      ">9</button>
+
+      <button class="special-buttons"  onclick="
+      cal('/');
+      ">&#xf7;</button>
+      
+      <button onclick="
+      cal('4');
+      ">4</button>
+
+      <button onclick="
+      cal('5');
+      ">5</button>
+      <button  onclick="
+      cal('6');
+      ">6</button>
+      
+      <button class="special-buttons" onclick="
+      cal('*');
+      ">&#xd7;</button>
+      
+      <button onclick="
+      cal('1');
+      ">1</button>
+      
+      <button  onclick="
+      cal('2');
+      ">2</button>
+
+      <button onclick="
+      cal('3');
+      ">3</button>
+
+      <button class="special-buttons" onclick="
+      cal('-');
+      ">&#x2212;</button>
+      
+      <button onclick="
+      cal('0');
+      ">0</button>
+
+      <button  onclick="
+      cal('.');
+      ">.</button>
+
+      <button class="special-buttons"  onclick="
+      cal('=');
+      ">=</button>
+
+      <button class="special-buttons"  onclick="
+      cal('+');
+      ">+</button>
+    </div>
+
+    </div>
+
+  </div>  
+
+
+<script src="calculator.js"></script>
+<p></p>
+</body>
+
+</html>
