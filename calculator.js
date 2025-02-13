@@ -2,126 +2,79 @@ let show = '';
 let temp = '';
 let result;
 let num;
-let start = true;
 let mid = '';
 
-     /* console.log(num);
-      console.log(temp);
-      console.log(result);
-      */
+function cal(input) {
+    switch (input) {
+        case '=':
+            if (temp === '' || mid === '') {
+                show = 'invalid input';
+                result = 0.0;
+            } else {
+                cal2();
+                mid = '';
+                show = 'ans';
+            }
+            break;
 
-function cal(input){
+        case 'ac':
+            show = '';
+            result = undefined;
+            temp = '';
+            mid = '';
+            document.querySelector('.top').innerText = '';
+            break;
 
+        case '+':
+        case '-':
+        case '*':
+        case '/':
+            if (temp === '') return; // Prevent operator input without a number
+            cal2();
+            mid = input;
+            show += ` ${input} `;
+            break;
 
-  if (input === '='){
-    cal2();
-    mid = '';
-    show = 'ans';
-  }
-
-  // for ac
-  else if (input === 'ac'){
-    show = '';
-    result = 0.0;
-    start = true;
-    document.querySelector('.top').innerText = '';
-  }
-
-  // for +
-  else if (input === '+'){
-    if (start){
-      start = false;
-      result = parseFloat(temp);
-      temp = '';
-
+        default:
+            show += input;
+            temp += input;
     }
-    else {
-      cal2();
-    }
-    mid = '+';
-    show = show + ` ${input} `;
-  }
 
-  // for -
-  else if (input === '-'){
-    if (start){
-      start = false;
-      result = parseFloat(temp);
-      temp = '';
-
-    }
-    else {
-      cal2();
-    }
-    mid = '-';
-    show = show + ` ${input} `;
-  }
-
-  // for *
-  else if (input === '*'){
-    if (start){
-      start = false;
-      result = parseFloat(temp);
-      temp = '';
-
-    }
-    else {
-      cal2();
-    }
-    mid = '*';
-    show = show + ` ${input} `;
-  }
-
-  //for /
-  else if (input === '/'){
-    if (start){
-      start = false;
-      result = parseFloat(temp);
-      temp = '';
-
-    }
-    else {
-      cal2();
-    }
-    mid = '/';
-    show = show + ` ${input} `;
-    
-  }
-
-  // all numbers
-  else{
-    show = show + input;
-    temp = temp + input;
-  }
-
-  document.querySelector('.show').innerText = show;
-   
+    document.querySelector('.show').innerText = show;
 }
 
-function cal2(){
-  if (mid == '+'){
-    num = parseFloat(temp);
-    result = result + num;
-    temp = '';
-  }
+function cal2() {
+    if (temp === '') return;
 
-  else if (mid == '-'){
     num = parseFloat(temp);
-    result = result - num;
     temp = '';
-  }
 
-  else if (mid == '*'){
-    num = parseFloat(temp);
-    result = result * num;
-    temp = '';
-  }
+    switch (mid) {
+        case '':
+            if (result === undefined) result = num; // Fix for first-time calculation
+            break;
 
-  else if (mid == '/'){
-    num = parseFloat(temp);
-    result = result / num;
-    temp = '';
-  }
+        case '+':
+            result += num;
+            break;
 
-  document.querySelector('.top').innerText = result;
+        case '-':
+            result -= num;
+            break;
+
+        case '*':
+            result *= num;
+            break;
+
+        case '/':
+            if (num === 0) {
+                show = 'Error: Division by zero';
+                result = 0.0;
+                return;
+            }
+            result /= num;
+            break;
+    }
+
+    document.querySelector('.top').innerText = result;
 }
