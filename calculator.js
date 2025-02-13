@@ -82,7 +82,10 @@ function cal2() {
         case '/':
             if (num === 0) {
                 show = 'Error: Division by zero';
+                document.querySelector('.show').innerText = show;
                 result = 0.0;
+                mid = '';
+                temp = '';
                 return;
             }
             result /= num;
