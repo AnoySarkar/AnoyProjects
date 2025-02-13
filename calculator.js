@@ -3,6 +3,7 @@ let temp = '';
 let result;
 let num;
 let mid = '';
+let state = false;
 
 function cal(input) {
     switch (input) {
@@ -14,6 +15,7 @@ function cal(input) {
                 cal2();
                 mid = '';
                 show = 'ans';
+                state = true;
             }
             break;
 
@@ -22,6 +24,7 @@ function cal(input) {
             result = undefined;
             temp = '';
             mid = '';
+            state = false;
             document.querySelector('.top').innerText = '';
             break;
 
@@ -29,29 +32,39 @@ function cal(input) {
         case '-':
         case '*':
         case '/':
-            if (temp === '') return; // Prevent operator input without a number
+            if (state) {
+                temp = result.toString();
+                state = false;
+            }
+            if (temp === '') return;
             cal2();
             mid = input;
             show += ` ${input} `;
             break;
 
         default:
-            show += input;
-            temp += input;
+            if (state) {
+                show = input;
+                temp = input;
+                state = false;
+            } else {
+                show += input;
+                temp += input;
+            }
     }
 
     document.querySelector('.show').innerText = show;
 }
 
 function cal2() {
-    if (temp === '') return;
+    if (temp === '' && !state) return;
 
     num = parseFloat(temp);
     temp = '';
 
     switch (mid) {
         case '':
-            if (result === undefined) result = num; // Fix for first-time calculation
+            if (result === undefined) result = num;
             break;
 
         case '+':
