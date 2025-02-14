@@ -6,12 +6,16 @@ let mid = '';
 let state = false;
 
 function cal(input) {
+
+      
+
     switch (input) {
         case '=':
             if (temp === '' || mid === '') {
                 show = 'invalid input';
                 result = 0.0;
-            } else {
+            } 
+            else {
                 cal2();
                 mid = '';
                 show = 'ans';
@@ -52,6 +56,7 @@ function cal(input) {
                 temp += input;
             }
     }
+    
 
     document.querySelector('.show').innerText = show;
 }
@@ -59,8 +64,11 @@ function cal(input) {
 function cal2() {
     if (temp === '' && !state) return;
 
+    
     num = parseFloat(temp);
     temp = '';
+
+    
 
     switch (mid) {
         case '':
@@ -81,13 +89,10 @@ function cal2() {
 
         case '/':
             if (num === 0) {
-                show = 'Error: Division by zero';
-                document.querySelector('.show').innerText = show;
                 result = 0.0;
-                mid = '';
-                temp = '';
+                document.querySelector('.top').innerText = 'Error: division by 0';
                 return;
-            }
+              }
             result /= num;
             break;
     }
