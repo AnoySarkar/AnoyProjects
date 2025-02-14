@@ -16,6 +16,7 @@ body{
   background-color: #1a1a28;
   border: black;
   border-style: solid;
+  border-radius: 20px;
 }
 
 .heading {
@@ -26,6 +27,8 @@ body{
   justify-content: center;
   align-content: center;
   font-weight: bold;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
 
 }
 
