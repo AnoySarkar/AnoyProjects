@@ -7,6 +7,8 @@ let tapSound = new Audio("tap.wav");
 let newSound = new Audio("newgame.mp3");
 let tieSound = new Audio("Draw.wav");
 
+let draw = 0;
+
 
 
 
@@ -38,6 +40,7 @@ boxes.forEach((box) => {
     }
     box.disabled = true;
 
+    draw++;
     checkWinner();
 
 });
@@ -49,6 +52,7 @@ function reset(){
   turnO = true;
   enableBoxes();
   document.querySelector(".winner").innerText = "....";
+  draw = 0;
 }
 
 const enableBoxes = () => {
@@ -98,6 +102,13 @@ const checkWinner = () => {
           disableBoxes();
 
         }
+        else if (draw === 9){
+          tieSound.play();
+          document.querySelector(".winner").innerText = 'Draw!';
+          for (let  box of boxes) {
+            box.style.backgroundColor = 'rgb(74, 74, 74)';
+          }
+        }
 
 
       
@@ -107,4 +118,3 @@ const checkWinner = () => {
     
   }
 }
-
