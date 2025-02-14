@@ -102,19 +102,14 @@ const checkWinner = () => {
           disableBoxes();
           return;
         }
-        else if (draw === 9){
+      
+    }
+  }
+        if (draw === 9){
           tieSound.play();
           document.querySelector(".winner").innerText = 'Draw!';
           for (let  box of boxes) {
             box.style.backgroundColor = 'rgb(74, 74, 74)';
           }
         }
-
-
-      
-    }
-
-
-    
-  }
 }
