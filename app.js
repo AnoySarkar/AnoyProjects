@@ -90,7 +90,7 @@ const checkWinner = () => {
           boxes[pattern[2]].style.backgroundColor = '#35e865';
 
           disableBoxes();
-          
+          return;
         }
         else if (pos1 === 'X' && pos2 === 'X' && pos3 === 'X'){
           winSound.play();
@@ -100,7 +100,7 @@ const checkWinner = () => {
           boxes[pattern[2]].style.backgroundColor = '#35e865';
 
           disableBoxes();
-
+          return;
         }
         else if (draw === 9){
           tieSound.play();
