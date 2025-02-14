@@ -10,8 +10,8 @@ body{
 } 
 
 .body {
-  height: 850px;
-  width: 500px;
+  height: 550px;
+  width: 300px;
   align-items: center;
   background-color: #1a1a28;
   border: black;
@@ -20,13 +20,14 @@ body{
 }
 
 .heading {
-  height: 50px;
-  width: 500px;
+  height: 35px;
+  width: 300px;
   background-color: rgb(0, 0, 0);
   display: grid;
   justify-content: center;
   align-content: center;
   font-weight: bold;
+  font-size: 10px;
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
 
@@ -35,11 +36,12 @@ body{
 .top {
   
   background: radial-gradient(circle, #3b3a3a, #101010);
-  height: 130px;
+  height: 85px;
+  width: 290px;
   display: grid;
   justify-content: right;
-  padding-right: 15px;
-  font-size: 50px;
+  padding-right: 10px;
+  font-size: 35px;
   font-weight: bold;
   align-items: center;  
   overflow: auto;  
@@ -48,23 +50,24 @@ body{
   display: grid;
   justify-content: right;
   align-items: center;
-  padding-right: 15px;
+  padding-right: 10px;
   background-color: #2f4073;
-  height: 50px;
-  font-size: 35px;
+  height: 30px;
+  font-size: 20px;
+  font-weight: bold;
   overflow: auto;
 }
 .bottom {
 
-  height: 520px;
+  height: 400px;
   display: flex;
   justify-content: center;
   align-items: center;
 }
 
 .buttons {
-  height: 460px;
-  width: 450px;
+  height: 340px;
+  width: 265px;
   display: grid;
   grid-template-columns: repeat(4,auto);
   gap: 10px;
@@ -74,14 +77,14 @@ body{
 
 
 button{
-  height: 100px;
-  width: 100px;
+  height: 57px;
+  width: 57px;
   background-color: #1e2434;
   color: white;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 50px;
+  font-size: 35px;
   font-weight: bold;
-  border-radius: 15px;
+  border-radius: 10px;
   border: none;
 }
 button:hover{
