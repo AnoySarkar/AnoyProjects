@@ -5,12 +5,16 @@ let num;
 let mid = '';
 let state = false;
 
+let restartSound = new Audio("restart.wav");
+let tapSound = new Audio("tap.wav");
+
 function cal(input) {
 
-      
+      tapSound.play();
 
     switch (input) {
         case '=':
+                restartSound.play();
             if (temp === '' || mid === '') {
                 show = 'invalid input';
                 result = 0.0;
