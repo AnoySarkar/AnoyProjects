@@ -6,6 +6,10 @@ let todoList = JSON.parse(localStorage.getItem('todoList')) || [];
       }
     })
 
+document.addEventListener("DOMContentLoaded", function() {
+      renderTodo();
+    });
+
 
 
 function addTodo() {
