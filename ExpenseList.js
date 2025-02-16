@@ -37,6 +37,7 @@ function renderTodo() {
 
   let todoHTML = '';
   total = 0;
+  let totalItem = [];
   
     for (let i = 0; i < todoList.length; i++){
       
@@ -61,11 +62,13 @@ function renderTodo() {
     `;
 
       todoHTML += html;
+      totalItem.push(todoName);
 
     }
     document.querySelector('.js-show').innerHTML = todoHTML;
 
     document.querySelector('.total').innerText = 'Total: ' + total;
+    document.querySelector('.totalItem').innerText = totalItem;
 
 }
 
