@@ -76,6 +76,7 @@ body{
   display: flex;
   align-items: center;
   overflow: hidden;
+  padding-left: 5px;
   margin-left: 10px;
   background-color: #1D99F3;
   margin-right: 10px;
@@ -111,6 +112,7 @@ body{
 }
 .expExp{
   display: flex;
+  padding-left: 3px;
   align-content: center;
   display: inline-block;
 }

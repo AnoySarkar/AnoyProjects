@@ -105,15 +105,12 @@ function renderTodo() {
       ">Remove</button> 
     `;
       todoHTML += html;
-      if (todoName != ''){
-        totalItem.push(todoName);
-      }
+
 
     }
 
     document.querySelector('.js-show').innerHTML = todoHTML;
     document.querySelector('.total').innerText = 'Total: ' + total;
-    document.querySelector('.totalItem').innerText = totalItem;
 
 }
 
