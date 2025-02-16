@@ -66,16 +66,22 @@ body{
 }
 
 .show-money{
+  display: flex;
+  align-items: center;
   overflow: hidden;
   margin-right: 10px;
 }
 
 .show-todo{
+  display: flex;
+  align-items: center;
   overflow: hidden;
   margin-left: 25px;
   margin-right: 10px;
 }
 .show-date{
+  display: flex;
+  align-items: center;
   text-align: center;
 }
 .remove-btn{
