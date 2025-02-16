@@ -14,7 +14,14 @@ body{
 .title{
   display: inline;
 }
+.total{
+  display: inline;
+}
 
+.totalItem{
+  display: inline;
+  margin-left: 20px;
+}
 .reset{
   height: 50px;
   width: 50px;
