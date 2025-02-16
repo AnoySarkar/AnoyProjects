@@ -17,6 +17,7 @@
   
   <button class="reset"><img height="40px" src="reset.png" alt="" onclick="
     todoList = [];
+    localStorage.setItem('todoList', JSON.stringify(todoList));
     renderTodo();
   "></button>
   
@@ -41,7 +42,7 @@
 
   <script src="ExpenseList.js"></script>
 
-  <div class="total">Total: 0</div>
+  <div class="total"></div>
   <div class="totalItem"></div>
   <hr>
 
