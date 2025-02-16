@@ -1,5 +1,4 @@
-let todoList = [];
-
+let todoList = JSON.parse(localStorage.getItem('todoList')) || [];
   document.querySelector('.js-input')
     .addEventListener("keydown",function (event){
       if (event.key === "Enter"){
@@ -27,6 +26,8 @@ function addTodo() {
   });
 
   inputTodo.value = '';
+
+  localStorage.setItem('todoList', JSON.stringify(todoList));
 
   renderTodo();
 }
