@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expense List Calculator by Avii</title>
+
+  <link rel="stylesheet" href="ExpenseList.css">
+
+</head>
+
+<body>
+
+<div class="container">
+
+  <h1 class="title">Expense List Calculator</h1>
+  
+  <button class="reset"><img height="40px" src="reset.png" alt="" onclick="
+    todoList = [];
+    renderTodo();
+  "></button>
+  
+    <p></p>
+
+  <div class="heading">
+
+  <input class="js-input input" placeholder="Enter Money & Item Name" autofocus type="text">
+
+  <input type="date" name="" class="js-input-date input-date">
+
+  <button class="js-add-btn add-btn" onclick="
+    addTodo();
+  ">Add</button>
+  </div>
+
+  <hr>
+
+  <div class="js-show show"></div>
+
+  <hr>
+
+  <script src="ExpenseList.js"></script>
+
+  <div class="total">Total: 0</div>
+  <hr>
+
+</div>
+  
+</body>
+</html>
