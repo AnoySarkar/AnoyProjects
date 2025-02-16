@@ -52,6 +52,7 @@ function renderTodo() {
 
       <button class="remove-btn" onclick="
         todoList.splice(${i}, 1);
+        localStorage.setItem('todoList', JSON.stringify(todoList));
         renderTodo ();
       ">Remove</button> 
     `;
