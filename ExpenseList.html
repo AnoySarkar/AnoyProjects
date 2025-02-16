@@ -12,26 +12,41 @@
 <body>
 
 <div class="container">
+  <p></p>
 
   <h1 class="title">Expense List Calculator</h1>
   
   <button class="reset"><img height="40px" src="reset.png" alt="" onclick="
-    todoList = [];
-    localStorage.setItem('todoList', JSON.stringify(todoList));
+    expList = [];
+    dateExp = [{
+          dateE: '',
+          exp: 0,
+        }];
+    localStorage.setItem('expList', JSON.stringify(expList));
+    localStorage.setItem('dateExp', JSON.stringify(dateExp));
+
     renderTodo();
+    renderDateExp();
   "></button>
   
     <p></p>
 
   <div class="heading">
 
-  <input class="js-input input" placeholder="Enter Money & Item Name" autofocus type="text">
+  <input class="js-input input" placeholder="Enter price amount & item name" autofocus type="text">
 
-  <input type="date" name="" class="js-input-date input-date">
+  <input type="date" name="" placeholder="Enter Date" class="js-input-date input-date">
 
   <button class="js-add-btn add-btn" onclick="
     addTodo();
   ">Add</button>
+  </div>
+
+  <hr>
+  <div class="total"></div>
+  <hr>
+  <div class="exp">
+
   </div>
 
   <hr>
@@ -42,9 +57,9 @@
 
   <script src="ExpenseList.js"></script>
 
-  <div class="total"></div>
+  <p></p>
   <div class="totalItem"></div>
-  <hr>
+
 
 </div>
   
