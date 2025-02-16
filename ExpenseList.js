@@ -1,5 +1,4 @@
-let todoList = [];
-let total = 0;
+let todoList = JSON.parse(localStorage.getItem('todoList')) || [];
 
   document.querySelector('.js-input')
     .addEventListener("keydown",function (event){
@@ -8,7 +7,9 @@ let total = 0;
       }
     })
 
-
+    document.addEventListener("DOMContentLoaded", function() {
+      renderTodo();
+    });
 
 function addTodo() {
 
@@ -29,6 +30,8 @@ function addTodo() {
   
   inputTodo.value = '';
 
+  localStorage.setItem('todoList', JSON.stringify(todoList));
+
   renderTodo();
 }
 
@@ -36,7 +39,7 @@ function addTodo() {
 function renderTodo() {
 
   let todoHTML = '';
-  total = 0;
+  let total = 0;
   let totalItem = [];
   
     for (let i = 0; i < todoList.length; i++){
@@ -48,7 +51,6 @@ function renderTodo() {
       let todoName = name.replace(/\d/g, '');
 
       total += money;
-      console.log(total);
     
       const html = `
       <div class="show-money">${money}</div>
@@ -57,6 +59,7 @@ function renderTodo() {
 
       <button class="remove-btn" onclick="
         todoList.splice(${i}, 1);
+         localStorage.setItem('todoList', JSON.stringify(todoList));
         renderTodo ();
       ">Remove</button> 
     `;
@@ -65,8 +68,8 @@ function renderTodo() {
       totalItem.push(todoName);
 
     }
-    document.querySelector('.js-show').innerHTML = todoHTML;
 
+    document.querySelector('.js-show').innerHTML = todoHTML;
     document.querySelector('.total').innerText = 'Total: ' + total;
     document.querySelector('.totalItem').innerText = totalItem;
 
