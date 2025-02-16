@@ -77,14 +77,13 @@ function renderTodo() {
   let total = 0;
   let totalItem = [];
   
-    for (let i = 0; i < expList.length; i++){
+    for (i=expList.length-1; i >= 0 ; i--){
       
       let todoObject = expList[i];
       let {name , date} = todoObject;
 
       let money = parseInt(name.replace(/\D/g, ""));
       let todoName = name.replace(/\d/g, '');
-
 
 
 
@@ -122,20 +121,15 @@ function renderDateExp(){
 
   let dateHTML = '';
 
-  let first = true;
-
-
-  for (i=0; i < dateExp.length; i++){
+  for (i=dateExp.length-1; i >= 0 ; i--){
 
     let html;
 
-    if (first){
+    if (i === 0){
       html = `
     <div class="dateExp">Dateless</div>
     <div class="expExp">${dateExp[i].exp}</div>
-    `;
-        first = false;
-      }
+    `;}
     else{
     html = `
     <div class="dateExp">${dateExp[i].dateE}</div>
