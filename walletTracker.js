@@ -11,14 +11,14 @@ let type;
 let typeD;
 let typeE;
 
-console.log(`inside inc= ${dateExp[0].inc}`);
-
+let sound = new Audio("restart2.wav");
 
 
 let entryType = document.querySelector('#type');
 
 function typeBack(){
 
+  sound.play();
   let typeX =  entryType.value;
   
   if (typeX === 'inc'){
@@ -35,7 +35,7 @@ function typeBack(){
       if (event.key === "Enter"){
         typeE = entryType.value;
         typeD = entryType.value;
-
+        sound.play();
         addTodo();
       }
     })
@@ -158,6 +158,7 @@ function renderTodo() {
 
           <div id="remove-lb">
               <button class="remove-btn" onclick="
+                  sound.play();
                   expList.splice(${i}, 1);
                   adjustExp('${date}',${money});
 
@@ -178,6 +179,7 @@ function renderTodo() {
       document.querySelector('#total').innerText = totalI;
 
     }
+    document.querySelector('#onhand').innerText = totalI - totalE;
 
     }
 
@@ -194,7 +196,6 @@ function renderDateExp(){
 
     let html;
 
-    console.log(`inside inc= ${dateExp[i].inc}`);
 
       if (i === 0){
         html = `

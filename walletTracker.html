@@ -14,6 +14,8 @@
   
   <h1 id="wallet-tracker">Wallet Tracker</h1>
  <button class="reset"><img height="40px" src="reset.png" alt="" onclick="
+  
+    sound.play();
     expList = [];
     dateExp = [{
           dateE: '',
@@ -23,6 +25,7 @@
         }];
         document.querySelector('#expense').innerText = 0;
         document.querySelector('#total').innerText = 0;
+        document.querySelector('#onhand').innerText = 0;
 
 
     localStorage.setItem('expList', JSON.stringify(expList));
@@ -58,6 +61,10 @@
 
       <div id="add-new1">
         <h1 id="expense">0</h1>
+      </div>
+
+      <div id="add-new3">
+        <h1 id="onhand">0</h1>
       </div>
 
       <div id="add-new2">

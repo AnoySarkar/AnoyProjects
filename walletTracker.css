@@ -16,7 +16,6 @@ body{
 }
 
 #top-container{
-
   display: flex;
   align-items: center;
 }
@@ -91,7 +90,7 @@ body{
 #inputName{
   border-radius: 10px;
   height: 40px;
-  width: 270px;
+  width: 250px;
   border: none;
   font-size: large;
   padding-left: 10px;
@@ -117,10 +116,10 @@ body{
 #add-new1{
 
   height: 200px;
-  width: 350px;
+  width: 200px;
   margin-left: 90px;
   color: rgb(251, 26, 26);
-  background-color: rgb(210, 210, 210);
+  background-color: rgb(237, 237, 237);
   border-radius: 100px;
   display: flex;
   justify-content: center;
@@ -131,16 +130,34 @@ body{
 }
 
 #expense, #total{
-  font-size: 70px;
+  font-size: 40px;
+}
+#onhand{
+  font-size: 50px;
 }
 
 #add-new2{
 
   height: 200px;
-  width: 350px;
+  width: 200px;
   margin-left: 30px;
   color: #44d41d;
-  background-color: rgb(210, 210, 210);
+  background-color: rgb(237, 237, 237);
+  border-radius: 100px;
+  box-shadow: 1px 1px 5px rgb(10, 10, 10);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+}
+
+#add-new3{
+
+  height: 200px;
+  width: 300px;
+  margin-left: 30px;
+  color: black;
+  background-color: rgb(237, 237, 237);
   border-radius: 100px;
   box-shadow: 1px 1px 5px rgb(10, 10, 10);
   display: flex;
