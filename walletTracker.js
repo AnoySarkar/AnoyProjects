@@ -221,6 +221,10 @@ function renderDateExp(){
 
 function adjustExp(date,money){
 
+      let totalE = parseInt(document.querySelector('#expense').innerText);
+      let totalI = parseInt(document.querySelector('#total').innerText);
+      let totalO = parseInt(document.querySelector('#onhand').innerText);
+
   for (i=0; i < dateExp.length; i++){
 
     type = dateExp[i].type;
@@ -229,6 +233,8 @@ function adjustExp(date,money){
       if (dateExp[i].dateE === date){
         dateExp[i].exp -= money;
         localStorage.setItem('dateExp', JSON.stringify(dateExp));
+        document.querySelector('#expense').innerText = totalE-money;
+        document.querySelector('#onhand').innerText = totalO+money;
         return;
       }
     }
@@ -236,6 +242,9 @@ function adjustExp(date,money){
       if (dateExp[i].dateE === date){
         dateExp[i].inc -= money;
         localStorage.setItem('dateExp', JSON.stringify(dateExp));
+        document.querySelector('#total').innerText = totalI-money;
+        document.querySelector('#onhand').innerText = totalO-money;
+
         return;
       }
     }
