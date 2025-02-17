@@ -1,0 +1,259 @@
+body{
+  background: radial-gradient(circle, #646464, #252525);
+  text-align: center;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+#wallet-tracker{
+  color: rgb(255, 255, 255);
+  font-weight: bold;
+  display: inline-block;
+
+}
+
+#top-para{
+  font-weight: bold;
+}
+
+#top-container{
+
+  display: flex;
+  align-items: center;
+}
+
+#balance{
+  background-color: rgb(210, 210, 210);
+  color: black;
+  font-weight: bold;
+  box-shadow: 2px 2px 10px rgb(5, 5, 5);
+  margin-left: 50px;
+  height: 200px;
+  width: 450px;
+  border-radius: 20px;
+
+}
+
+#type-container{
+  display: flex;
+  text-align: left;
+  align-items: baseline;
+  border-radius: 20px 20px 0 0;
+  height: 50px;
+
+}
+
+#entry-type{
+  display: inline-block;
+  margin-right: 20px;
+  margin-left: 40px;
+}
+#type{
+  display: inline-block;
+  border-radius: 30px;
+  border: none;
+}
+
+#name-container{
+  height: 50px;
+  display: flex;
+  text-align: left;
+  align-items: baseline;
+  border-radius: 20px 20px 0 0;
+}
+
+
+#date-container{
+  display: flex;
+  text-align: left;
+  align-items: baseline;
+  border-radius: 20px 20px 0 0;
+  padding-bottom: 20px;
+
+}
+
+#text{
+  display: inline-block;
+  margin-left: 20px;
+  margin-right: 10px;
+}
+
+#date-name{
+  display: inline-block;
+  margin-left: 60px;
+  margin-right: 60px;
+}
+
+#inputName{
+  border-radius: 10px;
+  height: 40px;
+  width: 270px;
+  border: none;
+  font-size: large;
+  padding-left: 10px;
+}
+
+#inputDate{
+  border-radius: 10px;
+  height: 40px;
+  border: none;
+  font-size: large;
+  padding-left: 10px;
+
+  
+}
+
+#bottom-container{
+  margin-top: 50px;
+  display: flex;
+  align-items:baseline;
+  height: 300px;
+}
+
+#add-new{
+
+  height: 200px;
+  width: 760px;
+  margin-left: 70px;
+  background: radial-gradient(circle, #87CEEB, #4682B4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+}
+
+.remove-btn{
+  height: 30px;
+  font-size: 15px;
+  background: radial-gradient(circle, #ff3d3d, #ff0a0a);
+  color: white;
+  border: none;
+  border-radius: 20px;
+}
+
+.reset{
+  height: 50px;
+  width: 50px;
+  border-radius: 25px;
+  margin-left: 15px;
+  background-color: #1D99F3;
+  border: none;
+}
+
+
+#exp-list{
+  width: 760px;
+  margin-left: 70px;
+  background-color: white;
+  box-shadow: 2px 2px 10px rgb(5, 5, 5);
+  border-radius: 20px;
+}
+
+#date-total{
+  width: 450px;
+  margin-left: 50px;
+  background-color: white;
+  box-shadow: 2px 2px 10px rgb(5, 5, 5);
+  border-radius: 20px;
+}
+
+#add-new{
+  box-shadow: 2px 2px 10px rgb(5, 5, 5);
+  border-radius: 20px;
+
+} 
+
+
+
+#list-head{
+
+  grid-template-columns: 150px 200px 200px 100px 100px;
+  background: radial-gradient(circle, #9aff71, #4fef22);
+  display: grid;
+  height: 50px;
+  align-items: center;
+  border-radius:20px 20px 0 0;
+  font-weight: bold;
+  padding-left: 10px;
+}
+
+#list-feet{
+
+  grid-template-columns: 150px 200px 200px 100px 100px;
+  background-color: rgb(115, 253, 97);
+  display: grid;
+  height: 5px;
+  align-items: center;
+  font-weight: bold;
+  border-radius:0 0 3px 3px;
+  padding-left: 10px;
+}
+
+#date-head{
+  background: radial-gradient(circle, #9aff71, #4fef22);
+  display: grid;
+  height: 50px;
+  align-items: center;
+  grid-template-columns: 150px 150px 150px;
+  padding-left: 10px;
+  border-radius:20px 20px 0 0;
+  font-weight: bold;
+
+}
+
+#date-feet{
+  background-color: rgb(115, 253, 97);
+  display: grid;
+  height: 5px;
+  align-items: center;
+  grid-template-columns: 150px 150px 150px;
+  padding-left: 10px;
+  border-radius:0 0 3px 3px;
+  font-weight: bold;
+
+}
+
+#date, #name, #amount, #type, #remove{
+  height: 35px;
+  padding-left: 5px;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+#date-lb, #name-lb, #amount-lb, #type-lb, #remove-lb{
+  height: 35px;
+  padding-left: 15px;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+#list-body{
+  background: radial-gradient(circle, #87CEEB, #4682B4);
+  display: grid;
+  grid-template-columns: 150px 200px 200px 100px 100px;
+}
+
+
+#date-dh, #expense-dh, #income-dh{
+  height: 35px;
+  padding-left: 5px;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+
+#date-db, #expense-db, #income-db{
+  height: 35px;
+  padding-left: 15px;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+#date-body{
+  background: radial-gradient(circle, #87CEEB, #4682B4);
+  display: grid;
+  grid-template-columns: 150px 150px 150px;
+}

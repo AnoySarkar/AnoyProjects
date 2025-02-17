@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Wallet Tracker by Avii</title>
+  <link rel="stylesheet" href="walletTracker.css">
+</head>
+
+
+<body>
+  
+  <h1 id="wallet-tracker">Wallet Tracker</h1>
+  <button class="reset"><img height="40px" src="reset.png" alt="" onclick="
+    expList = [];
+    dateExp = [{
+          dateE: '',
+          exp: 0,
+        }];
+    localStorage.setItem('expList', JSON.stringify(expList));
+    localStorage.setItem('dateExp', JSON.stringify(dateExp));
+
+    renderTodo();
+    renderDateExp();
+  "></button>
+<p></p>
+    <div id="top-container">
+      <div id="balance">
+        <div id="type-container">
+
+            <h4 id="entry-type">Entry Type: </h4>
+            <select name="type" id="type">
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+            </select>
+        </div>
+          <hr>
+        <div id="name-container">
+
+          <h4 id="text">Name & Amount</h4>
+            <input type="text" name="" id="inputName" placeholder=" Enter Name and Amount">
+        </div>
+        
+        <div id="date-container">
+          <h4 id="date-name">date</h4>
+            <input type="date" name="" id="inputDate">
+        </div>
+      </div>
+
+
+      <div id="add-new">
+        <h1 id="total"></h1>
+      </div>
+    </div>
+
+    <div id="bottom-container">
+      <div id="date-total">
+        
+        <div id="date-head">
+          <div id="date-dh">date</div>
+          <div id="expense-dh">Expenses</div>
+          <div id="income-dh">Income</div>
+        </div>
+
+        <div id="date-body">
+          <div id="date-db">2025-02-18</div>
+          <div id="expense-db">11000</div>
+          <div id="income-db">0</div>
+        </div>
+        <div id="date-feet"></div>
+      </div>
+
+      <div id="exp-list">
+        <div id="list-head">
+          <div id="date">date</div>
+          <div id="name">name</div>
+          <div id="amount">amount</div>
+          <div id="type">type</div>
+          <div id="remove">remove</div>
+        </div>
+
+        <div id="list-body">
+          <div id="date-lb">2025-02-18</div>
+          <div id="name-lb">rent</div>
+          <div id="amount-lb">5500</div>
+          <div id="type-lb">Out</div>
+          <div id="remove-lb">X</div>
+
+
+        </div>
+        <div id="list-feet"></div>
+      </div>
+    </div>
+
+
+
+
+
+  <script 
+  src="walletTracker.js"
+  ></script>
+</body>
+</html>
