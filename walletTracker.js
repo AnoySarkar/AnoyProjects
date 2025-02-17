@@ -3,12 +3,28 @@ let expList = JSON.parse(localStorage.getItem('expList')) || [];
 let dateExp = JSON.parse(localStorage.getItem('dateExp')) || [{
   dateE: '',
   exp: 0,
+  inc: 0,
+  type: '',
 }];
+
+let type;
+let typeD;
+let typeE;
+
+console.log(`inside inc= ${dateExp[0].inc}`);
+
+
+
+
+let entryType = document.querySelector('#type');
 
 
   document.querySelector('#inputName')
     .addEventListener("keydown",function (event){
       if (event.key === "Enter"){
+        typeE = entryType.value;
+        typeD = entryType.value;
+
         addTodo();
       }
     })
@@ -16,8 +32,6 @@ let dateExp = JSON.parse(localStorage.getItem('dateExp')) || [{
     document.addEventListener("DOMContentLoaded", function() {
       renderTodo();
       renderDateExp();
-
-
     });
 
     
@@ -26,6 +40,7 @@ function addTodo() {
 
   let inputTodo = document.querySelector('#inputName');
   let name = inputTodo.value;
+
 
   if (name === '')
     return;
@@ -40,8 +55,10 @@ function addTodo() {
 
   expList.push({
     name,
-    date
+    date,
+    typeE
   });
+
   
   inputTodo.value = '';
 
@@ -54,30 +71,55 @@ function addTodo() {
 function addDateExp(date, money){
   
   for (i=0; i < dateExp.length; i++){
-    let dateObject = dateExp[i];
-    let {dateE} = dateObject;
+
+    let dateE = dateExp[i].dateE;
+  
+    type = dateExp[i].type;
 
     if (dateE === date){
-      dateExp[i].exp += money;
-      return;
+      if (typeD === 'exp'){
+        dateExp[i].exp += money;
+        return;
+      }
+      else if (typeD === 'inc'){
+        dateExp[i].inc += money;
+        return;
+      }
     }}
+    if (typeD === 'exp'){
+      dateExp.push({
+        dateE: date,
+        exp: money,
+        inc:0,
+        type: typeD,
+      });  
 
-    dateExp.push({
-      dateE: date,
-      exp: money
-    });
-
+    }
+    else if (typeD === 'inc'){
+      dateExp.push({
+        dateE: date,
+        exp:0,
+        inc: money,
+        type: typeD,
+      });  
+    }
 
 }
 
 
 function renderTodo() {
 
+
   let todoHTML = '';
-  let total = 0;
-  let totalItem = [];
+  let totalE = 0;
+  let totalI = 0;
+
+  let inOut;
   
     for (i=expList.length-1; i >= 0 ; i--){
+
+      type = expList[i].typeE;
+
       
       let todoObject = expList[i];
       let {name , date} = todoObject;
@@ -86,15 +128,22 @@ function renderTodo() {
       let todoName = name.replace(/\d/g, '');
 
 
+      if (type === 'exp'){
+        totalE += money;
+        inOut = 'Out';
+      }
+      else if (type === 'inc'){
+        totalI += money;
+        inOut = 'In';
+      }
 
-      total += money;
     
       const html = `
 
           <div id="date-lb">${date}</div>
           <div id="name-lb">${todoName}</div>
           <div id="amount-lb">${money}</div>
-          <div id="type-lb">Out</div>
+          <div id="type-lb">${inOut}</div>
 
           <div id="remove-lb">
               <button class="remove-btn" onclick="
@@ -110,11 +159,18 @@ function renderTodo() {
           </div>`;
       todoHTML += html;
 
+      
+    if (type === 'exp'){
+      document.querySelector('#expense').innerText = totalE;
+    }
+    else if (type === 'inc'){
+      document.querySelector('#total').innerText = totalI;
+
+    }
 
     }
 
     document.querySelector('#list-body').innerHTML = todoHTML;
-    document.querySelector('#expense').innerText = total;
 
 }
 
@@ -124,22 +180,26 @@ function renderDateExp(){
 
   for (i=dateExp.length-1; i >= 0 ; i--){
 
+
     let html;
 
-    if (i === 0){
+    console.log(`inside inc= ${dateExp[i].inc}`);
+
+      if (i === 0){
+        html = `
+  
+        <div id="date-db">Dateless</div>
+        <div id="expense-db">${dateExp[i].exp}</div>
+        <div id="income-db">${dateExp[i].inc}</div>
+      `;}
+      else{
       html = `
+        <div id="date-db">${dateExp[i].dateE}</div>
+        <div id="expense-db">${dateExp[i].exp}</div>
+        <div id="income-db">${dateExp[i].inc}</div>
+      `;}
 
-      <div id="date-db">Dateless</div>
-      <div id="expense-db">${dateExp[i].exp}</div>
-      <div id="income-db">0</div>
-    `;}
-    else{
-    html = `
-      <div id="date-db">${dateExp[i].dateE}</div>
-      <div id="expense-db">${dateExp[i].exp}</div>
-      <div id="income-db">0</div>
-    `;}
-
+    
     dateHTML += html;
 
   }
@@ -150,11 +210,25 @@ function renderDateExp(){
 function adjustExp(date,money){
 
   for (i=0; i < dateExp.length; i++){
-    if (dateExp[i].dateE === date){
-      dateExp[i].exp -= money;
-      localStorage.setItem('dateExp', JSON.stringify(dateExp));
-      return;
+
+    type = dateExp[i].type;
+
+    if (type === 'exp'){
+      if (dateExp[i].dateE === date){
+        dateExp[i].exp -= money;
+        localStorage.setItem('dateExp', JSON.stringify(dateExp));
+        return;
+      }
     }
+    else if (type === 'inc'){
+      if (dateExp[i].dateE === date){
+        dateExp[i].inc -= money;
+        localStorage.setItem('dateExp', JSON.stringify(dateExp));
+        return;
+      }
+    }
+
+      
   }
 
 }

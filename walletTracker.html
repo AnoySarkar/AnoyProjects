@@ -18,7 +18,13 @@
     dateExp = [{
           dateE: '',
           exp: 0,
+          inc: 0,
+          type:'',
         }];
+        document.querySelector('#expense').innerText = 0;
+        document.querySelector('#total').innerText = 0;
+
+
     localStorage.setItem('expList', JSON.stringify(expList));
     localStorage.setItem('dateExp', JSON.stringify(dateExp));
 
@@ -32,8 +38,8 @@
 
             <h4 id="entry-type">Entry Type: </h4>
             <select name="type" id="type">
-              <option value="expense">Expense</option>
-              <option value="income">Income</option>
+              <option value="exp">Expense</option>
+              <option value="inc">Income</option>
             </select>
         </div>
           <hr>
@@ -51,11 +57,11 @@
 
 
       <div id="add-new1">
-        <h1 id="expense"></h1>
+        <h1 id="expense">0</h1>
       </div>
 
       <div id="add-new2">
-        <h1 id="total"></h1>
+        <h1 id="total">0</h1>
       </div>
     </div>
 
@@ -68,11 +74,7 @@
           <div id="income-dh">Income</div>
         </div>
 
-        <div id="date-body">
-          <div id="date-db">2025-02-18</div>
-          <div id="expense-db">11000</div>
-          <div id="income-db">0</div>
-        </div>
+        <div id="date-body"></div>
         <div id="date-feet"></div>
       </div>
 

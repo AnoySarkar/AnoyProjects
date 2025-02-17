@@ -51,6 +51,7 @@ body{
   display: inline-block;
   border-radius: 30px;
   border: none;
+  background-color:#1D99F3;
 }
 
 #name-container{
@@ -114,8 +115,8 @@ body{
   height: 200px;
   width: 350px;
   margin-left: 90px;
-  background-color: red;
-  color: white;
+  color: rgb(251, 26, 26);
+  background-color: rgb(210, 210, 210);
   border-radius: 100px;
   display: flex;
   justify-content: center;
@@ -125,7 +126,7 @@ body{
 
 }
 
-#expense{
+#expense, #total{
   font-size: 70px;
 }
 
@@ -134,7 +135,8 @@ body{
   height: 200px;
   width: 350px;
   margin-left: 30px;
-  background-color: #4fef22;
+  color: #44d41d;
+  background-color: rgb(210, 210, 210);
   border-radius: 100px;
   box-shadow: 1px 1px 5px rgb(10, 10, 10);
   display: flex;
@@ -191,7 +193,7 @@ body{
 #list-head{
 
   grid-template-columns: 150px 200px 200px 100px 100px;
-  background-color: #4fef22;
+  background-color:#1D99F3;
   display: grid;
   height: 50px;
   align-items: center;
@@ -203,7 +205,7 @@ body{
 #list-feet{
 
   grid-template-columns: 150px 200px 200px 100px 100px;
-  background-color: #4fef22;
+  background-color:#1D99F3;
   display: grid;
   height: 10px;
   align-items: center;
@@ -215,7 +217,7 @@ body{
 }
 
 #date-head{
-  background-color: #4fef22;
+  background-color: #1D99F3;
   display: grid;
   height: 50px;
   align-items: center;
@@ -227,7 +229,7 @@ body{
 }
 
 #date-feet{
-  background-color: #4fef22;
+  background-color:#1D99F3;
   display: grid;
   height: 10px;
   align-items: center;
@@ -255,7 +257,7 @@ body{
 }
 
 #list-body{
-  background-color: #1D99F3;
+  background-color: rgb(210, 210, 210);
   display: grid;
   grid-template-columns: 150px 200px 200px 100px 100px;
 }
@@ -279,7 +281,7 @@ body{
 }
 
 #date-body{
-  background-color: #1D99F3;
+  background-color: rgb(210, 210, 210);
   display: grid;
   grid-template-columns: 150px 150px 150px;
 }
