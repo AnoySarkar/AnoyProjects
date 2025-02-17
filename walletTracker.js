@@ -114,7 +114,7 @@ function renderTodo() {
     }
 
     document.querySelector('#list-body').innerHTML = todoHTML;
-    document.querySelector('#total').innerText = 'Total: ' + total;
+    document.querySelector('#expense').innerText = total;
 
 }
 

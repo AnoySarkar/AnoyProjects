@@ -1,5 +1,5 @@
 body{
-  background: radial-gradient(circle, #646464, #252525);
+  background: radial-gradient(circle, #87CEEB, #4682B4);
   text-align: center;
   font-family: Arial, Helvetica, sans-serif;
 }
@@ -25,7 +25,7 @@ body{
   background-color: rgb(210, 210, 210);
   color: black;
   font-weight: bold;
-  box-shadow: 2px 2px 10px rgb(5, 5, 5);
+  box-shadow: 1px 1px 5px rgb(10, 10, 10);
   margin-left: 50px;
   height: 200px;
   width: 450px;
@@ -109,22 +109,46 @@ body{
   height: 300px;
 }
 
-#add-new{
+#add-new1{
 
   height: 200px;
-  width: 760px;
-  margin-left: 70px;
-  background: radial-gradient(circle, #87CEEB, #4682B4);
+  width: 350px;
+  margin-left: 90px;
+  background-color: red;
+  color: white;
+  border-radius: 100px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 1px 1px 5px rgb(10, 10, 10);
+
+
+}
+
+#expense{
+  font-size: 70px;
+}
+
+#add-new2{
+
+  height: 200px;
+  width: 350px;
+  margin-left: 30px;
+  background-color: #4fef22;
+  border-radius: 100px;
+  box-shadow: 1px 1px 5px rgb(10, 10, 10);
   display: flex;
   justify-content: center;
   align-items: center;
 
 }
 
+
+
 .remove-btn{
   height: 30px;
   font-size: 15px;
-  background: radial-gradient(circle, #ff3d3d, #ff0a0a);
+  background-color: red;
   color: white;
   border: none;
   border-radius: 20px;
@@ -144,7 +168,7 @@ body{
   width: 760px;
   margin-left: 70px;
   background-color: white;
-  box-shadow: 2px 2px 10px rgb(5, 5, 5);
+  box-shadow: 1px 1px 5px rgb(10, 10, 10);
   border-radius: 20px;
 }
 
@@ -152,12 +176,12 @@ body{
   width: 450px;
   margin-left: 50px;
   background-color: white;
-  box-shadow: 2px 2px 10px rgb(5, 5, 5);
+  box-shadow: 1px 1px 5px rgb(10, 10, 10);
   border-radius: 20px;
 }
 
 #add-new{
-  box-shadow: 2px 2px 10px rgb(5, 5, 5);
+  box-shadow: 1px 1px 5px rgb(10, 10, 10);
   border-radius: 20px;
 
 } 
@@ -167,7 +191,7 @@ body{
 #list-head{
 
   grid-template-columns: 150px 200px 200px 100px 100px;
-  background: radial-gradient(circle, #9aff71, #4fef22);
+  background-color: #4fef22;
   display: grid;
   height: 50px;
   align-items: center;
@@ -179,17 +203,19 @@ body{
 #list-feet{
 
   grid-template-columns: 150px 200px 200px 100px 100px;
-  background-color: rgb(115, 253, 97);
+  background-color: #4fef22;
   display: grid;
-  height: 5px;
+  height: 10px;
   align-items: center;
   font-weight: bold;
-  border-radius:0 0 3px 3px;
+  border-radius:0 0 5px 5px;
+
+
   padding-left: 10px;
 }
 
 #date-head{
-  background: radial-gradient(circle, #9aff71, #4fef22);
+  background-color: #4fef22;
   display: grid;
   height: 50px;
   align-items: center;
@@ -201,13 +227,13 @@ body{
 }
 
 #date-feet{
-  background-color: rgb(115, 253, 97);
+  background-color: #4fef22;
   display: grid;
-  height: 5px;
+  height: 10px;
   align-items: center;
   grid-template-columns: 150px 150px 150px;
   padding-left: 10px;
-  border-radius:0 0 3px 3px;
+  border-radius:0 0 5px 5px;
   font-weight: bold;
 
 }
@@ -229,7 +255,7 @@ body{
 }
 
 #list-body{
-  background: radial-gradient(circle, #87CEEB, #4682B4);
+  background-color: #1D99F3;
   display: grid;
   grid-template-columns: 150px 200px 200px 100px 100px;
 }
@@ -253,7 +279,7 @@ body{
 }
 
 #date-body{
-  background: radial-gradient(circle, #87CEEB, #4682B4);
+  background-color: #1D99F3;
   display: grid;
   grid-template-columns: 150px 150px 150px;
 }
