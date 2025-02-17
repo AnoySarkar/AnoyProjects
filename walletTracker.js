@@ -15,8 +15,19 @@ console.log(`inside inc= ${dateExp[0].inc}`);
 
 
 
-
 let entryType = document.querySelector('#type');
+
+function typeBack(){
+
+  let typeX =  entryType.value;
+  
+  if (typeX === 'inc'){
+    entryType.style.backgroundColor = '#44d41d';
+  }
+  else{
+    entryType.style.backgroundColor = 'rgb(251, 26, 26)';
+  }
+}
 
 
   document.querySelector('#inputName')

@@ -13,7 +13,7 @@
 <body>
   
   <h1 id="wallet-tracker">Wallet Tracker</h1>
-  <button class="reset"><img height="40px" src="reset.png" alt="" onclick="
+ <button class="reset"><img height="40px" src="reset.png" alt="" onclick="
     expList = [];
     dateExp = [{
           dateE: '',
@@ -37,7 +37,7 @@
         <div id="type-container">
 
             <h4 id="entry-type">Entry Type: </h4>
-            <select name="type" id="type">
+            <select name="type" id="type" onchange="typeBack();">
               <option value="exp">Expense</option>
               <option value="inc">Income</option>
             </select>
@@ -80,11 +80,11 @@
 
       <div id="exp-list">
         <div id="list-head">
-          <div id="date">date</div>
-          <div id="name">name</div>
-          <div id="amount">amount</div>
-          <div id="type">type</div>
-          <div id="remove">remove</div>
+          <div id="date-lh">date</div>
+          <div id="name-lh">name</div>
+          <div id="amount-lh">amount</div>
+          <div id="type-lh">type</div>
+          <div id="remove-lh">remove</div>
         </div>
 
         <div id="list-body">

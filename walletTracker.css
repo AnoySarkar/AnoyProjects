@@ -5,7 +5,7 @@ body{
 }
 
 #wallet-tracker{
-  color: rgb(255, 255, 255);
+  color: black;
   font-weight: bold;
   display: inline-block;
 
@@ -49,9 +49,10 @@ body{
 }
 #type{
   display: inline-block;
+  height: 35px;
   border-radius: 30px;
   border: none;
-  background-color:#1D99F3;
+  background-color:rgb(251, 26, 26);
 }
 
 #name-container{
@@ -240,7 +241,7 @@ body{
 
 }
 
-#date, #name, #amount, #type, #remove{
+#date-lh, #name-lh, #amount-lh, #type-lh, #remove-lh{
   height: 35px;
   padding-left: 5px;
   display: flex;
