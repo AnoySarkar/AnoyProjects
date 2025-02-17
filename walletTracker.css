@@ -49,10 +49,13 @@ body{
 }
 #type{
   display: inline-block;
-  height: 35px;
+  height: 40px;
+  width: 200px;
   border-radius: 30px;
   border: none;
   background-color:rgb(251, 26, 26);
+  padding-left: 10px;
+  font-size: large;
 }
 
 #name-container{
