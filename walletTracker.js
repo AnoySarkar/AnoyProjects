@@ -1,11 +1,6 @@
 let expList = JSON.parse(localStorage.getItem('expList')) || [];
 
-let dateExp = JSON.parse(localStorage.getItem('dateExp')) || [{
-  dateE: '',
-  exp: 0,
-  inc: 0,
-  type: '',
-}];
+let dateExp = JSON.parse(localStorage.getItem('dateExp')) || [];
 
 let type;
 let typeD;
@@ -161,20 +156,13 @@ function renderDateExp() {
 
   for (i = dateExp.length - 1; i >= 0; i--) {
     let html;
-
-    if (i === 0) {
-      html = `
-        <div id="date-db">Dateless</div>
-        <div id="expense-db">${dateExp[i].exp}</div>
-        <div id="income-db">${dateExp[i].inc}</div>
-      `;
-    } else {
+    
       html = `
         <div id="date-db">${dateExp[i].dateE}</div>
         <div id="expense-db">${dateExp[i].exp}</div>
         <div id="income-db">${dateExp[i].inc}</div>
       `;
-    }
+    
     dateHTML += html;
   }
   document.querySelector('#date-body').innerHTML = dateHTML;
