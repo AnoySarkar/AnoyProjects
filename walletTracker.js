@@ -219,39 +219,33 @@ function renderDateExp(){
 
 }
 
-function adjustExp(date,money){
+function adjustExp(date, money) {
+    let totalE = parseInt(document.querySelector('#expense').innerText) || 0;
+    let totalI = parseInt(document.querySelector('#total').innerText) || 0;
+    let totalO = parseInt(document.querySelector('#onhand').innerText) || 0;
 
-      let totalE = parseInt(document.querySelector('#expense').innerText);
-      let totalI = parseInt(document.querySelector('#total').innerText);
-      let totalO = parseInt(document.querySelector('#onhand').innerText);
+    for (let i = 0; i < dateExp.length; i++) {
+        if (dateExp[i].dateE === date) {
+            if (dateExp[i].type === 'exp') {
+                dateExp[i].exp -= money;
+                totalE -= money;
+                totalO += money;
+            } else if (dateExp[i].type === 'inc') {
+                dateExp[i].inc -= money;
+                totalI -= money;
+                totalO -= money;
+            }
 
-  for (i=0; i < dateExp.length; i++){
+            
+            if (dateExp[i].exp === 0 && dateExp[i].inc === 0) {
+                dateExp.splice(i, 1);
+            }
 
-    type = dateExp[i].type;
-
-    if (type === 'exp'){
-      if (dateExp[i].dateE === date){
-        dateExp[i].exp -= money;
-        localStorage.setItem('dateExp', JSON.stringify(dateExp));
-        document.querySelector('#expense').innerText = totalE-money;
-        document.querySelector('#onhand').innerText = totalO+money;
-        return;
-      }
+            localStorage.setItem('dateExp', JSON.stringify(dateExp));
+            document.querySelector('#expense').innerText = totalE;
+            document.querySelector('#total').innerText = totalI;
+            document.querySelector('#onhand').innerText = totalO;
+            return;
+        }
     }
-    else if (type === 'inc'){
-      if (dateExp[i].dateE === date){
-        dateExp[i].inc -= money;
-        localStorage.setItem('dateExp', JSON.stringify(dateExp));
-        document.querySelector('#total').innerText = totalI-money;
-        document.querySelector('#onhand').innerText = totalO-money;
-
-        return;
-      }
-    }
-
-      
-  }
-
 }
-
-  
