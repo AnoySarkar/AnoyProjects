@@ -17,12 +17,7 @@
   
     sound.play();
     expList = [];
-    dateExp = [{
-          dateE: '',
-          exp: 0,
-          inc: 0,
-          type:'',
-        }];
+    dateExp = [];
         document.querySelector('#expense').innerText = 0;
         document.querySelector('#total').innerText = 0;
         document.querySelector('#onhand').innerText = 0;
@@ -95,11 +90,11 @@
         </div>
 
         <div id="list-body">
-          <div id="date-lb">2025-02-18</div>
-          <div id="name-lb">rent</div>
-          <div id="amount-lb">5500</div>
-          <div id="type-lb">Out</div>
-          <div id="remove-lb">X</div>
+          <div id="date-lb"></div>
+          <div id="name-lb"></div>
+          <div id="amount-lb"></div>
+          <div id="type-lb"></div>
+          <div id="remove-lb"></div>
 
 
         </div>
