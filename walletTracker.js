@@ -197,13 +197,16 @@ function adjustExp(i, money) {
         localStorage.setItem('dateExp', JSON.stringify(dateExp));
         document.querySelector('#expense').innerText = totalE - money;
         document.querySelector('#onhand').innerText = totalO + money;
-        return;
     } 
     else if (type === 'inc') {
         dateExp[i].inc -= money;
         localStorage.setItem('dateExp', JSON.stringify(dateExp));
         document.querySelector('#total').innerText = totalI - money;
         document.querySelector('#onhand').innerText = totalO - money;
-        return;
       }
+
+ if (dateExp[i].exp === 0 && dateExp[i].inc === 0){
+   dateExp.splice(${i}, 1);
+   localStorage.setItem('dateExp', JSON.stringify(dateExp));
+ }
 }
