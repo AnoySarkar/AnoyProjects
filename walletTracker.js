@@ -152,13 +152,45 @@ function renderTodo() {
   document.querySelector('#list-body').innerHTML = todoHTML;
 }
 
+function renderDateExp(){
+
+  let dateHTML = '';
+
+  for (i=dateExp.length-1; i >= 0 ; i--){
+
+
+    let html;
+
+
+      if (i === 0){
+        html = `
+  
+        <div id="date-db">Dateless</div>
+        <div id="expense-db">${dateExp[i].exp}</div>
+        <div id="income-db">${dateExp[i].inc}</div>
+      `;}
+      else{
+      html = `
+        <div id="date-db">${dateExp[i].dateE}</div>
+        <div id="expense-db">${dateExp[i].exp}</div>
+        <div id="income-db">${dateExp[i].inc}</div>
+      `;}
+
+    
+    dateHTML += html;
+
+  }
+  document.querySelector('#date-body').innerHTML = dateHTML;
+
+}
+
 function adjustExp(i, money) {
   let totalE = parseInt(document.querySelector('#expense').innerText);
   let totalI = parseInt(document.querySelector('#total').innerText);
   let totalO = parseInt(document.querySelector('#onhand').innerText);
 
   
-    type = dateExp[i].type;
+   let type = dateExp[i].type;
 
     if (type === 'exp') {
         dateExp[i].exp -= money;
