@@ -116,16 +116,16 @@ function renderTodo() {
 
     if (type === 'exp') {
       totalE += money;
-      inOut = 'Out';
+      inOut = '🟥Out';
     } else if (type === 'inc') {
       totalI += money;
-      inOut = 'In';
+      inOut = '🟩In';
     }
 
     const html = `
       <div id="date-lb">${date}</div>
-      <div id="name-lb">${todoName}</div>
       <div id="amount-lb">${money}</div>
+      <div id="name-lb">${todoName}</div>
       <div id="type-lb">${inOut}</div>
       <div id="remove-lb">
           <button class="remove-btn" onclick="
