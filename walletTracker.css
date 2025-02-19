@@ -171,7 +171,7 @@ body{
 .remove-btn{
   height: 30px;
   font-size: 15px;
-  background-color: black;
+  background-color: gray;
   color: white;
   border: none;
   border-radius: 20px;
