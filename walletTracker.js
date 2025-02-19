@@ -100,10 +100,10 @@ function renderTodo() {
       inOut = '🟩';
     }
     const html = `
+      <div id="type-lb">${inOut}</div>
       <div id="date-lb">${date}</div>
       <div id="amount-lb">${money}</div>
       <div id="name-lb">${todoName}</div>
-      <div id="type-lb">${inOut}</div>
       <div id="remove-lb">
           <button class="remove-btn" onclick="
               sound.play();

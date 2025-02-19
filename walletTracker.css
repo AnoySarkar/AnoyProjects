@@ -1,11 +1,15 @@
+
 body{
-  background: radial-gradient(circle, #87CEEB, #4682B4);
+  background-image: url('wall2c.png');
+  background-size: cover;
+  background-position: center;
+
   text-align: center;
   font-family: Arial, Helvetica, sans-serif;
 }
 
 #wallet-tracker{
-  color: black;
+  color: white;
   font-weight: bold;
   display: inline-block;
 
@@ -61,7 +65,7 @@ body{
   height: 50px;
   display: flex;
   text-align: left;
-  align-items: baseline;
+  align-items: center;
   border-radius: 20px 20px 0 0;
 }
 
@@ -72,7 +76,6 @@ body{
   align-items: baseline;
   border-radius: 20px 20px 0 0;
   padding-bottom: 20px;
-
 }
 
 #text{
@@ -109,24 +112,21 @@ body{
 #bottom-container{
   margin-top: 50px;
   display: flex;
-  align-items:baseline;
-  height: 300px;
+  align-items: flex-start;
 }
 
 #add-new1{
 
   height: 200px;
   width: 200px;
-  margin-left: 90px;
+  margin-left: 60px;
   color: rgb(251, 26, 26);
-  background-color: rgb(237, 237, 237);
   border-radius: 100px;
   display: flex;
   justify-content: center;
   align-items: center;
   box-shadow: 1px 1px 5px rgb(10, 10, 10);
-
-
+  overflow: hidden;
 }
 
 #expense, #total{
@@ -142,12 +142,12 @@ body{
   width: 200px;
   margin-left: 30px;
   color: #44d41d;
-  background-color: rgb(237, 237, 237);
   border-radius: 100px;
   box-shadow: 1px 1px 5px rgb(10, 10, 10);
   display: flex;
   justify-content: center;
   align-items: center;
+  overflow: hidden;
 
 }
 
@@ -156,13 +156,14 @@ body{
   height: 200px;
   width: 300px;
   margin-left: 30px;
-  color: black;
-  background-color: rgb(237, 237, 237);
+  color: white;
   border-radius: 100px;
   box-shadow: 1px 1px 5px rgb(10, 10, 10);
   display: flex;
   justify-content: center;
   align-items: center;
+  overflow: hidden;
+
 
 }
 
@@ -188,7 +189,7 @@ body{
 
 
 #exp-list{
-  width: 760px;
+  width: 600px;
   margin-left: 70px;
   background-color: white;
   box-shadow: 1px 1px 5px rgb(10, 10, 10);
@@ -198,7 +199,6 @@ body{
 #date-total{
   width: 450px;
   margin-left: 50px;
-  background-color: white;
   box-shadow: 1px 1px 5px rgb(10, 10, 10);
   border-radius: 20px;
 }
@@ -213,7 +213,7 @@ body{
 
 #list-head{
 
-  grid-template-columns: 150px 150px 300px 50px 100px;
+  grid-template-columns: 50px 110px 100px 230px 100px;
   background-color:#1D99F3;
   display: grid;
   height: 50px;
@@ -223,9 +223,10 @@ body{
   padding-left: 10px;
 }
 
+
 #list-feet{
 
-  grid-template-columns: 150px 150px 300px 50px 100px;
+  grid-template-columns: 50px 110px 100px 230px 100px;
   background-color:#1D99F3;
   display: grid;
   height: 10px;
@@ -275,13 +276,10 @@ body{
   display: flex;
   align-items: center;
   text-align: left;
+  overflow: hidden;
 }
 
-#list-body{
-  background-color: rgb(210, 210, 210);
-  display: grid;
-  grid-template-columns: 150px 150px 300px 50px 100px;
-}
+
 
 
 #date-dh, #expense-dh, #income-dh{
@@ -299,6 +297,12 @@ body{
   display: flex;
   align-items: center;
   text-align: left;
+}
+
+#list-body{
+  background-color: rgb(210, 210, 210);
+  display: grid;
+  grid-template-columns: 50px 110px 100px 230px 100px;
 }
 
 #date-body{
