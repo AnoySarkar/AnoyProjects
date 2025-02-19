@@ -1532,37 +1532,4 @@ function adjustExp(i, money) {
         document.querySelector('#onhand').innerText = totalO - money;
         return;
       }
-    
-  
-}
-Storage.setItem('dateExp', JSON.stringify(dateExp));
-        document.querySelector('#total').innerText = totalI - money;
-        document.querySelector('#onhand').innerText = totalO - money;
-        return;
-      }
-    
-  
-}
-etItem('dateExp', JSON.stringify(dateExp));
-        document.querySelector('#total').innerText = totalI - money;
-        document.querySelector('#onhand').innerText = totalO - money;
-        return;
-      }
-    
-  
-}
-Storage.setItem('dateExp', JSON.stringify(dateExp));
-        document.querySelector('#total').innerText = totalI - money;
-        document.querySelector('#onhand').innerText = totalO - money;
-        return;
-      }
-    
-  
-}
-ent.querySelector('#total').innerText = totalI - money;
-        document.querySelector('#onhand').innerText = totalO - money;
-        return;
-      }
-    
-  
 }
