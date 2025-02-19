@@ -218,7 +218,7 @@ body{
 #list-head{
 
   grid-template-columns: 50px 110px 100px 230px 100px;
-  background-color:#5862f9;
+  background-color: #1D99F3;
   display: grid;
   height: 50px;
   align-items: center;
@@ -231,7 +231,7 @@ body{
 #list-feet{
 
   grid-template-columns: 50px 110px 100px 230px 100px;
-  background-color:#5862f9;
+  background-color:#1D99F3;
   display: grid;
   height: 10px;
   align-items: center;
@@ -243,7 +243,7 @@ body{
 }
 
 #date-head{
-  background-color: #5862f9;
+  background-color: #1D99F3;
   display: grid;
   height: 50px;
   align-items: center;
@@ -255,7 +255,7 @@ body{
 }
 
 #date-feet{
-  background-color:#5862f9;
+  background-color:#1D99F3;
   display: grid;
   height: 10px;
   align-items: center;
