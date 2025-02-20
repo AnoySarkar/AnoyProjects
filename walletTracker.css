@@ -50,7 +50,7 @@ body{
   display: flex;
   column-gap: calc(10% * 0.6);
   margin-right: 20px;
-  margin-left: 50px;
+  margin-left: 25px;
   margin-right: 50px;
 }
 
@@ -63,7 +63,7 @@ body{
 
 
 #date-total{
-  width: 30%;
+  width: 35%;
   margin-left: 50px;
   margin-right: 50px;
   box-shadow: 1px 1px 5px rgb(10, 10, 10);
@@ -71,7 +71,7 @@ body{
 }
 
 #exp-list{
-  width: 45%;
+  width: 65%;
   margin-left: 50px;
   margin-right: 50px;
   background-color: white;
@@ -306,7 +306,6 @@ body{
 
 #remove-lb{
 padding-left: 20px;
-justify-content: center;
 }
 
 #remove-lh{
@@ -387,8 +386,9 @@ justify-content: center;
   #expense, #total{
     font-size: 25px;
   }
-
-    #date-lh, #name-lh, #amount-lh, #type-lh, #remove-lh{
+  
+  
+  #date-lh, #name-lh, #amount-lh, #type-lh, #remove-lh{
     align-items: center;
     justify-content: center;
   }
@@ -398,4 +398,5 @@ justify-content: center;
     justify-content: center;
   }
   
+
 }
