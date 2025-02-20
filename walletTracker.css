@@ -251,7 +251,7 @@ body{
 
 #list-head{
 
-  grid-template-columns: 1fr 100px 2fr 3fr 2fr;
+  grid-template-columns: 1fr 120px 2fr 3fr 1fr;
   background-color: #1D99F3;
   display: grid;
   height: 50px;
@@ -274,7 +274,7 @@ body{
   display: grid;
   height: 50px;
   align-items: center;
-  grid-template-columns: 100px 1fr 1fr;
+  grid-template-columns: 120px 1fr 1fr;
   padding-left: 10px;
   border-radius:20px 20px 0 0;
   font-weight: bold;
@@ -290,7 +290,6 @@ body{
 
 #date-lh, #name-lh, #amount-lh, #type-lh, #remove-lh{
   height: 35px;
-  padding-left: 5px;
   display: flex;
   align-items: center;
   text-align: left;
@@ -298,12 +297,21 @@ body{
 
 #date-lb, #name-lb, #amount-lb, #type-lb, #remove-lb{
   height: 35px;
-  padding-left: 15px;
+  padding-left: 10px;
   display: flex;
   align-items: center;
   text-align: left;
   overflow: hidden;
 }
+
+#remove-lb{
+padding-left: 20px;
+justify-content: center;
+}
+
+#remove-lh{
+  margin-right: 10px;
+  }
 
 
 
@@ -328,14 +336,14 @@ body{
 #list-body{
   background-color: rgb(210, 210, 210);
   display: grid;
-  grid-template-columns: 1fr 100px 2fr 3fr 2fr;
+  grid-template-columns: 1fr 120px 2fr 3fr 1fr;
 
 }
 
 #date-body{
   background-color: rgb(210, 210, 210);
   display: grid;
-  grid-template-columns: 100px 1fr 1fr;
+  grid-template-columns: 120px 1fr 1fr;
 }
 
 @media(max-width:760px){

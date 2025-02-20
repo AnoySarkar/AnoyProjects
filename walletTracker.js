@@ -112,7 +112,7 @@ function renderTodo() {
               localStorage.setItem('expList', JSON.stringify(expList));
               renderTodo();
               renderDateExp();
-          ">Remove</button>
+          ">X</button>
       </div>`;
     todoHTML += html;
     if (type === 'exp') {
