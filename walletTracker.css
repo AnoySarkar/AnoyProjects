@@ -387,5 +387,15 @@ justify-content: center;
   #expense, #total{
     font-size: 25px;
   }
+
+    #date-lh, #name-lh, #amount-lh, #type-lh, #remove-lh{
+    align-items: center;
+    justify-content: center;
+  }
+
+  #date-lb, #name-lb, #amount-lb, #type-lb, #remove-lb{
+    align-items: center;
+    justify-content: center;
+  }
   
 }
