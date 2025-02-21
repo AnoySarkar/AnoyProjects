@@ -304,13 +304,9 @@ body{
   overflow: hidden;
 }
 
-#remove-lb{
-padding-left: 20px;
-}
-
 #remove-lh{
-  margin-right: 10px;
-  }
+padding-left: 10px;
+}
 
 
 
