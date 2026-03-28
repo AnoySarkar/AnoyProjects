@@ -10,8 +10,20 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
   <style>
+    /* Animated Gradient Background */
+    body {
+      background: linear-gradient(-45deg, #fdf8f5, #fce7f3, #e0e7ff, #ccfbf1, #fef08a);
+      background-size: 400% 400%;
+      animation: gradientBG 15s ease infinite;
+    }
+    @keyframes gradientBG {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
     @media print {
-      body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; }
+      body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; animation: none !important; }
       .print-hidden { display: none !important; }
       .print-break-inside-avoid { break-inside: avoid; }
       .print-page-break { page-break-after: always; }
@@ -36,12 +48,68 @@
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #111827; border-radius: 8px; }
   </style>
 </head>
-<body class="bg-[#fdf8f5] text-gray-900 font-sans selection:bg-blue-200">
+<body class="text-gray-900 font-sans selection:bg-blue-200">
   <div id="root"></div>
 
-  <!-- Note: Removed data-type="module" to prevent Babel require() errors -->
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback, Fragment } = React;
+
+    // --- Audio Engine (Synthesized sounds for zero external dependencies) ---
+    let audioCtx = null;
+    let lastSoundTime = 0;
+    const playSound = (type) => {
+      try {
+        if (!audioCtx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) audioCtx = new AudioContext();
+          else return;
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const now = Date.now();
+        // Throttle rapid painting sounds
+        if ((type === 'paint' || type === 'erase') && now - lastSoundTime < 40) return;
+        if (type === 'paint' || type === 'erase') lastSoundTime = now;
+
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        const t = audioCtx.currentTime;
+        if (type === 'paint') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(600 + Math.random() * 200, t);
+          gainNode.gain.setValueAtTime(0.05, t);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+          osc.start(t);
+          osc.stop(t + 0.1);
+        } else if (type === 'erase') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(300, t);
+          osc.frequency.exponentialRampToValueAtTime(100, t + 0.1);
+          gainNode.gain.setValueAtTime(0.05, t);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+          osc.start(t);
+          osc.stop(t + 0.1);
+        } else if (type === 'click') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(400, t);
+          gainNode.gain.setValueAtTime(0.03, t);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+          osc.start(t);
+          osc.stop(t + 0.05);
+        } else if (type === 'trash') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(150, t);
+          osc.frequency.exponentialRampToValueAtTime(50, t + 0.2);
+          gainNode.gain.setValueAtTime(0.05, t);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+          osc.start(t);
+          osc.stop(t + 0.2);
+        }
+      } catch (e) { console.warn("Audio not supported or restricted"); }
+    };
 
     // --- Inline Icon Components ---
     const CalendarIcon = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
@@ -128,6 +196,18 @@
       return weeks;
     };
 
+    // Helper to check if a day is fully completed (all 24 hours * 2 triangles = 48 parts filled)
+    const isDayComplete = (dayData) => {
+      if (!dayData) return false;
+      let filledSegments = 0;
+      for (let i = 0; i < 24; i++) {
+        if (dayData[i] && dayData[i].t1 && dayData[i].t2) {
+          filledSegments++;
+        }
+      }
+      return filledSegments === 24;
+    };
+
     // --- Main Application ---
     function App() {
       const [isLoaded, setIsLoaded] = useState(false);
@@ -163,7 +243,6 @@
       const [resetMonthStr, setResetMonthStr] = useState(initialMonthStr);
       const [pendingReset, setPendingReset] = useState(null);
 
-      // Initialization logic for current week views
       useEffect(() => {
         const weekIdx = availableWeeks.findIndex(w => w.dates.includes(todayStr));
         setSelectedWeekIndex(weekIdx !== -1 ? weekIdx : 0);
@@ -185,20 +264,27 @@
       useEffect(() => {
         const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (savedData) {
-          try {
-            setAllData(JSON.parse(savedData));
-          } catch (e) {
-            console.error("Error loading local data", e);
-          }
+          try { setAllData(JSON.parse(savedData)); } 
+          catch (e) { console.error("Error loading local data", e); }
         }
         setIsLoaded(true);
       }, []);
 
       // --- 2. Handlers (Save to Local Storage) ---
+      const handleColorSelect = (id) => {
+        playSound('click');
+        setSelectedColorId(id);
+      };
+
       const handleUpdateSegment = useCallback((dateStr, hourIndex, triangleId, colorId) => {
         const finalColorId = colorId === 'erase' ? null : colorId;
 
         setAllData(prev => {
+          // Prevent unnecessary state updates if color is already the same
+          if (prev[dateStr]?.[hourIndex]?.[triangleId] === finalColorId) return prev;
+
+          playSound(colorId === 'erase' ? 'erase' : 'paint');
+
           const dayData = prev[dateStr] || {};
           const hourData = dayData[hourIndex] || { t1: null, t2: null };
           const newData = {
@@ -206,7 +292,6 @@
             [dateStr]: { ...dayData, [hourIndex]: { ...hourData, [triangleId]: finalColorId } }
           };
           
-          // Save instantly to local storage
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
           return newData;
         });
@@ -231,9 +316,9 @@
       // Data Reset Execution
       const executeReset = () => {
         if (!pendingReset) return;
+        playSound('trash');
         
         let currentData = { ...allData };
-        
         if (pendingReset.type === 'day') {
           delete currentData[pendingReset.payload];
         } else if (pendingReset.type === 'week') {
@@ -249,18 +334,34 @@
         setPendingReset(null); 
       };
 
-      // --- 3. Statistics Calculation ---
+      // --- 3. Statistics Calculation (With Completed Days Average) ---
       const calculateStats = (dateStringsArray) => {
         const totals = CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
+        const completedTotals = CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
+        
         let totalTrackedHours = 0;
+        let completedDaysCount = 0;
+
         dateStringsArray.forEach(dateStr => {
           const dayData = allData[dateStr] || {};
+          const isComplete = isDayComplete(dayData);
+          
+          if (isComplete) completedDaysCount++;
+
           Object.values(dayData).forEach(hourData => {
-            if (hourData.t1) { totals[hourData.t1] += 0.5; totalTrackedHours += 0.5; }
-            if (hourData.t2) { totals[hourData.t2] += 0.5; totalTrackedHours += 0.5; }
+            if (hourData.t1) { 
+              totals[hourData.t1] += 0.5; 
+              totalTrackedHours += 0.5; 
+              if (isComplete) completedTotals[hourData.t1] += 0.5;
+            }
+            if (hourData.t2) { 
+              totals[hourData.t2] += 0.5; 
+              totalTrackedHours += 0.5; 
+              if (isComplete) completedTotals[hourData.t2] += 0.5;
+            }
           });
         });
-        return { totals, totalTrackedHours };
+        return { totals, completedTotals, totalTrackedHours, completedDaysCount };
       };
 
       const statsDay = calculateStats([statDate]);
@@ -294,7 +395,7 @@
                   </span>
                 </p>
                 <div className="flex gap-4">
-                  <button onClick={() => setPendingReset(null)} className="flex-1 bg-gray-100 border-4 border-gray-900 font-black text-gray-900 py-3 rounded-2xl uppercase tracking-wider hover:bg-gray-200">Cancel</button>
+                  <button onClick={() => { playSound('click'); setPendingReset(null); }} className="flex-1 bg-gray-100 border-4 border-gray-900 font-black text-gray-900 py-3 rounded-2xl uppercase tracking-wider hover:bg-gray-200">Cancel</button>
                   <button onClick={executeReset} className="flex-1 bg-red-500 border-4 border-gray-900 font-black text-white py-3 rounded-2xl uppercase tracking-wider shadow-pop-sm shadow-pop-hover">Delete</button>
                 </div>
               </div>
@@ -305,12 +406,12 @@
           {isPrintModalOpen && (
             <div className="fixed inset-0 z-[200] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center print-hidden p-4">
               <div className="bg-white border-4 border-gray-900 shadow-pop rounded-3xl p-8 max-w-sm w-full relative">
-                <button onClick={() => setIsPrintModalOpen(false)} className="absolute top-4 right-4 text-gray-500 hover:text-gray-900"><X size={24} /></button>
+                <button onClick={() => { playSound('click'); setIsPrintModalOpen(false); }} className="absolute top-4 right-4 text-gray-500 hover:text-gray-900"><X size={24} /></button>
                 <h2 className="text-2xl font-black uppercase mb-4 text-gray-900">Export PDF</h2>
                 <p className="text-sm font-bold text-gray-600 mb-6">Select the month you want to generate a report for.</p>
                 <div className="flex flex-col gap-4">
                   <input type="month" value={printMonthStr} onChange={(e) => setPrintMonthStr(e.target.value)} className="bg-gray-50 border-4 border-gray-900 rounded-2xl px-4 py-3 font-bold text-lg focus:outline-none" />
-                  <button onClick={() => { setIsPrintModalOpen(false); setTimeout(() => window.print(), 300); }} className="w-full bg-[#86efac] border-4 border-gray-900 shadow-pop-sm shadow-pop-hover font-black text-gray-900 py-3 rounded-2xl uppercase tracking-wider mt-4">Generate & Print</button>
+                  <button onClick={() => { playSound('click'); setIsPrintModalOpen(false); setTimeout(() => window.print(), 300); }} className="w-full bg-[#86efac] border-4 border-gray-900 shadow-pop-sm shadow-pop-hover font-black text-gray-900 py-3 rounded-2xl uppercase tracking-wider mt-4">Generate & Print</button>
                 </div>
               </div>
             </div>
@@ -319,7 +420,7 @@
           {/* --- MAIN APP INTERFACE --- */}
           <div className="min-h-screen pb-20 print-hidden">
             {/* Header */}
-            <header className="bg-white border-b-4 border-gray-900 sticky top-0 z-50">
+            <header className="bg-white/80 backdrop-blur-md border-b-4 border-gray-900 sticky top-0 z-50">
               <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                   <div className="relative w-12 h-12 rounded-2xl overflow-hidden flex flex-wrap border-4 border-gray-900 shadow-pop-sm bg-white shrink-0">
@@ -331,7 +432,7 @@
                   </h1>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
-                  <button onClick={() => setIsPrintModalOpen(true)} className="flex items-center gap-2 font-black uppercase tracking-wider text-gray-900 bg-[#86efac] border-4 border-gray-900 shadow-pop-sm shadow-pop-hover px-5 py-3 rounded-2xl transition-all">
+                  <button onClick={() => { playSound('click'); setIsPrintModalOpen(true); }} className="flex items-center gap-2 font-black uppercase tracking-wider text-gray-900 bg-[#86efac] border-4 border-gray-900 shadow-pop-sm shadow-pop-hover px-5 py-3 rounded-2xl transition-all">
                     <Download size={20} /> PDF Export
                   </button>
                 </div>
@@ -361,12 +462,12 @@
                   {/* Color Palette Toolbar */}
                   <div className="flex flex-wrap gap-3">
                     {CATEGORIES.map(cat => (
-                      <button key={cat.id} onClick={() => setSelectedColorId(cat.id)} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border-4 shadow-pop-sm shadow-pop-hover ${selectedColorId === cat.id ? 'border-gray-900 bg-gray-100 scale-105' : 'border-gray-900 bg-white'}`}>
+                      <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border-4 shadow-pop-sm shadow-pop-hover ${selectedColorId === cat.id ? 'border-gray-900 bg-gray-100 scale-105' : 'border-gray-900 bg-white'}`}>
                         <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg border-4 border-gray-900" style={{ backgroundColor: cat.color }} />
                         <span className="text-xs md:text-sm font-black uppercase tracking-wide text-gray-800 hidden sm:inline">{cat.name}</span>
                       </button>
                     ))}
-                    <button onClick={() => setSelectedColorId('erase')} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border-4 shadow-pop-sm shadow-pop-hover ${selectedColorId === 'erase' ? 'border-gray-900 bg-red-100 text-red-700 scale-105' : 'border-gray-900 bg-white text-gray-500'}`} title="Eraser">
+                    <button onClick={() => handleColorSelect('erase')} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border-4 shadow-pop-sm shadow-pop-hover ${selectedColorId === 'erase' ? 'border-gray-900 bg-red-100 text-red-700 scale-105' : 'border-gray-900 bg-white text-gray-500'}`} title="Eraser">
                       <Eraser size={20} />
                       <span className="text-xs md:text-sm font-black uppercase tracking-wide hidden sm:inline">Erase</span>
                     </button>
@@ -378,7 +479,6 @@
               {/* THE TRACKER GRID */}
               <section className="bg-white rounded-3xl border-4 border-gray-900 shadow-pop p-2 md:p-6 overflow-hidden">
                 <div className="overflow-x-auto pb-8 custom-scrollbar scrollable-container relative">
-                  {/* Changed to border-collapse and removed border-spacing so sticky columns block backgrounds completely */}
                   <table className="w-full min-w-max border-collapse bg-white">
                     <thead>
                       <tr>
@@ -429,12 +529,12 @@
                               {idx === 0 && (
                                 <td rowSpan={6} className="align-middle bg-white sticky left-0 z-40 w-[50px] md:w-[60px] p-0 border-none shadow-[2px_0px_0px_white]">
                                   <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-gray-50 py-3 px-1 rounded-[20px] border-4 border-gray-900 shadow-pop-sm mx-auto w-[42px] md:w-[50px]">
-                                    <button onClick={() => setSelectedColorId('erase')} className={`p-1 md:p-1.5 rounded-xl border-4 transition-all hover:-translate-y-1 shadow-pop-sm ${selectedColorId === 'erase' ? 'border-red-600 bg-red-100 text-red-600' : 'border-gray-900 bg-white text-gray-800'}`} title="Erase">
+                                    <button onClick={() => handleColorSelect('erase')} className={`p-1 md:p-1.5 rounded-xl border-4 transition-all hover:-translate-y-1 shadow-pop-sm ${selectedColorId === 'erase' ? 'border-red-600 bg-red-100 text-red-600' : 'border-gray-900 bg-white text-gray-800'}`} title="Erase">
                                       <Eraser size={16} />
                                     </button>
                                     <div className="w-full h-1 border-b-4 border-dashed border-gray-300 my-1"></div>
                                     {CATEGORIES.map(cat => (
-                                      <button key={cat.id} onClick={() => setSelectedColorId(cat.id)} className={`w-5 h-5 md:w-6 md:h-6 rounded-lg border-4 transition-all hover:-translate-y-1 shadow-pop-sm ${selectedColorId === cat.id ? 'border-gray-900 scale-110 shadow-pop' : 'border-gray-900'}`} style={{ backgroundColor: cat.color }} title={cat.name} />
+                                      <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`w-5 h-5 md:w-6 md:h-6 rounded-lg border-4 transition-all hover:-translate-y-1 shadow-pop-sm ${selectedColorId === cat.id ? 'border-gray-900 scale-110 shadow-pop' : 'border-gray-900'}`} style={{ backgroundColor: cat.color }} title={cat.name} />
                                     ))}
                                   </div>
                                 </td>
@@ -456,7 +556,6 @@
 
                                 return (
                                   <td key={`${dateStr}-${hour}`} className="align-middle p-1 md:p-1.5 bg-white border-none">
-                                    {/* Forces rigid square shape, prevents rectangle stretching */}
                                     <div className="square-cell-inner mx-auto relative rounded-2xl border-4 border-gray-900 overflow-hidden shadow-pop-sm bg-white transition-transform duration-100 hover:-translate-y-1 hover:shadow-pop z-10 hover:z-20">
                                       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full block paintable-svg">
                                         <rect width="100" height="100" fill={t1Color} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't1')} className="cursor-pointer transition-opacity hover:opacity-80" />
@@ -493,7 +592,7 @@
                   <div className="flex flex-col h-full gap-4">
                     <div className="bg-orange-100 rounded-2xl border-4 border-gray-900 p-3 flex flex-col shadow-pop-sm">
                       <span className="text-[10px] md:text-xs font-black uppercase text-gray-600 tracking-wider">Daily Analysis</span>
-                      <input type="date" value={statDate} onChange={e => setStatDate(e.target.value)} className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
+                      <input type="date" value={statDate} onChange={e => { playSound('click'); setStatDate(e.target.value); }} className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
                     </div>
                     <StatCard title="Selected Day" stats={statsDay} />
                   </div>
@@ -502,8 +601,8 @@
                     <div className="bg-blue-100 rounded-2xl border-4 border-gray-900 p-3 flex flex-col shadow-pop-sm">
                       <span className="text-[10px] md:text-xs font-black uppercase text-gray-600 tracking-wider">Weekly Analysis</span>
                       <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2 mt-1">
-                        <input type="month" value={statWeekMonth} onChange={e => { setStatWeekMonth(e.target.value); setStatWeekIndex(0); }} className="w-full xl:w-1/2 bg-white rounded-md border-2 border-gray-900 px-2 py-1 outline-none font-black text-gray-900 text-xs cursor-pointer" />
-                        <select value={statWeekIndex} onChange={e => setStatWeekIndex(Number(e.target.value))} className="w-full xl:w-1/2 bg-white rounded-md border-2 border-gray-900 px-2 py-1 font-black text-xs outline-none cursor-pointer">
+                        <input type="month" value={statWeekMonth} onChange={e => { playSound('click'); setStatWeekMonth(e.target.value); setStatWeekIndex(0); }} className="w-full xl:w-1/2 bg-white rounded-md border-2 border-gray-900 px-2 py-1 outline-none font-black text-gray-900 text-xs cursor-pointer" />
+                        <select value={statWeekIndex} onChange={e => { playSound('click'); setStatWeekIndex(Number(e.target.value)); }} className="w-full xl:w-1/2 bg-white rounded-md border-2 border-gray-900 px-2 py-1 font-black text-xs outline-none cursor-pointer">
                           {statAvailableWeeks.map((week, idx) => (<option key={week.id} value={idx}>{week.label}</option>))}
                         </select>
                       </div>
@@ -514,7 +613,7 @@
                   <div className="flex flex-col h-full gap-4">
                     <div className="bg-green-100 rounded-2xl border-4 border-gray-900 p-3 flex flex-col shadow-pop-sm">
                       <span className="text-[10px] md:text-xs font-black uppercase text-gray-600 tracking-wider">Monthly Analysis</span>
-                      <input type="month" value={statMonth} onChange={e => setStatMonth(e.target.value)} className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
+                      <input type="month" value={statMonth} onChange={e => { playSound('click'); setStatMonth(e.target.value); }} className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
                     </div>
                     <StatCard title="Selected Month" stats={statsMonth} />
                   </div>
@@ -522,7 +621,7 @@
                   <div className="flex flex-col h-full gap-4">
                     <div className="bg-purple-100 rounded-2xl border-4 border-gray-900 p-3 flex flex-col shadow-pop-sm">
                       <span className="text-[10px] md:text-xs font-black uppercase text-gray-600 tracking-wider">Yearly Analysis</span>
-                      <input type="number" value={statYear} onChange={e => setStatYear(e.target.value)} min="2000" max="2100" className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
+                      <input type="number" value={statYear} onChange={e => { playSound('click'); setStatYear(e.target.value); }} min="2000" max="2100" className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
                     </div>
                     <StatCard title="Selected Year" stats={statsYear} />
                   </div>
@@ -531,7 +630,6 @@
 
               {/* Data Management / Danger Zone */}
               <section className="bg-white p-6 md:p-8 rounded-3xl border-4 border-red-900 shadow-pop relative overflow-hidden">
-                {/* Decorative background strips */}
                 <div className="absolute top-0 left-0 w-full h-2 bg-repeating-linear-gradient pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #fecaca, #fecaca 10px, #ffffff 10px, #ffffff 20px)' }}></div>
                 
                 <div className="flex items-center gap-4 mb-8 pt-2">
@@ -545,14 +643,12 @@
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Reset Day */}
                   <div className="bg-red-50 border-4 border-red-900 rounded-2xl p-4 flex flex-col gap-4 shadow-pop-sm">
                     <h3 className="font-black uppercase text-red-900 border-b-4 border-red-200 pb-2">Reset Single Day</h3>
                     <input type="date" value={resetDay} onChange={e => setResetDay(e.target.value)} className="bg-white border-4 border-red-900 rounded-xl px-3 py-2 font-black outline-none w-full" />
-                    <button onClick={() => setPendingReset({type: 'day', payload: resetDay})} className="mt-auto bg-red-500 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-900 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Reset Day</button>
+                    <button onClick={() => { playSound('click'); setPendingReset({type: 'day', payload: resetDay}); }} className="mt-auto bg-red-500 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-900 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Reset Day</button>
                   </div>
 
-                  {/* Reset Week */}
                   <div className="bg-red-50 border-4 border-red-900 rounded-2xl p-4 flex flex-col gap-4 shadow-pop-sm">
                     <h3 className="font-black uppercase text-red-900 border-b-4 border-red-200 pb-2">Reset Entire Week</h3>
                     <div className="flex flex-col gap-2">
@@ -561,14 +657,13 @@
                         {resetAvailableWeeks.map((w, i) => <option key={w.id} value={i}>{w.label}</option>)}
                       </select>
                     </div>
-                    <button onClick={() => setPendingReset({type: 'week', payload: resetAvailableWeeks[resetWeekIdx]?.dates})} className="mt-auto bg-red-500 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-900 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Reset Week</button>
+                    <button onClick={() => { playSound('click'); setPendingReset({type: 'week', payload: resetAvailableWeeks[resetWeekIdx]?.dates}); }} className="mt-auto bg-red-500 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-900 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Reset Week</button>
                   </div>
 
-                  {/* Reset Month */}
                   <div className="bg-red-50 border-4 border-red-900 rounded-2xl p-4 flex flex-col gap-4 shadow-pop-sm">
                     <h3 className="font-black uppercase text-red-900 border-b-4 border-red-200 pb-2">Reset Entire Month</h3>
                     <input type="month" value={resetMonthStr} onChange={e => setResetMonthStr(e.target.value)} className="bg-white border-4 border-red-900 rounded-xl px-3 py-2 font-black outline-none w-full" />
-                    <button onClick={() => setPendingReset({type: 'month', payload: resetMonthStr})} className="mt-auto bg-red-900 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-950 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Nuke Month</button>
+                    <button onClick={() => { playSound('click'); setPendingReset({type: 'month', payload: resetMonthStr}); }} className="mt-auto bg-red-900 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-950 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Nuke Month</button>
                   </div>
                 </div>
               </section>
@@ -650,15 +745,27 @@
 
     // --- Component: StatCard ---
     function StatCard({ title, stats }) {
-      const { totals, totalTrackedHours } = stats;
+      const { totals, completedTotals, totalTrackedHours, completedDaysCount } = stats;
       
       return (
         <div className="bg-white p-6 rounded-2xl border-4 border-gray-900 shadow-pop-sm flex flex-col h-full print:shadow-none print:border-2">
           <h3 className="font-black text-lg text-gray-900 uppercase tracking-wide mb-1">{title}</h3>
-          <p className="text-[10px] md:text-xs font-black text-gray-400 uppercase tracking-widest mb-6">{totalTrackedHours} hours tracked</p>
+          
+          <div className="flex flex-col gap-2 mb-6">
+            <span className="text-[10px] md:text-xs font-black text-gray-400 uppercase tracking-widest">{totalTrackedHours} hours tracked</span>
+            {completedDaysCount > 0 ? (
+              <span className="inline-block w-fit bg-green-100 text-green-700 px-2 py-1 rounded-md text-[9px] md:text-[10px] font-black uppercase tracking-wider border-2 border-green-800">
+                {completedDaysCount} Completed Day(s) Used For Averages
+              </span>
+            ) : (
+              <span className="inline-block w-fit bg-gray-100 text-gray-500 px-2 py-1 rounded-md text-[9px] md:text-[10px] font-black uppercase tracking-wider border-2 border-gray-300">
+                0 Completed Days (Averages Disabled)
+              </span>
+            )}
+          </div>
           
           {totalTrackedHours === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-gray-300 font-black uppercase border-4 border-dashed border-gray-200 rounded-xl p-4 tracking-widest">
+            <div className="flex-1 flex items-center justify-center text-gray-300 font-black uppercase border-4 border-dashed border-gray-200 rounded-xl p-4 tracking-widest text-center">
               No Data
             </div>
           ) : (
@@ -666,12 +773,21 @@
               {CATEGORIES.map(cat => {
                 const hours = totals[cat.id] || 0;
                 if (hours === 0) return null;
+                
                 const percentage = Math.round((hours / totalTrackedHours) * 100);
+                
+                // Average Calculation: Total hours on fully completed days / number of fully completed days
+                const completedHours = completedTotals[cat.id] || 0;
+                const average = completedDaysCount > 0 ? (completedHours / completedDaysCount).toFixed(1) : '-';
+
                 return (
                   <div key={cat.id} className="relative">
-                    <div className="flex justify-between text-xs md:text-sm font-black mb-1 md:mb-2">
+                    <div className="flex justify-between items-end text-xs md:text-sm font-black mb-1 md:mb-2">
                       <span className="text-gray-800 uppercase tracking-wide truncate pr-2">{cat.name}</span>
-                      <span className="text-gray-900 shrink-0">{hours}h <span className="text-gray-400">({percentage}%)</span></span>
+                      <div className="flex flex-col items-end">
+                        <span className="text-gray-900">{hours}h <span className="text-gray-400 text-[10px]">({percentage}%)</span></span>
+                        {completedDaysCount > 0 && <span className="text-[10px] text-blue-600 tracking-wide mt-0.5">Avg: {average}h/day</span>}
+                      </div>
                     </div>
                     <div className="w-full h-3 md:h-4 bg-gray-100 rounded-full overflow-hidden border-2 md:border-4 border-gray-900 print:border-[1px]">
                       <div className="h-full rounded-full border-r-2 md:border-r-4 border-gray-900 print:border-none print:!bg-opacity-100" style={{ width: `${percentage}%`, backgroundColor: cat.color, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} />
