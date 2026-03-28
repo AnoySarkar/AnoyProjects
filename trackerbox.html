@@ -216,14 +216,15 @@
     const CheckSquare = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>;
     const MinusSquare = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
     const XSquare = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>;
+    const Trophy = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
 
     // --- Local Storage Keys ---
     const LOCAL_STORAGE_KEY = 'trackerbox_data_v11';
     const LOCAL_CATEGORIES_KEY = 'trackerbox_categories_v11';
     const LOCAL_JOURNAL_KEY = 'trackerbox_journal_v7';
     const LOCAL_TODOS_KEY = 'trackerbox_todos_v3';
-    const LOCAL_HABITS_CONFIG_KEY = 'trackerbox_habits_config_v2'; // Bumped for new sync logic
-    const LOCAL_HABIT_LOGS_KEY = 'trackerbox_habit_logs_v2'; // Bumped for new sync logic
+    const LOCAL_HABITS_CONFIG_KEY = 'trackerbox_habits_config_v2'; 
+    const LOCAL_HABIT_LOGS_KEY = 'trackerbox_habit_logs_v2'; 
 
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
@@ -519,7 +520,6 @@
       }, []);
 
       // --- Robust Habit Synchronization Engine ---
-      // This specifically handles mapping habitsConfig correctly to activeJournalDate logs without destroying past logs.
       useEffect(() => {
         if (activeJournalDate) {
           const dateObj = new Date(activeJournalDate);
@@ -741,7 +741,7 @@
         setPendingReset({ type: 'habit', payload: { id, name } });
       }
 
-      // --- Streak Calculation ---
+      // --- Gamification & Streak Logic ---
       const currentStreak = useMemo(() => {
         let streak = 0;
         let checkDate = new Date();
@@ -764,6 +764,52 @@
         }
         return streak;
       }, [allData]);
+
+      const { totalXP, level, rankTitle, currentLevelBaseXP, nextLevelXP } = useMemo(() => {
+         let xp = 0;
+         
+         // 1. XP for Logged Hours
+         let trackedHours = 0;
+         Object.values(allData).forEach(day => {
+            Object.values(day).forEach(h => {
+               if (h.t1) trackedHours += 0.5;
+               if (h.t2) trackedHours += 0.5;
+            });
+         });
+         xp += trackedHours * 10;
+
+         // 2. XP for Todos Completed
+         let todosDone = 0;
+         Object.values(todosData).forEach(day => {
+            todosDone += day.filter(t => t.status === 'green' || t.done).length;
+         });
+         xp += todosDone * 20;
+
+         // 3. XP for Habits Completed
+         let habitsDone = 0;
+         Object.values(habitLogs).forEach(day => {
+            habitsDone += day.filter(h => h.status === 'green').length;
+         });
+         xp += habitsDone * 10;
+
+         // 4. Streak XP Bonus
+         xp += currentStreak * 50;
+
+         // Calculate Level Details
+         // Level curve: 1=0XP, 2=200XP, 3=800XP, 4=1800XP...
+         const lvl = Math.floor(Math.sqrt(xp / 200)) + 1;
+         const currentBase = Math.pow(lvl - 1, 2) * 200;
+         const nextBase = Math.pow(lvl, 2) * 200;
+
+         let rank = "Novice Tracker";
+         if (lvl >= 3) rank = "Adept Logger";
+         if (lvl >= 7) rank = "Time Pathfinder";
+         if (lvl >= 15) rank = "Master Architect";
+         if (lvl >= 30) rank = "Chronos Legend";
+         if (lvl >= 50) rank = "Ascended Being";
+
+         return { totalXP: xp, level: lvl, rankTitle: rank, currentLevelBaseXP: currentBase, nextLevelXP: nextBase };
+      }, [allData, todosData, habitLogs, currentStreak]);
 
       // --- Data Portability (Export/Import) ---
       const handleExportData = () => {
@@ -1069,11 +1115,11 @@
 
           {/* --- CAPTAIN'S LOG DUAL-PANE MODAL --- */}
           {activeJournalDate && (
-            <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 print-hidden" onClick={() => setActiveJournalDate(null)}>
-              <div className="glass-panel animate-modal border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.2)] rounded-3xl p-4 md:p-6 max-w-6xl w-full relative flex flex-col h-[90vh] md:h-[80vh]" onClick={e => e.stopPropagation()}>
+            <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 print-hidden" onClick={() => setActiveJournalDate(null)}>
+              <div className="glass-panel animate-modal border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.2)] rounded-3xl p-4 md:p-6 max-w-6xl w-full relative flex flex-col max-h-[95vh] md:h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
                 <button onClick={() => { playSound('click'); setActiveJournalDate(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors z-10 bg-black/50 p-1 rounded-full md:bg-transparent md:p-0"><X size={24} /></button>
                 
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 shrink-0 border-b border-white/10 pb-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 md:mb-6 shrink-0 border-b border-white/10 pb-4">
                   <div className="flex items-center gap-3">
                     <FileText size={28} className="text-purple-400" />
                     <div>
@@ -1098,7 +1144,7 @@
                   </div>
                 </div>
 
-                {/* TRIPLE Pane Body */}
+                {/* TRIPLE Pane Body (Responsive Stack & Scroll) */}
                 <div className="flex flex-col lg:flex-row gap-4 md:gap-6 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar pb-2">
                   
                   {/* Left Pane: Mission Objectives (Todos) */}
@@ -1131,7 +1177,7 @@
                                  <Icon size={18}/>
                               </button>
                               <span className={`flex-1 text-sm ${textClass} transition-colors`}>{todo.text}</span>
-                              <button onClick={() => handleDeleteTodo(activeJournalDate, todo.id)} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-500 hover:text-red-400 transition-opacity">
+                              <button onClick={() => handleDeleteTodo(activeJournalDate, todo.id)} className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-red-500 hover:text-red-400 transition-opacity">
                                 <Trash2 size={16}/>
                               </button>
                             </div>
@@ -1199,7 +1245,7 @@
                                  <Icon size={18}/>
                               </button>
                               <span className={`flex-1 text-sm font-bold ${textClass} transition-colors`}>{habit.name}</span>
-                              <button onClick={() => handleDeleteDailyHabit(activeJournalDate, habit.id)} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-red-500 hover:text-red-400 transition-opacity">
+                              <button onClick={() => handleDeleteDailyHabit(activeJournalDate, habit.id)} className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-red-500 hover:text-red-400 transition-opacity">
                                 <Trash2 size={16}/>
                               </button>
                             </div>
@@ -1255,12 +1301,12 @@
                 
                 <div className="space-y-4 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <h3 className="font-bold text-cyan-300 uppercase mb-2 border-b border-cyan-500/30 pb-1">Painting & Erasing</h3>
-                    <p>Click/Tap to paint. Click and drag to fill continuously. <strong className="text-white">To Erase:</strong> Select your active color and click on it again on the grid.</p>
+                    <h3 className="font-bold text-cyan-300 uppercase mb-2 border-b border-cyan-500/30 pb-1">Painting & Scrolling</h3>
+                    <p>Select a category color to paint your grid. <strong className="text-white bg-red-500/20 px-1 rounded border border-red-500/30">CRITICAL:</strong> To scroll the grid on mobile, you MUST select the <strong>Lock</strong> icon. Selecting a color enables continuous painting which disables touch-scrolling.</p>
                   </div>
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10">
                     <h3 className="font-bold text-yellow-300 uppercase mb-2 border-b border-yellow-500/30 pb-1">Magic Fill & Copy/Paste</h3>
-                    <p>Hover over any Day Header to reveal controls above it: <strong className="text-white">Zap (Auto-Fill Sleep 12am-8am)</strong>, <strong className="text-white">Copy</strong>, <strong className="text-white">Paste</strong>, and <strong className="text-white">Trash</strong>.</p>
+                    <p>Hover over (or tap) any Day Header to reveal controls above it: <strong className="text-white">Zap (Auto-Fill Sleep 12am-8am)</strong>, <strong className="text-white">Copy</strong>, <strong className="text-white">Paste</strong>, and <strong className="text-white">Trash</strong>.</p>
                   </div>
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10">
                     <h3 className="font-bold text-purple-400 uppercase mb-2 border-b border-purple-500/30 pb-1">Captain's Log & Objectives</h3>
@@ -1271,15 +1317,8 @@
                     <p>The timer can be customized by clicking the numbers when paused. When a focus session finishes, a peaceful chord will play and a stopwatch will automatically start to time your break.</p>
                   </div>
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <h3 className="font-bold text-emerald-400 uppercase mb-2 border-b border-emerald-500/30 pb-1">Habit Tracker</h3>
-                    <p>Create Habits in the System Modules. Select the days they apply. They will automatically be ready to check off inside the Captain's Log for those days.</p>
-                  </div>
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <h3 className="font-bold text-cyan-300 uppercase mb-2 border-b border-cyan-500/30 pb-1">Keyboard Overrides</h3>
-                    <ul className="list-disc pl-5 space-y-1">
-                      <li>Press <kbd className="bg-black/50 border border-white/20 px-1 rounded text-cyan-400">1</kbd> - <kbd className="bg-black/50 border border-white/20 px-1 rounded text-cyan-400">9</kbd> to rapidly switch between categories.</li>
-                      <li>Press <kbd className="bg-black/50 border border-white/20 px-1 rounded text-red-400">L</kbd> to engage the Safety Lock.</li>
-                    </ul>
+                    <h3 className="font-bold text-emerald-400 uppercase mb-2 border-b border-emerald-500/30 pb-1">Habit Tracker & Gamification</h3>
+                    <p>Create Habits in the System Modules to have them appear on your daily logs automatically. Gain XP for every hour you track and every task you complete to Level up your Rank!</p>
                   </div>
                 </div>
               </div>
@@ -1314,7 +1353,9 @@
           <div className="min-h-screen pb-20 print-hidden flex flex-col">
             {/* Header */}
             <header className={`glass-panel sticky top-0 z-50 border-b border-white/10 rounded-none shadow-none ${isZenMode ? 'hidden' : ''}`}>
-              <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                
+                {/* Logo Section */}
                 <div className="flex items-center gap-4">
                   <div className="relative flex items-center justify-center shrink-0 alive-pulse">
                     <svg viewBox="0 0 100 100" className="w-12 h-12 md:w-14 md:h-14 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]">
@@ -1329,56 +1370,71 @@
                     </svg>
                   </div>
                   <div className="flex flex-col">
-                    <h1 className="text-3xl md:text-4xl font-black tracking-tight uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] leading-none">
+                    <h1 className="text-3xl md:text-4xl font-black tracking-tight uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] leading-none truncate max-w-[200px] sm:max-w-none">
                       Trackerbox<sup className="text-lg font-black ml-1 text-cyan-400 drop-shadow-none">©</sup>
                     </h1>
-                    <p className="text-[10px] md:text-xs text-cyan-400/80 font-bold tracking-widest uppercase mt-1">Designed And Created by Anoy Sarkar</p>
+                    <p className="text-[10px] md:text-xs text-cyan-400/80 font-bold tracking-widest uppercase mt-1 truncate">Designed And Created by Anoy Sarkar</p>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex items-center gap-2 bg-orange-500/10 border border-orange-500/50 px-4 py-2 rounded-xl shadow-[0_0_10px_rgba(249,115,22,0.2)]" title="Consecutive Active Days Logged">
+                {/* Main Toolbar & Stats */}
+                <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 mt-2 md:mt-0">
+                  
+                  {/* IMPROVEMENT 3: Gamification Display */}
+                  <div className="flex items-center bg-[#0b1120] border border-white/10 rounded-2xl overflow-hidden shadow-[0_0_10px_rgba(0,0,0,0.5)] h-[44px]">
+                    <div className="bg-gradient-to-r from-purple-500/20 to-transparent px-3 py-2 border-r border-white/10 flex items-center justify-center text-purple-400" title="Current Rank">
+                      <Trophy size={18} />
+                    </div>
+                    <div className="flex flex-col px-3 min-w-[120px] justify-center h-full">
+                      <div className="flex justify-between items-center gap-2 leading-none mb-1">
+                        <span className="text-[10px] font-black uppercase text-purple-400 tracking-wider">Lvl {level} <span className="hidden sm:inline text-slate-300 ml-1 opacity-80">{rankTitle}</span></span>
+                        <span className="text-[9px] font-bold text-slate-400">{totalXP} XP</span>
+                      </div>
+                      <div className="w-full h-1 bg-black/60 rounded-full overflow-hidden">
+                         <div className="h-full bg-gradient-to-r from-purple-500 to-cyan-400" style={{ width: `${Math.max(0, Math.min(100, ((totalXP - currentLevelBaseXP) / (nextLevelXP - currentLevelBaseXP)) * 100))}%`}}></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-orange-500/10 border border-orange-500/50 px-3 py-2 md:px-4 rounded-xl shadow-[0_0_10px_rgba(249,115,22,0.2)] h-[44px]" title="Consecutive Full 24Hr Days Logged">
                     <Flame size={20} className={currentStreak > 0 ? "text-orange-400 drop-shadow-[0_0_8px_rgba(249,115,22,0.8)]" : "text-slate-500"} />
                     <span className={`font-black uppercase tracking-wider ${currentStreak > 0 ? "text-orange-300" : "text-slate-400"}`}>
                       {currentStreak} <span className="hidden sm:inline">Streak</span>
                     </span>
                   </div>
 
-                  <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`p-2 rounded-full border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/20' : 'border-slate-600/50 text-slate-500 hover:bg-slate-600/20'}`} title="Toggle Focus Chronos">
-                    <Clock size={20} />
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
+                      <Clock size={20} />
+                    </button>
 
-                  <button onClick={() => { playSound('click'); setShowHelp(true); }} className="p-2 rounded-full border border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/20 transition-all" title="System Protocol">
-                    <Info size={20} />
-                  </button>
+                    <button onClick={() => { playSound('click'); setShowHelp(true); }} className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all" title="System Protocol">
+                      <Info size={20} />
+                    </button>
 
-                  <button onClick={() => { playSound('click'); setIsZenMode(true); }} className="p-2 rounded-full border border-purple-500/50 text-purple-300 hover:bg-purple-500/20 transition-all" title="Zenith Mode (Focus Grid)">
-                    <Maximize size={20} />
-                  </button>
-
-                  {/* Header PDF Export */}
-                  <button onClick={() => { playSound('click'); window.print(); }} className="flex items-center gap-2 font-bold uppercase tracking-wider text-cyan-300 bg-cyan-500/10 border border-cyan-500/50 hover:bg-cyan-500/20 hover:text-cyan-100 shadow-[0_0_10px_rgba(34,211,238,0.2)] px-5 py-2.5 rounded-2xl transition-all">
-                    <Printer size={18} /> PDF Report
-                  </button>
+                    <button onClick={() => { playSound('click'); setIsZenMode(true); }} className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-purple-500/30 text-purple-400 hover:bg-purple-500/10 transition-all" title="Zenith Mode (Focus Grid)">
+                      <Maximize size={20} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </header>
 
-            <main className={`${isZenMode ? 'p-4 h-screen w-screen overflow-hidden flex flex-col' : 'max-w-[1400px] mx-auto px-4 py-8 space-y-10 flex-1'}`}>
+            <main className={`${isZenMode ? 'p-4 h-[100dvh] w-screen overflow-hidden flex flex-col' : 'max-w-[1400px] w-full mx-auto px-4 py-8 space-y-10 flex-1'}`}>
               
               {/* Tracker Tools & Main Grid Header */}
-              <section className={`glass-panel p-6 rounded-3xl flex-shrink-0 ${isZenMode ? 'mb-4' : ''}`}>
-                <div className="flex flex-col xl:flex-row gap-6 justify-between xl:items-center">
+              <section className={`glass-panel p-4 md:p-6 rounded-3xl flex-shrink-0 ${isZenMode ? 'mb-4' : ''} overflow-hidden w-full`}>
+                <div className="flex flex-col xl:flex-row gap-4 md:gap-6 justify-between xl:items-center">
                   
                   {/* Main Grid Navigation */}
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white/5 p-4 rounded-2xl border border-white/10 w-full xl:w-auto">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white/5 p-4 rounded-2xl border border-white/10 w-full xl:w-auto shrink-0">
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
                       <CalendarIcon size={28} className="text-purple-400 drop-shadow-[0_0_8px_rgba(192,132,252,0.5)] hidden sm:block" />
-                      <div className="flex flex-col">
+                      <div className="flex flex-col w-full sm:w-auto">
                         <span className="text-[10px] font-black uppercase text-purple-400 tracking-wider">Temporal Log</span>
-                        <div className="flex flex-row items-center flex-wrap gap-2 mt-1">
-                          <input type="month" value={selectedMonthStr} onChange={(e) => { playSound('click'); setSelectedMonthStr(e.target.value); setSelectedWeekIndex(0); }} className="flex-1 min-w-[140px] bg-[#0b1120] text-slate-200 rounded-lg border border-purple-500/30 px-3 py-1.5 font-bold focus:outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(192,132,252,0.3)] cursor-pointer transition-all" />
-                          <select value={selectedWeekIndex} onChange={(e) => { playSound('click'); setSelectedWeekIndex(Number(e.target.value)); }} className="flex-1 min-w-[180px] bg-[#0b1120] text-slate-200 rounded-lg border border-purple-500/30 px-3 py-1.5 font-bold text-sm outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(192,132,252,0.3)] cursor-pointer transition-all">
+                        <div className="flex flex-row items-center flex-wrap gap-2 mt-1 w-full">
+                          <input type="month" value={selectedMonthStr} onChange={(e) => { playSound('click'); setSelectedMonthStr(e.target.value); setSelectedWeekIndex(0); }} className="flex-1 min-w-0 w-full sm:w-[140px] bg-[#0b1120] text-slate-200 rounded-lg border border-purple-500/30 px-3 py-1.5 font-bold focus:outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(192,132,252,0.3)] cursor-pointer transition-all" />
+                          <select value={selectedWeekIndex} onChange={(e) => { playSound('click'); setSelectedWeekIndex(Number(e.target.value)); }} className="flex-1 min-w-0 w-full sm:w-[180px] bg-[#0b1120] text-slate-200 rounded-lg border border-purple-500/30 px-3 py-1.5 font-bold text-sm outline-none focus:border-purple-400 focus:shadow-[0_0_10px_rgba(192,132,252,0.3)] cursor-pointer transition-all">
                             {availableWeeks.map((week, idx) => (<option key={week.id} value={idx}>{week.label}</option>))}
                           </select>
                         </div>
@@ -1395,15 +1451,15 @@
                   </div>
 
                   {/* Color Palette Toolbar */}
-                  <div className="flex flex-wrap gap-3">
-                    <button onClick={() => handleColorSelect('lock')} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border ${selectedColorId === 'lock' ? 'bg-red-500/20 border-red-500 text-red-300 scale-105 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10 text-slate-400'}`} title="Lock Screen for Scrolling (Hotkey: L)">
+                  <div className="flex flex-wrap gap-2 md:gap-3 w-full">
+                    <button onClick={() => handleColorSelect('lock')} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border ${selectedColorId === 'lock' ? 'bg-red-500/20 border-red-500 text-red-300 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10 text-slate-400'}`} title="Lock Screen for Scrolling (Hotkey: L)">
                       <Lock size={20} />
-                      <span className="text-xs md:text-sm font-bold uppercase tracking-wide">Lock</span>
+                      <span className="text-xs md:text-sm font-bold uppercase tracking-wide hidden sm:inline">Lock (Scroll)</span>
                     </button>
                     {categories.map((cat, idx) => (
-                      <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`relative flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border ${selectedColorId === cat.id ? 'bg-white/10 border-white/50 scale-105' : 'border-white/10 bg-white/5 hover:bg-white/10'}`} style={selectedColorId === cat.id ? {boxShadow: `0 0 15px ${cat.color}40`} : {}} title={`Hotkey: ${idx + 1}`}>
+                      <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`relative flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border shrink-0 ${selectedColorId === cat.id ? 'bg-white/10 border-white/50 scale-105' : 'border-white/10 bg-white/5 hover:bg-white/10'}`} style={selectedColorId === cat.id ? {boxShadow: `0 0 15px ${cat.color}40`} : {}} title={`Hotkey: ${idx + 1}`}>
                         <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg" style={{ backgroundColor: cat.color, boxShadow: `0 0 10px ${cat.color}80` }} />
-                        <span className="text-xs md:text-sm font-bold uppercase tracking-wide text-slate-200 inline">{cat.name}</span>
+                        <span className="text-xs md:text-sm font-bold uppercase tracking-wide text-slate-200 hidden sm:inline">{cat.name}</span>
                       </button>
                     ))}
                   </div>
@@ -1412,14 +1468,14 @@
               </section>
 
               {/* THE TRACKER GRID */}
-              <section className={`glass-panel p-2 md:p-6 rounded-3xl overflow-hidden flex flex-col ${isZenMode ? 'flex-1' : ''}`}>
+              <section className={`glass-panel p-2 md:p-6 rounded-3xl overflow-hidden flex flex-col ${isZenMode ? 'flex-1 min-h-0' : ''}`}>
                 <div className="overflow-x-auto custom-scrollbar scrollable-container relative flex-1 pt-12 pb-4">
                   <div className="min-w-max h-full flex flex-col"> 
                     <table className="w-full border-collapse">
                       <thead>
                         <tr>
-                          <th className="w-[50px] md:w-[60px] sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
-                          <th className="w-[55px] md:w-[65px] sticky left-[50px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
+                          <th className="w-[45px] md:w-[60px] sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
+                          <th className="w-[50px] md:w-[65px] sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
                           
                           {currentWeekDates.map((dateStr) => {
                             const isToday = dateStr === todayStr;
@@ -1511,10 +1567,10 @@
                             {/* Section Divider */}
                             <tr>
                               <td className="sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
-                              <td className="sticky left-[50px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
+                              <td className="sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
                               <td colSpan={currentWeekDates.length} className="pt-4 pb-2 text-center relative z-10 border-none">
-                                <div className="inline-flex items-center gap-3 bg-white/10 backdrop-blur-sm px-6 py-2 rounded-full border border-white/20 font-bold text-slate-300 tracking-widest uppercase text-xs shadow-[0_4px_15px_rgba(0,0,0,0.5)]">
-                                  <section.icon size={16} className="text-slate-200" />
+                                <div className="inline-flex items-center gap-2 md:gap-3 bg-white/10 backdrop-blur-sm px-4 md:px-6 py-2 rounded-full border border-white/20 font-bold text-slate-300 tracking-widest uppercase text-[10px] md:text-xs shadow-[0_4px_15px_rgba(0,0,0,0.5)]">
+                                  <section.icon size={14} className="text-slate-200" />
                                   {section.label}
                                 </div>
                               </td>
@@ -1526,22 +1582,22 @@
                                 
                                 {/* Side Toolbar */}
                                 {idx === 0 && (
-                                  <td rowSpan={6} className="align-middle sticky left-0 z-40 w-[50px] md:w-[60px] p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}>
-                                    <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[42px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
+                                  <td rowSpan={6} className="align-middle sticky left-0 z-40 w-[45px] md:w-[60px] p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}>
+                                    <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
                                       <button onClick={() => handleColorSelect('lock')} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-500 bg-red-500/20 text-red-300 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`} title="Lock">
-                                        <Lock size={16} />
+                                        <Lock size={14} />
                                       </button>
                                       <div className="w-full h-px bg-white/10 my-1"></div>
                                       {categories.map(cat => (
-                                        <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`w-5 h-5 md:w-6 md:h-6 rounded-lg border border-white/20 transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110' : ''}`} style={{ backgroundColor: cat.color, boxShadow: selectedColorId === cat.id ? `0 0 12px ${cat.color}` : `0 0 4px ${cat.color}80` }} title={cat.name} />
+                                        <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border border-white/20 transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110' : ''}`} style={{ backgroundColor: cat.color, boxShadow: selectedColorId === cat.id ? `0 0 12px ${cat.color}` : `0 0 4px ${cat.color}80` }} title={cat.name} />
                                       ))}
                                     </div>
                                   </td>
                                 )}
 
                                 {/* Time Label */}
-                                <td className="text-right pr-1 md:pr-2 align-middle sticky left-[50px] md:left-[60px] z-30 w-[55px] md:w-[65px] p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}>
-                                  <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap bg-white/5 px-1.5 py-1.5 rounded-xl border border-transparent group-hover:border-white/20 transition-colors inline-block">
+                                <td className="text-right pr-1 md:pr-2 align-middle sticky left-[45px] md:left-[60px] z-30 w-[50px] md:w-[65px] p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}>
+                                  <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap bg-white/5 px-1 md:px-1.5 py-1.5 rounded-lg md:rounded-xl border border-transparent group-hover:border-white/20 transition-colors inline-block">
                                     {formatHourLabel(hour)}
                                   </span>
                                 </td>
@@ -1560,8 +1616,8 @@
 
                                   return (
                                     <td key={`${dateStr}-${hour}`} className="align-middle p-1 md:p-1.5 border-none print-border">
-                                      <div className="square-cell-inner mx-auto relative rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm" style={cellStyle}>
-                                        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full block paintable-svg">
+                                      <div className="square-cell-inner mx-auto relative rounded-xl md:rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm" style={cellStyle}>
+                                        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={`w-full h-full block ${selectedColorId !== 'lock' ? 'paintable-svg' : ''}`}>
                                           <polygon points="0,100 0,0 100,0" fill={t1Color} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't1')} className="cursor-pointer transition-opacity hover:opacity-80" />
                                           <polygon points="0,100 100,100 100,0" fill={t2Color} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't2')} className="cursor-pointer transition-opacity hover:opacity-80" />
                                           <line x1="0" y1="100" x2="100" y2="0" stroke="var(--sticky-bg)" strokeWidth="6" className="pointer-events-none" />
@@ -1581,33 +1637,34 @@
               </section>
 
               {/* Sections hidden in Zen Mode */}
-              <div className={isZenMode ? 'hidden' : 'space-y-10'}>
+              <div className={isZenMode ? 'hidden' : 'space-y-6 md:space-y-10'}>
                 {/* Analysis Center */}
-                <section className="glass-panel p-6 md:p-8 rounded-3xl">
-                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
+                <section className="glass-panel p-4 md:p-8 rounded-3xl w-full">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 md:mb-8">
                     <div className="flex items-center gap-4">
-                      <div className="bg-purple-500/20 p-3 rounded-2xl border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
-                        <Activity size={28} className="text-purple-300" />
+                      <div className="bg-purple-500/20 p-2 md:p-3 rounded-xl md:rounded-2xl border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                        <Activity size={24} className="text-purple-300 md:hidden" />
+                        <Activity size={28} className="text-purple-300 hidden md:block" />
                       </div>
-                      <h2 className="text-2xl md:text-3xl font-black uppercase tracking-wider text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Analytics Core</h2>
+                      <h2 className="text-xl md:text-3xl font-black uppercase tracking-wider text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Analytics Core</h2>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                    <div className="flex flex-col h-full gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
+                    <div className="flex flex-col h-full gap-3 md:gap-4">
                       <div className="bg-white/5 rounded-2xl border border-white/10 p-3 flex flex-col">
                         <span className="text-[10px] md:text-xs font-black uppercase text-slate-400 tracking-wider">Daily Scan</span>
-                        <input type="date" value={statDate} onChange={e => { playSound('click'); setStatDate(e.target.value); }} className="bg-transparent border-none outline-none font-bold text-slate-200 mt-1 cursor-pointer" />
+                        <input type="date" value={statDate} onChange={e => { playSound('click'); setStatDate(e.target.value); }} className="w-full bg-transparent border-none outline-none font-bold text-slate-200 mt-1 cursor-pointer" />
                       </div>
                       <StatCard title="Selected Day" stats={statsDay} categories={categories} showGoals={true} multiplier={1} showAverage={false} />
                     </div>
 
-                    <div className="flex flex-col h-full gap-4">
+                    <div className="flex flex-col h-full gap-3 md:gap-4">
                       <div className="bg-white/5 rounded-2xl border border-white/10 p-3 flex flex-col">
                         <span className="text-[10px] md:text-xs font-black uppercase text-slate-400 tracking-wider">Weekly Scan</span>
-                        <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2 mt-1">
+                        <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2 mt-1 w-full">
                           <input type="month" value={statWeekMonth} onChange={e => { playSound('click'); setStatWeekMonth(e.target.value); setStatWeekIndex(0); }} className="w-full xl:w-1/2 bg-[#0b1120] rounded-md border border-white/20 px-2 py-1 outline-none font-bold text-slate-200 text-xs cursor-pointer" />
-                          <select value={statWeekIndex} onChange={e => { playSound('click'); setStatWeekIndex(Number(e.target.value)); }} className="w-full xl:w-1/2 bg-[#0b1120] rounded-md border border-white/20 px-2 py-1 font-bold text-slate-200 text-xs outline-none cursor-pointer">
+                          <select value={statWeekIndex} onChange={e => { playSound('click'); setStatWeekIndex(Number(e.target.value)); }} className="w-full xl:w-1/2 bg-[#0b1120] rounded-md border border-white/20 px-2 py-1 font-bold text-slate-200 text-xs outline-none cursor-pointer min-w-0">
                             {statAvailableWeeks.map((week, idx) => (<option key={week.id} value={idx}>{week.label}</option>))}
                           </select>
                         </div>
@@ -1615,18 +1672,18 @@
                       <StatCard title="Selected Week" stats={statsWeek} categories={categories} showGoals={true} multiplier={7} showAverage={true} />
                     </div>
 
-                    <div className="flex flex-col h-full gap-4">
+                    <div className="flex flex-col h-full gap-3 md:gap-4">
                       <div className="bg-white/5 rounded-2xl border border-white/10 p-3 flex flex-col">
                         <span className="text-[10px] md:text-xs font-black uppercase text-slate-400 tracking-wider">Monthly Scan</span>
-                        <input type="month" value={statMonth} onChange={e => { playSound('click'); setStatMonth(e.target.value); }} className="bg-transparent border-none outline-none font-bold text-slate-200 mt-1 cursor-pointer" />
+                        <input type="month" value={statMonth} onChange={e => { playSound('click'); setStatMonth(e.target.value); }} className="w-full bg-transparent border-none outline-none font-bold text-slate-200 mt-1 cursor-pointer" />
                       </div>
                       <StatCard title="Selected Month" stats={statsMonth} categories={categories} showGoals={true} multiplier={30} showAverage={true} />
                     </div>
 
-                    <div className="flex flex-col h-full gap-4">
+                    <div className="flex flex-col h-full gap-3 md:gap-4">
                       <div className="bg-white/5 rounded-2xl border border-white/10 p-3 flex flex-col">
                         <span className="text-[10px] md:text-xs font-black uppercase text-slate-400 tracking-wider">Annual Scan</span>
-                        <input type="number" value={statYear} onChange={e => { playSound('click'); setStatYear(e.target.value); }} min="2000" max="2100" className="bg-transparent border-none outline-none font-bold text-slate-200 mt-1 cursor-pointer" />
+                        <input type="number" value={statYear} onChange={e => { playSound('click'); setStatYear(e.target.value); }} min="2000" max="2100" className="w-full bg-transparent border-none outline-none font-bold text-slate-200 mt-1 cursor-pointer" />
                       </div>
                       <StatCard title="Selected Year" stats={statsYear} categories={categories} showGoals={true} multiplier={365} showAverage={true} />
                     </div>
@@ -1634,55 +1691,57 @@
                 </section>
 
                 {/* Category & Routine Management Section */}
-                <section className="glass-panel p-6 md:p-8 rounded-3xl border-cyan-900/50 shadow-[0_0_20px_rgba(34,211,238,0.05)]">
-                  <div className="flex items-center gap-4 mb-8 pt-2">
-                    <div className="bg-cyan-500/20 p-3 rounded-2xl border border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.3)]">
-                      <Settings2 size={28} className="text-cyan-400" />
+                <section className="glass-panel p-4 md:p-8 rounded-3xl border-cyan-900/50 shadow-[0_0_20px_rgba(34,211,238,0.05)] w-full overflow-hidden">
+                  <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8 pt-2">
+                    <div className="bg-cyan-500/20 p-2 md:p-3 rounded-xl md:rounded-2xl border border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.3)]">
+                      <Settings2 size={24} className="text-cyan-400 md:hidden" />
+                      <Settings2 size={28} className="text-cyan-400 hidden md:block" />
                     </div>
                     <div>
-                      <h2 className="text-2xl md:text-3xl font-black uppercase tracking-wider text-white leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">System Modules</h2>
-                      <span className="text-xs font-bold text-cyan-500 uppercase tracking-widest neon-text">Customize Categories & Goals</span>
+                      <h2 className="text-xl md:text-3xl font-black uppercase tracking-wider text-white leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">System Modules</h2>
+                      <span className="text-[10px] md:text-xs font-bold text-cyan-500 uppercase tracking-widest neon-text">Customize Categories & Goals</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-12">
                     {categories.map((cat, idx) => (
-                      <div key={cat.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-3 transition-all hover:border-cyan-500/30 relative">
-                        <div className="relative w-8 h-8 rounded-xl overflow-hidden shrink-0 border border-white/20 shadow-[0_0_10px_rgba(255,255,255,0.1)] cursor-pointer">
+                      <div key={cat.id} className="bg-white/5 border border-white/10 rounded-2xl p-3 md:p-4 flex items-center gap-2 md:gap-3 transition-all hover:border-cyan-500/30 relative">
+                        <div className="relative w-6 h-6 md:w-8 md:h-8 rounded-lg md:rounded-xl overflow-hidden shrink-0 border border-white/20 shadow-[0_0_10px_rgba(255,255,255,0.1)] cursor-pointer">
                           <input type="color" value={cat.color} onChange={e => updateCategory(cat.id, 'color', e.target.value)} className="absolute -top-4 -left-4 w-16 h-16 cursor-pointer border-0 p-0" />
                         </div>
-                        <input type="text" value={cat.name} onChange={e => updateCategory(cat.id, 'name', e.target.value)} className="flex-1 bg-transparent text-slate-200 font-bold border-b border-transparent focus:border-cyan-400 outline-none transition-all py-1 min-w-0" placeholder="Name" />
-                        <div className="flex flex-col items-center w-16 shrink-0 border-l border-white/10 pl-2">
+                        <input type="text" value={cat.name} onChange={e => updateCategory(cat.id, 'name', e.target.value)} className="flex-1 w-full bg-transparent text-slate-200 font-bold text-sm md:text-base border-b border-transparent focus:border-cyan-400 outline-none transition-all py-1 min-w-0" placeholder="Name" />
+                        <div className="flex flex-col items-center w-12 md:w-16 shrink-0 border-l border-white/10 pl-2">
                           <span className="text-[8px] uppercase tracking-widest text-slate-400">Goal(hr)</span>
-                          <input type="number" min="0" max="24" value={cat.target || 0} onChange={e => updateCategory(cat.id, 'target', Number(e.target.value))} className="w-full bg-transparent text-center text-cyan-300 font-black outline-none border-b border-transparent focus:border-cyan-400" />
+                          <input type="number" min="0" max="24" value={cat.target || 0} onChange={e => updateCategory(cat.id, 'target', Number(e.target.value))} className="w-full bg-transparent text-center text-cyan-300 font-black text-sm md:text-base outline-none border-b border-transparent focus:border-cyan-400" />
                         </div>
                         <button onClick={() => removeCategory(cat.id, cat.name)} className="text-red-400/50 hover:text-red-400 p-1 transition-colors shrink-0" title="Delete Category"><Trash2 size={16}/></button>
                       </div>
                     ))}
-                    <button onClick={addCategory} className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-4 flex items-center justify-center gap-2 text-slate-400 hover:text-white hover:border-cyan-400/50 hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all font-bold uppercase tracking-wider h-[74px]">
+                    <button onClick={addCategory} className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-4 flex items-center justify-center gap-2 text-slate-400 hover:text-white hover:border-cyan-400/50 hover:shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all font-bold uppercase tracking-wider h-[64px] md:h-[74px]">
                        <Plus size={20} /> Add Category
                     </button>
                   </div>
 
                   {/* Routine Engine Settings */}
-                  <div className="flex items-center gap-4 mb-8 border-t border-cyan-500/30 pt-8">
-                    <div className="bg-emerald-500/20 p-3 rounded-2xl border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
-                      <CalendarIcon size={28} className="text-emerald-400" />
+                  <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8 border-t border-cyan-500/30 pt-6 md:pt-8">
+                    <div className="bg-emerald-500/20 p-2 md:p-3 rounded-xl md:rounded-2xl border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                      <CalendarIcon size={24} className="text-emerald-400 md:hidden" />
+                      <CalendarIcon size={28} className="text-emerald-400 hidden md:block" />
                     </div>
                     <div>
-                      <h2 className="text-2xl md:text-3xl font-black uppercase tracking-wider text-white leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Habit Tracker</h2>
-                      <span className="text-xs font-bold text-emerald-500 uppercase tracking-widest neon-text">Automated Habit Management</span>
+                      <h2 className="text-xl md:text-3xl font-black uppercase tracking-wider text-white leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Habit Tracker</h2>
+                      <span className="text-[10px] md:text-xs font-bold text-emerald-500 uppercase tracking-widest neon-text">Automated Habit Management</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
                     {habitsConfig.map(habit => (
-                      <div key={habit.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 transition-all hover:border-emerald-500/30">
+                      <div key={habit.id} className="bg-white/5 border border-white/10 rounded-2xl p-3 md:p-4 flex flex-col gap-3 transition-all hover:border-emerald-500/30">
                         <div className="flex items-center gap-3">
-                          <input type="text" value={habit.name} onChange={e => updateHabitConfig(habit.id, 'name', e.target.value)} className="flex-1 bg-transparent text-slate-200 font-bold border-b border-transparent focus:border-emerald-400 outline-none transition-all py-1 min-w-0" placeholder="Habit Name" />
+                          <input type="text" value={habit.name} onChange={e => updateHabitConfig(habit.id, 'name', e.target.value)} className="flex-1 w-full bg-transparent text-slate-200 font-bold text-sm md:text-base border-b border-transparent focus:border-emerald-400 outline-none transition-all py-1 min-w-0" placeholder="Habit Name" />
                           <button onClick={() => removeHabitConfig(habit.id, habit.name)} className="text-red-400/50 hover:text-red-400 p-1 transition-colors shrink-0" title="Delete Habit Config"><Trash2 size={16}/></button>
                         </div>
-                        <div className="flex justify-between mt-2 gap-1">
+                        <div className="flex justify-between mt-1 md:mt-2 gap-1 w-full overflow-x-auto custom-scrollbar pb-1">
                            {[{v:1,l:'M'},{v:2,l:'T'},{v:3,l:'W'},{v:4,l:'T'},{v:5,l:'F'},{v:6,l:'S'},{v:0,l:'S'}].map(d => (
                              <button key={d.v} onClick={() => toggleHabitDay(habit.id, d.v)} className={`w-7 h-7 md:w-8 md:h-8 rounded-full text-[10px] md:text-xs font-bold flex items-center justify-center border transition-all shrink-0 ${habit.days.includes(d.v) ? 'bg-emerald-500/30 border-emerald-400 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-transparent border-white/10 text-slate-500 hover:border-white/30'}`}>
                                {d.l}
@@ -1691,28 +1750,29 @@
                         </div>
                       </div>
                     ))}
-                    <button onClick={addHabitConfig} className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-4 flex items-center justify-center gap-2 text-slate-400 hover:text-white hover:border-emerald-400/50 hover:shadow-[0_0_15px_rgba(16,185,129,0.2)] transition-all font-bold uppercase tracking-wider min-h-[100px]">
+                    <button onClick={addHabitConfig} className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-4 flex items-center justify-center gap-2 text-slate-400 hover:text-white hover:border-emerald-400/50 hover:shadow-[0_0_15px_rgba(16,185,129,0.2)] transition-all font-bold uppercase tracking-wider min-h-[85px] md:min-h-[100px]">
                        <Plus size={20} /> Add Habit
                     </button>
                   </div>
                 </section>
 
                 {/* Data & Storage Core */}
-                <section className="glass-panel p-6 md:p-8 rounded-3xl border-slate-700/50 shadow-[0_0_20px_rgba(255,255,255,0.02)] relative overflow-hidden">
+                <section className="glass-panel p-4 md:p-8 rounded-3xl border-slate-700/50 shadow-[0_0_20px_rgba(255,255,255,0.02)] relative overflow-hidden w-full">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-red-500 opacity-50"></div>
                   
-                  <div className="flex items-center gap-4 mb-8 pt-2">
-                    <div className="bg-slate-500/20 p-3 rounded-2xl border border-slate-500/50 shadow-[0_0_15px_rgba(255,255,255,0.1)]">
-                      <Database size={28} className="text-slate-300" />
+                  <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8 pt-2">
+                    <div className="bg-slate-500/20 p-2 md:p-3 rounded-xl md:rounded-2xl border border-slate-500/50 shadow-[0_0_15px_rgba(255,255,255,0.1)]">
+                      <Database size={24} className="text-slate-300 md:hidden" />
+                      <Database size={28} className="text-slate-300 hidden md:block" />
                     </div>
                     <div>
-                      <h2 className="text-2xl md:text-3xl font-black uppercase tracking-wider text-white leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Data & Storage Core</h2>
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Backup & Erase Architecture</span>
+                      <h2 className="text-xl md:text-3xl font-black uppercase tracking-wider text-white leading-none drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Data & Storage Core</h2>
+                      <span className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest">Backup & Erase Architecture</span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-                    <div className="xl:col-span-1 bg-blue-900/10 border border-blue-500/20 rounded-2xl p-4 flex flex-col gap-4">
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 md:gap-6">
+                    <div className="xl:col-span-1 bg-blue-900/10 border border-blue-500/20 rounded-2xl p-4 flex flex-col gap-4 w-full">
                       <h3 className="font-bold uppercase text-blue-400 border-b border-blue-500/20 pb-2">System Files</h3>
                       <p className="text-xs text-slate-400 flex-1">Save your database to a file, or restore from backup securely.</p>
                       <div className="flex flex-col gap-2 mt-auto">
@@ -1726,26 +1786,26 @@
                       </div>
                     </div>
 
-                    <div className="xl:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="xl:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 w-full">
                       <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-4 flex flex-col gap-4">
                         <h3 className="font-bold uppercase text-red-400 border-b border-red-500/20 pb-2">Erase Day</h3>
-                        <input type="date" value={resetDay} onChange={e => setResetDay(e.target.value)} className="bg-[#0b1120] border border-red-500/30 text-slate-200 rounded-xl px-3 py-2 font-bold outline-none w-full" />
-                        <button onClick={() => { playSound('click'); setPendingReset({type: 'day', payload: resetDay}); }} className="mt-auto bg-red-600/20 text-red-300 hover:bg-red-600/40 hover:text-red-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-red-500/50 transition-all">Format Day</button>
+                        <input type="date" value={resetDay} onChange={e => setResetDay(e.target.value)} className="w-full bg-[#0b1120] border border-red-500/30 text-slate-200 rounded-xl px-3 py-2 font-bold outline-none" />
+                        <button onClick={() => { playSound('click'); setPendingReset({type: 'day', payload: resetDay}); }} className="mt-auto bg-red-600/20 text-red-300 hover:bg-red-600/40 hover:text-red-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-red-500/50 transition-all w-full">Format Day</button>
                       </div>
                       <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-4 flex flex-col gap-4">
                         <h3 className="font-bold uppercase text-red-400 border-b border-red-500/20 pb-2">Erase Week</h3>
-                        <div className="flex flex-col gap-2">
-                          <input type="month" value={resetWeekMonth} onChange={e => {setResetWeekMonth(e.target.value); setResetWeekIdx(0);}} className="bg-[#0b1120] border border-red-500/30 text-slate-200 rounded-xl px-3 py-2 font-bold outline-none w-full text-sm" />
-                          <select value={resetWeekIdx} onChange={e => setResetWeekIdx(Number(e.target.value))} className="bg-[#0b1120] border border-red-500/30 text-slate-200 rounded-xl px-3 py-2 font-bold outline-none w-full text-xs">
+                        <div className="flex flex-col gap-2 w-full">
+                          <input type="month" value={resetWeekMonth} onChange={e => {setResetWeekMonth(e.target.value); setResetWeekIdx(0);}} className="w-full bg-[#0b1120] border border-red-500/30 text-slate-200 rounded-xl px-3 py-2 font-bold outline-none text-sm" />
+                          <select value={resetWeekIdx} onChange={e => setResetWeekIdx(Number(e.target.value))} className="w-full bg-[#0b1120] border border-red-500/30 text-slate-200 rounded-xl px-3 py-2 font-bold outline-none text-xs min-w-0">
                             {resetAvailableWeeks.map((w, i) => <option key={w.id} value={i}>{w.label}</option>)}
                           </select>
                         </div>
-                        <button onClick={() => { playSound('click'); setPendingReset({type: 'week', payload: resetAvailableWeeks[resetWeekIdx]?.dates}); }} className="mt-auto bg-red-600/20 text-red-300 hover:bg-red-600/40 hover:text-red-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-red-500/50 transition-all">Format Week</button>
+                        <button onClick={() => { playSound('click'); setPendingReset({type: 'week', payload: resetAvailableWeeks[resetWeekIdx]?.dates}); }} className="mt-auto bg-red-600/20 text-red-300 hover:bg-red-600/40 hover:text-red-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-red-500/50 transition-all w-full">Format Week</button>
                       </div>
                       <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-4 flex flex-col gap-4">
                         <h3 className="font-bold uppercase text-red-400 border-b border-red-500/20 pb-2">Erase Month</h3>
-                        <input type="month" value={resetMonthStr} onChange={e => setResetMonthStr(e.target.value)} className="bg-[#0b1120] border border-red-500/30 text-slate-200 rounded-xl px-3 py-2 font-bold outline-none w-full" />
-                        <button onClick={() => { playSound('click'); setPendingReset({type: 'month', payload: resetMonthStr}); }} className="mt-auto bg-red-600/80 text-white hover:bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] font-black uppercase tracking-wider py-2 rounded-xl border border-red-400 transition-all">Nuke System</button>
+                        <input type="month" value={resetMonthStr} onChange={e => setResetMonthStr(e.target.value)} className="w-full bg-[#0b1120] border border-red-500/30 text-slate-200 rounded-xl px-3 py-2 font-bold outline-none" />
+                        <button onClick={() => { playSound('click'); setPendingReset({type: 'month', payload: resetMonthStr}); }} className="mt-auto bg-red-600/80 text-white hover:bg-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] font-black uppercase tracking-wider py-2 rounded-xl border border-red-400 transition-all w-full">Nuke System</button>
                       </div>
                     </div>
                   </div>
@@ -1832,10 +1892,10 @@
       const { totals, completedTotals, totalTrackedHours, completedDaysCount } = stats;
       
       return (
-        <div className="bg-white/5 p-6 rounded-2xl border border-white/10 flex flex-col h-full print:bg-white print:border-2 print:border-gray-900 print:shadow-none">
-          <h3 className="font-bold text-lg text-white print:text-gray-900 uppercase tracking-wide mb-1 drop-shadow-[0_0_5px_rgba(255,255,255,0.2)] print:drop-shadow-none">{title}</h3>
+        <div className="bg-white/5 p-4 md:p-6 rounded-2xl border border-white/10 flex flex-col h-full print:bg-white print:border-2 print:border-gray-900 print:shadow-none w-full">
+          <h3 className="font-bold text-base md:text-lg text-white print:text-gray-900 uppercase tracking-wide mb-1 drop-shadow-[0_0_5px_rgba(255,255,255,0.2)] print:drop-shadow-none">{title}</h3>
           
-          <div className="flex flex-col gap-2 mb-6">
+          <div className="flex flex-col gap-1 md:gap-2 mb-4 md:mb-6">
             <span className="text-[10px] md:text-xs font-black text-slate-400 print:text-gray-500 uppercase tracking-widest">{totalTrackedHours} hours logged</span>
             {showAverage && (
               completedDaysCount > 0 ? (
@@ -1851,11 +1911,11 @@
           </div>
           
           {totalTrackedHours === 0 ? (
-            <div className="flex-1 flex items-center justify-center text-slate-500 print:text-gray-400 font-bold uppercase border border-dashed border-slate-600 print:border-4 print:border-gray-200 rounded-xl p-4 tracking-widest text-center">
+            <div className="flex-1 flex items-center justify-center text-slate-500 print:text-gray-400 font-bold uppercase border border-dashed border-slate-600 print:border-4 print:border-gray-200 rounded-xl p-4 tracking-widest text-center text-xs md:text-sm">
               No Data Found
             </div>
           ) : (
-            <div className="space-y-4 mt-auto">
+            <div className="space-y-3 md:space-y-4 mt-auto w-full">
               {categories.map(cat => {
                 const hours = totals[cat.id] || 0;
                 if (hours === 0) return null;
@@ -1874,18 +1934,18 @@
                 const average = completedDaysCount > 0 ? (completedHours / completedDaysCount).toFixed(1) : '-';
 
                 return (
-                  <div key={cat.id} className="relative">
-                    <div className="flex justify-between items-end text-xs md:text-sm font-bold mb-1 md:mb-2">
-                      <span className="text-slate-200 print:text-gray-800 uppercase tracking-wide truncate pr-2" style={{textShadow: isGoalMet ? `0 0 10px ${cat.color}` : `0 0 5px ${cat.color}80`}}>{cat.name}</span>
-                      <div className="flex flex-col items-end">
-                        <span className="text-white print:text-gray-900">
+                  <div key={cat.id} className="relative w-full">
+                    <div className="flex justify-between items-end text-xs md:text-sm font-bold mb-1 md:mb-2 w-full gap-2">
+                      <span className="text-slate-200 print:text-gray-800 uppercase tracking-wide truncate pr-1" style={{textShadow: isGoalMet ? `0 0 10px ${cat.color}` : `0 0 5px ${cat.color}80`}} title={cat.name}>{cat.name}</span>
+                      <div className="flex flex-col items-end shrink-0">
+                        <span className="text-white print:text-gray-900 whitespace-nowrap">
                           {hours}h 
                           {showGoals && targetHours > 0 
-                            ? <span className="text-slate-400 print:text-gray-500 text-[10px]"> / {targetHours}h Goal</span>
-                            : <span className="text-slate-400 print:text-gray-500 text-[10px]"> ({percentage}%)</span>
+                            ? <span className="text-slate-400 print:text-gray-500 text-[9px] md:text-[10px]"> / {targetHours}h Goal</span>
+                            : <span className="text-slate-400 print:text-gray-500 text-[9px] md:text-[10px]"> ({percentage}%)</span>
                           }
                         </span>
-                        {showAverage && completedDaysCount > 0 && <span className="text-[10px] text-cyan-400 print:text-blue-600 tracking-wide mt-0.5">Avg: {average}h/d</span>}
+                        {showAverage && completedDaysCount > 0 && <span className="text-[9px] md:text-[10px] text-cyan-400 print:text-blue-600 tracking-wide mt-0.5 whitespace-nowrap">Avg: {average}h/d</span>}
                       </div>
                     </div>
                     <div className={`w-full h-2 md:h-3 bg-[#0b1120] print:bg-gray-100 rounded-full overflow-hidden border ${isGoalMet ? 'border-transparent' : 'border-white/10'} print:border-2 print:border-gray-900 print:h-4 transition-all`} style={isGoalMet ? {boxShadow: `0 0 8px ${cat.color}`} : {}}>
