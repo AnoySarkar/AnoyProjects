@@ -217,6 +217,8 @@
     const MinusSquare = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
     const XSquare = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>;
     const Trophy = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
+    const Undo = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>;
+    const Redo = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>;
 
     // --- Local Storage Keys ---
     const LOCAL_STORAGE_KEY = 'trackerbox_data_v11';
@@ -298,7 +300,8 @@
     const hasActivity = (dayData) => {
       if (!dayData) return false;
       for (let i = 0; i < 24; i++) {
-        if (dayData[i] && (dayData[i].t1 || dayData[i].t2)) return true;
+        const h = dayData[i];
+        if (h && (h.t1 || h.t2 || h.q1 || h.q2 || h.q3 || h.q4)) return true;
       }
       return false;
     };
@@ -306,7 +309,10 @@
     const hasFullActivity = (dayData) => {
       if (!dayData) return false;
       for (let i = 0; i < 24; i++) {
-        if (!dayData[i] || (!dayData[i].t1 && !dayData[i].t2)) return false;
+        const h = dayData[i] || {};
+        const half1Full = h.split1 ? (h.q1 && h.q2) : h.t1;
+        const half2Full = h.split2 ? (h.q3 && h.q4) : h.t2;
+        if (!half1Full || !half2Full) return false;
       }
       return true;
     };
@@ -322,6 +328,11 @@
       const [journalData, setJournalData] = useState({});
       const [todosData, setTodosData] = useState({});
       
+      // History States for Undo/Redo
+      const [past, setPast] = useState([]);
+      const [future, setFuture] = useState([]);
+      const allDataRef = useRef(allData);
+
       const [habitsConfig, setHabitsConfig] = useState(() => {
         const saved = localStorage.getItem(LOCAL_HABITS_CONFIG_KEY);
         return saved ? JSON.parse(saved) : [];
@@ -342,11 +353,58 @@
       const fileInputRef = useRef(null);
       const completedSessionRef = useRef(null);
 
+      // Keep ref perfectly synced for history captures
+      useEffect(() => {
+        allDataRef.current = allData;
+      }, [allData]);
+
       useEffect(() => {
         if (!categories.find(c => c.id === selectedColorId) && selectedColorId !== 'lock') {
           setSelectedColorId('lock');
         }
       }, [categories, selectedColorId]);
+
+      // --- History (Undo/Redo) Actions ---
+      const saveHistoryState = useCallback(() => {
+         const newState = JSON.stringify(allDataRef.current);
+         setPast(p => {
+            if (p.length > 0 && p[p.length - 1] === newState) return p;
+            return [...p, newState].slice(-30); // keep last 30 states
+         });
+         setFuture([]);
+      }, []);
+
+      const handleUndo = useCallback(() => {
+         setPast(p => {
+             if (p.length === 0) return p;
+             const previousStr = p[p.length - 1];
+             const parsed = JSON.parse(previousStr);
+             
+             setAllData(currentData => {
+                 setFuture(f => [JSON.stringify(currentData), ...f]);
+                 localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
+                 return parsed;
+             });
+             playSound('erase');
+             return p.slice(0, -1);
+         });
+      }, []);
+
+      const handleRedo = useCallback(() => {
+         setFuture(f => {
+             if (f.length === 0) return f;
+             const nextStr = f[0];
+             const parsed = JSON.parse(nextStr);
+             
+             setAllData(currentData => {
+                 setPast(p => [...p, JSON.stringify(currentData)]);
+                 localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
+                 return parsed;
+             });
+             playSound('paint');
+             return f.slice(1);
+         });
+      }, []);
 
       // --- Focus Session Auto-Logger (Consumes Ref) ---
       useEffect(() => {
@@ -365,7 +423,7 @@
             return newData;
           });
         }
-      }); // Runs on every render, naturally catches updates after timer hits zero
+      });
 
       // Timeline States
       const today = new Date();
@@ -419,7 +477,6 @@
               if (prev.mode === 'focus') {
                 if (prev.minutes === 0 && prev.seconds === 0) {
                   playSound('peaceful');
-                  // Trigger auto-log to be picked up in the next render cycle
                   completedSessionRef.current = {
                      duration: prev.initialMinutes,
                      categoryId: prev.categoryId,
@@ -432,7 +489,6 @@
                 }
                 return { ...prev, seconds: prev.seconds - 1 };
               } else {
-                // Break / Stopwatch Mode
                 if (prev.seconds === 59) {
                   return { ...prev, minutes: prev.minutes + 1, seconds: 0 };
                 }
@@ -492,6 +548,16 @@
           if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return; 
           const key = e.key.toLowerCase();
           
+          if ((e.ctrlKey || e.metaKey) && key === 'z') {
+             if (e.shiftKey) handleRedo();
+             else handleUndo();
+             return;
+          }
+          if ((e.ctrlKey || e.metaKey) && key === 'y') {
+             handleRedo();
+             return;
+          }
+          
           if (key === 'l') {
             playSound('click');
             setSelectedColorId('lock');
@@ -506,7 +572,7 @@
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-      }, [categories]);
+      }, [categories, handleUndo, handleRedo]);
 
       useEffect(() => {
         const weekIdx = availableWeeks.findIndex(w => w.dates.includes(todayStr));
@@ -560,7 +626,6 @@
             let newLogs = [...currentLogs];
 
             if (isPast && currentLogs.length > 0) {
-               // Protect past days from deletions. Only dynamically update names if they changed in config.
                newLogs = currentLogs.map(log => {
                   const conf = habitsConfig.find(h => h.id === log.id);
                   if (conf && conf.name !== log.name) {
@@ -570,7 +635,6 @@
                   return log;
                });
             } else {
-               // Strict Sync for Today, Future, or completely empty past days
                newLogs = applicableHabits.map(h => {
                  const existing = currentLogs.find(log => log.id === h.id);
                  if (existing) {
@@ -594,7 +658,6 @@
         }
       }, [activeJournalDate, habitsConfig]);
 
-      // Reset Todo Input on Journal Open
       useEffect(() => {
         if (activeJournalDate) setTodoInput('');
       }, [activeJournalDate]);
@@ -607,6 +670,7 @@
 
       const handlePasteDay = (dateStr) => {
         if (!dayClipboard) return;
+        saveHistoryState();
         playSound('success');
         setAllData(prev => {
           const newData = { ...prev, [dateStr]: JSON.parse(JSON.stringify(dayClipboard)) };
@@ -616,13 +680,14 @@
       };
 
       const handleMagicFill = (dateStr) => {
+        saveHistoryState();
         playSound('success');
         const sleepCat = categories.find(c => c.name.toLowerCase().includes('sleep')) || categories[0];
         
         setAllData(prev => {
           const dayData = { ...(prev[dateStr] || {}) };
           for (let i = 0; i <= 7; i++) {
-            dayData[i] = { t1: sleepCat.id, t2: sleepCat.id };
+            dayData[i] = { split1: false, split2: false, t1: sleepCat.id, t2: sleepCat.id };
           }
           const newData = { ...prev, [dateStr]: dayData };
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
@@ -798,8 +863,18 @@
          let trackedHours = 0;
          Object.values(allData).forEach(day => {
             Object.values(day).forEach(h => {
-               if (h.t1) trackedHours += 0.5;
-               if (h.t2) trackedHours += 0.5;
+               if (h.split1) {
+                  if (h.q1) trackedHours += 0.25;
+                  if (h.q2) trackedHours += 0.25;
+               } else {
+                  if (h.t1) trackedHours += 0.5;
+               }
+               if (h.split2) {
+                  if (h.q3) trackedHours += 0.25;
+                  if (h.q4) trackedHours += 0.25;
+               } else {
+                  if (h.t2) trackedHours += 0.5;
+               }
             });
          });
          xp += trackedHours * 10;
@@ -921,7 +996,7 @@
         setSelectedColorId(id);
       };
 
-      // --- Toggle/Paint Logic ---
+      // --- Toggle/Paint & Context Menu Logic ---
       const handleUpdateSegment = useCallback((dateStr, hourIndex, triangleId, colorId, overrideMode) => {
         if (colorId === 'lock') return; 
 
@@ -948,7 +1023,10 @@
       const handlePointerDown = (dateStr, hourIndex, triangleId, e) => {
         if (e.button !== 0 || selectedColorId === 'lock') return; 
         
-        const prevColor = allData[dateStr]?.[hourIndex]?.[triangleId];
+        saveHistoryState();
+
+        const hourData = allData[dateStr]?.[hourIndex] || {};
+        const prevColor = hourData[triangleId];
         const mode = (prevColor === selectedColorId) ? 'erase' : 'paint';
         
         setIsPainting(mode); 
@@ -959,6 +1037,46 @@
         if (isPainting && selectedColorId !== 'lock') {
           handleUpdateSegment(dateStr, hourIndex, triangleId, selectedColorId, isPainting);
         }
+      };
+
+      const handleSplitToggle = (dateStr, hour, half, e) => {
+        e.preventDefault(); // disable native context menu
+        saveHistoryState();
+        playSound('click');
+        
+        setAllData(prev => {
+            const dayData = prev[dateStr] || {};
+            const hourData = dayData[hour] || { t1: null, t2: null };
+            
+            const newData = { ...prev };
+            const newHourData = { ...hourData };
+            
+            if (half === 'half1') {
+                if (newHourData.split1) {
+                    newHourData.split1 = false;
+                    newHourData.t1 = newHourData.q1 || newHourData.t1;
+                    delete newHourData.q1; delete newHourData.q2;
+                } else {
+                    newHourData.split1 = true;
+                    newHourData.q1 = newHourData.t1;
+                    newHourData.q2 = newHourData.t1;
+                }
+            } else if (half === 'half2') {
+                if (newHourData.split2) {
+                    newHourData.split2 = false;
+                    newHourData.t2 = newHourData.q3 || newHourData.t2;
+                    delete newHourData.q3; delete newHourData.q4;
+                } else {
+                    newHourData.split2 = true;
+                    newHourData.q3 = newHourData.t2;
+                    newHourData.q4 = newHourData.t2;
+                }
+            }
+            
+            newData[dateStr] = { ...dayData, [hour]: newHourData };
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
+            return newData;
+        });
       };
 
       useEffect(() => {
@@ -989,6 +1107,10 @@
           localStorage.setItem(LOCAL_HABITS_CONFIG_KEY, JSON.stringify(updated));
           setPendingReset(null);
           return;
+        }
+
+        if (['day', 'week', 'month'].includes(pendingReset.type)) {
+           saveHistoryState();
         }
 
         let currentData = { ...allData };
@@ -1035,15 +1157,26 @@
           if (isComplete) completedDaysCount++;
 
           Object.values(dayData).forEach(hourData => {
-            if (hourData.t1 && totals[hourData.t1] !== undefined) { 
-              totals[hourData.t1] += 0.5; 
-              totalTrackedHours += 0.5; 
-              if (isComplete) completedTotals[hourData.t1] += 0.5;
+            const processPart = (id, duration) => {
+                if (id && totals[id] !== undefined) { 
+                    totals[id] += duration; 
+                    totalTrackedHours += duration; 
+                    if (isComplete) completedTotals[id] += duration;
+                }
+            };
+
+            if (hourData.split1) {
+               processPart(hourData.q1, 0.25);
+               processPart(hourData.q2, 0.25);
+            } else {
+               processPart(hourData.t1, 0.5);
             }
-            if (hourData.t2 && totals[hourData.t2] !== undefined) { 
-              totals[hourData.t2] += 0.5; 
-              totalTrackedHours += 0.5; 
-              if (isComplete) completedTotals[hourData.t2] += 0.5;
+
+            if (hourData.split2) {
+               processPart(hourData.q3, 0.25);
+               processPart(hourData.q4, 0.25);
+            } else {
+               processPart(hourData.t2, 0.5);
             }
           });
         });
@@ -1075,9 +1208,19 @@
 
       const activeDayData = allData[activeJournalDate] || {};
       let activeDayTrackedHours = 0;
-      Object.values(activeDayData).forEach(hourData => {
-         if (hourData.t1) activeDayTrackedHours += 0.5;
-         if (hourData.t2) activeDayTrackedHours += 0.5;
+      Object.values(activeDayData).forEach(h => {
+         if (h.split1) {
+            if (h.q1) activeDayTrackedHours += 0.25;
+            if (h.q2) activeDayTrackedHours += 0.25;
+         } else {
+            if (h.t1) activeDayTrackedHours += 0.5;
+         }
+         if (h.split2) {
+            if (h.q3) activeDayTrackedHours += 0.25;
+            if (h.q4) activeDayTrackedHours += 0.25;
+         } else {
+            if (h.t2) activeDayTrackedHours += 0.5;
+         }
       });
 
       return (
@@ -1328,12 +1471,12 @@
                 
                 <div className="space-y-4 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <h3 className="font-bold text-cyan-300 uppercase mb-2 border-b border-cyan-500/30 pb-1">Painting & Scrolling</h3>
-                    <p>Select a category color to paint your grid. <strong className="text-white bg-red-500/20 px-1 rounded border border-red-500/30">CRITICAL:</strong> To scroll the grid on mobile, you MUST select the <strong>Lock</strong> icon. Selecting a color enables continuous painting which disables touch-scrolling.</p>
+                    <h3 className="font-bold text-cyan-300 uppercase mb-2 border-b border-cyan-500/30 pb-1">Painting & Sub-dividing</h3>
+                    <p>Select a category color to paint your grid blocks.<br/><strong className="text-white bg-purple-500/20 px-1 rounded border border-purple-500/30">NEW:</strong> <strong>Right-click</strong> (PC) or <strong>Long-press</strong> (Mobile) any triangle to divide it into two 15-minute segments! Do it again to merge them back into 30 minutes.</p>
                   </div>
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <h3 className="font-bold text-yellow-300 uppercase mb-2 border-b border-yellow-500/30 pb-1">Magic Fill & Copy/Paste</h3>
-                    <p>Hover over (or tap) any Day Header to reveal controls above it: <strong className="text-white">Zap (Auto-Fill Sleep 12am-8am)</strong>, <strong className="text-white">Copy</strong>, <strong className="text-white">Paste</strong>, and <strong className="text-white">Trash</strong>.</p>
+                    <h3 className="font-bold text-yellow-300 uppercase mb-2 border-b border-yellow-500/30 pb-1">Undo & Redo</h3>
+                    <p>Make a mistake? Click the Undo/Redo arrows in the Color Palette, or simply press <strong className="text-white">Ctrl+Z</strong> and <strong className="text-white">Ctrl+Y</strong> to magically restore your grid.</p>
                   </div>
                   <div className="bg-white/5 p-4 rounded-xl border border-white/10">
                     <h3 className="font-bold text-purple-400 uppercase mb-2 border-b border-purple-500/30 pb-1">Captain's Log & Objectives</h3>
@@ -1477,8 +1620,11 @@
                     )}
                   </div>
 
-                  {/* Color Palette Toolbar */}
-                  <div className="flex flex-wrap gap-2 md:gap-3 w-full">
+                  {/* Color Palette & Action Toolbar */}
+                  <div className="flex flex-wrap gap-2 md:gap-3 w-full items-center">
+                    <button onClick={handleUndo} disabled={past.length === 0} className={`p-2 md:p-3 rounded-2xl transition-all border ${past.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={20} /></button>
+                    <button onClick={handleRedo} disabled={future.length === 0} className={`p-2 md:p-3 rounded-2xl transition-all border ${future.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={20} /></button>
+                    <div className="w-px h-6 bg-white/10 mx-1 hidden sm:block"></div>
                     <button onClick={() => handleColorSelect('lock')} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border ${selectedColorId === 'lock' ? 'bg-red-500/20 border-red-500 text-red-300 shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'border-white/10 bg-white/5 hover:bg-white/10 text-slate-400'}`} title="Lock Screen for Scrolling (Hotkey: L)">
                       <Lock size={20} />
                       <span className="text-xs md:text-sm font-bold uppercase tracking-wide hidden sm:inline">Lock</span>
@@ -1486,7 +1632,7 @@
                     {categories.map((cat, idx) => (
                       <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`relative flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border shrink-0 ${selectedColorId === cat.id ? 'bg-white/10 border-white/50 scale-105' : 'border-white/10 bg-white/5 hover:bg-white/10'}`} style={selectedColorId === cat.id ? {boxShadow: `0 0 15px ${cat.color}40`} : {}} title={`Hotkey: ${idx + 1}`}>
                         <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg" style={{ backgroundColor: cat.color, boxShadow: `0 0 10px ${cat.color}80` }} />
-                        <span className="text-xs md:text-sm font-bold uppercase tracking-wide text-slate-200 hidden sm:inline">{cat.name}</span>
+                        <span className="text-xs md:text-sm font-bold uppercase tracking-wide text-slate-200 hidden lg:inline">{cat.name}</span>
                       </button>
                     ))}
                   </div>
@@ -1632,21 +1778,70 @@
                                 {/* Grid Cells */}
                                 {currentWeekDates.map(dateStr => {
                                   const dayData = allData[dateStr] || {};
-                                  const cellData = dayData[hour] || { t1: null, t2: null };
+                                  const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
                                   
+                                  const isSplit1 = cellData.split1;
+                                  const isSplit2 = cellData.split2;
+
                                   const t1Color = cellData.t1 ? categories.find(c => c.id === cellData.t1)?.color : 'rgba(255,255,255,0.02)';
                                   const t2Color = cellData.t2 ? categories.find(c => c.id === cellData.t2)?.color : 'rgba(255,255,255,0.02)';
+                                  const q1Color = cellData.q1 ? categories.find(c => c.id === cellData.q1)?.color : 'rgba(255,255,255,0.02)';
+                                  const q2Color = cellData.q2 ? categories.find(c => c.id === cellData.q2)?.color : 'rgba(255,255,255,0.02)';
+                                  const q3Color = cellData.q3 ? categories.find(c => c.id === cellData.q3)?.color : 'rgba(255,255,255,0.02)';
+                                  const q4Color = cellData.q4 ? categories.find(c => c.id === cellData.q4)?.color : 'rgba(255,255,255,0.02)';
                                   
-                                  const isColored = cellData.t1 || cellData.t2;
-                                  const glowColor = cellData.t1 ? t1Color : (cellData.t2 ? t2Color : 'transparent');
-                                  const cellStyle = isColored ? { boxShadow: `0 0 15px ${glowColor}20, inset 0 0 10px ${glowColor}10` } : {};
+                                  const activeColorId = cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2;
+                                  const glowColorHex = activeColorId ? categories.find(c => c.id === activeColorId)?.color : 'transparent';
+                                  const cellStyle = activeColorId ? { boxShadow: `0 0 15px ${glowColorHex}20, inset 0 0 10px ${glowColorHex}10` } : {};
 
                                   return (
                                     <td key={`${dateStr}-${hour}`} className="align-middle p-1 md:p-1.5 border-none print-border">
                                       <div className="square-cell-inner mx-auto relative rounded-xl md:rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm" style={cellStyle}>
                                         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={`w-full h-full block ${selectedColorId !== 'lock' ? 'paintable-svg' : ''}`}>
-                                          <polygon points="0,100 0,0 100,0" fill={t1Color} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't1')} className="cursor-pointer transition-opacity hover:opacity-80" />
-                                          <polygon points="0,100 100,100 100,0" fill={t2Color} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't2')} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                          
+                                          {isSplit1 ? (
+                                             <>
+                                               <polygon points="0,0 100,0 50,50" fill={q1Color} 
+                                                  onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 'q1', e); }} 
+                                                  onPointerEnter={() => handlePointerEnter(dateStr, hour, 'q1')} 
+                                                  onContextMenu={(e) => handleSplitToggle(dateStr, hour, 'half1', e)}
+                                                  className="cursor-pointer transition-opacity hover:opacity-80" />
+                                               <polygon points="0,0 0,100 50,50" fill={q2Color} 
+                                                  onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 'q2', e); }} 
+                                                  onPointerEnter={() => handlePointerEnter(dateStr, hour, 'q2')} 
+                                                  onContextMenu={(e) => handleSplitToggle(dateStr, hour, 'half1', e)}
+                                                  className="cursor-pointer transition-opacity hover:opacity-80" />
+                                               <line x1="0" y1="0" x2="50" y2="50" stroke="var(--sticky-bg)" strokeWidth="4" className="pointer-events-none" />
+                                             </>
+                                          ) : (
+                                             <polygon points="0,100 0,0 100,0" fill={t1Color} 
+                                                onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't1', e); }} 
+                                                onPointerEnter={() => handlePointerEnter(dateStr, hour, 't1')} 
+                                                onContextMenu={(e) => handleSplitToggle(dateStr, hour, 'half1', e)}
+                                                className="cursor-pointer transition-opacity hover:opacity-80" />
+                                          )}
+
+                                          {isSplit2 ? (
+                                             <>
+                                               <polygon points="100,100 100,0 50,50" fill={q3Color} 
+                                                  onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 'q3', e); }} 
+                                                  onPointerEnter={() => handlePointerEnter(dateStr, hour, 'q3')} 
+                                                  onContextMenu={(e) => handleSplitToggle(dateStr, hour, 'half2', e)}
+                                                  className="cursor-pointer transition-opacity hover:opacity-80" />
+                                               <polygon points="100,100 0,100 50,50" fill={q4Color} 
+                                                  onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 'q4', e); }} 
+                                                  onPointerEnter={() => handlePointerEnter(dateStr, hour, 'q4')} 
+                                                  onContextMenu={(e) => handleSplitToggle(dateStr, hour, 'half2', e)}
+                                                  className="cursor-pointer transition-opacity hover:opacity-80" />
+                                               <line x1="100" y1="100" x2="50" y2="50" stroke="var(--sticky-bg)" strokeWidth="4" className="pointer-events-none" />
+                                             </>
+                                          ) : (
+                                             <polygon points="0,100 100,100 100,0" fill={t2Color} 
+                                                onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't2', e); }} 
+                                                onPointerEnter={() => handlePointerEnter(dateStr, hour, 't2')} 
+                                                onContextMenu={(e) => handleSplitToggle(dateStr, hour, 'half2', e)}
+                                                className="cursor-pointer transition-opacity hover:opacity-80" />
+                                          )}
                                           <line x1="0" y1="100" x2="100" y2="0" stroke="var(--sticky-bg)" strokeWidth="6" className="pointer-events-none" />
                                         </svg>
                                       </div>
@@ -1716,7 +1911,6 @@
                     </div>
                   </div>
                   
-                  {/* NEW FEATURE: Weekly Activity Chart */}
                   <WeeklyChart weekDates={statAvailableWeeks[statWeekIndex]?.dates || []} allData={allData} categories={categories} />
                   
                 </section>
@@ -1889,16 +2083,41 @@
                             </td>
                             {week.dates.map(dateStr => {
                               const dayData = allData[dateStr] || {};
-                              const cellData = dayData[hour] || { t1: null, t2: null };
+                              const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
+                              
+                              const isSplit1 = cellData.split1;
+                              const isSplit2 = cellData.split2;
+
                               const t1Color = cellData.t1 ? categories.find(c => c.id === cellData.t1)?.color : '#ffffff';
                               const t2Color = cellData.t2 ? categories.find(c => c.id === cellData.t2)?.color : '#ffffff';
+                              const q1Color = cellData.q1 ? categories.find(c => c.id === cellData.q1)?.color : '#ffffff';
+                              const q2Color = cellData.q2 ? categories.find(c => c.id === cellData.q2)?.color : '#ffffff';
+                              const q3Color = cellData.q3 ? categories.find(c => c.id === cellData.q3)?.color : '#ffffff';
+                              const q4Color = cellData.q4 ? categories.find(c => c.id === cellData.q4)?.color : '#ffffff';
 
                               return (
                                 <td key={`${dateStr}-${hour}`} className="p-0 relative h-10 align-middle min-w-[50px]">
                                   <div className="absolute inset-0 rounded-lg border-2 border-gray-900 overflow-hidden bg-white">
                                     <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full block">
-                                      <polygon points="0,100 0,0 100,0" fill={t1Color} />
-                                      <polygon points="0,100 100,100 100,0" fill={t2Color} />
+                                      {isSplit1 ? (
+                                         <>
+                                           <polygon points="0,0 100,0 50,50" fill={q1Color} />
+                                           <polygon points="0,0 0,100 50,50" fill={q2Color} />
+                                           <line x1="0" y1="0" x2="50" y2="50" stroke="#111827" strokeWidth="2" />
+                                         </>
+                                      ) : (
+                                         <polygon points="0,100 0,0 100,0" fill={t1Color} />
+                                      )}
+                                      
+                                      {isSplit2 ? (
+                                         <>
+                                           <polygon points="100,100 100,0 50,50" fill={q3Color} />
+                                           <polygon points="100,100 0,100 50,50" fill={q4Color} />
+                                           <line x1="100" y1="100" x2="50" y2="50" stroke="#111827" strokeWidth="2" />
+                                         </>
+                                      ) : (
+                                         <polygon points="0,100 100,100 100,0" fill={t2Color} />
+                                      )}
                                       <line x1="0" y1="100" x2="100" y2="0" stroke="#111827" strokeWidth="2" />
                                     </svg>
                                   </div>
@@ -1927,10 +2146,26 @@
          let totalHours = 0;
          for (let i = 0; i < 24; i++) {
             const h = dayData[i] || {};
-            segments.push(h.t1);
-            segments.push(h.t2);
-            if (h.t1) totalHours += 0.5;
-            if (h.t2) totalHours += 0.5;
+            
+            if (h.split1) {
+                segments.push({ id: h.q1, duration: 0.25 });
+                segments.push({ id: h.q2, duration: 0.25 });
+                if (h.q1) totalHours += 0.25;
+                if (h.q2) totalHours += 0.25;
+            } else {
+                segments.push({ id: h.t1, duration: 0.5 });
+                if (h.t1) totalHours += 0.5;
+            }
+
+            if (h.split2) {
+                segments.push({ id: h.q3, duration: 0.25 });
+                segments.push({ id: h.q4, duration: 0.25 });
+                if (h.q3) totalHours += 0.25;
+                if (h.q4) totalHours += 0.25;
+            } else {
+                segments.push({ id: h.t2, duration: 0.5 });
+                if (h.t2) totalHours += 0.5;
+            }
          }
          const dateObj = new Date(dateStr);
          const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
@@ -1947,10 +2182,10 @@
                            <div className="opacity-0 group-hover:opacity-100 absolute -top-7 md:-top-8 left-1/2 -translate-x-1/2 bg-black text-white text-[9px] md:text-[10px] py-1 px-1.5 md:px-2 rounded shadow-lg pointer-events-none transition-opacity font-bold whitespace-nowrap z-10">
                               {data.totalHours}h
                            </div>
-                           {data.segments.map((catId, idx) => {
-                              const cat = categories.find(c => c.id === catId);
+                           {data.segments.map((seg, idx) => {
+                              const cat = categories.find(c => c.id === seg.id);
                               const bgColor = cat ? cat.color : 'transparent';
-                              return <div key={idx} className="flex-1 w-full" style={{ backgroundColor: bgColor }}></div>
+                              return <div key={idx} className="w-full" style={{ backgroundColor: bgColor, flexGrow: seg.duration }}></div>
                            })}
                         </div>
                         <span className="text-[8px] md:text-[10px] font-bold text-slate-500 uppercase text-center mt-auto">{data.dayName}</span>
