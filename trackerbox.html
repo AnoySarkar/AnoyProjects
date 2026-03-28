@@ -1912,6 +1912,7 @@
                   </div>
                   
                   <WeeklyChart weekDates={statAvailableWeeks[statWeekIndex]?.dates || []} allData={allData} categories={categories} />
+                  <ChronoSpectralHeatmap statYear={statYear} allData={allData} todosData={todosData} habitLogs={habitLogs} categories={categories} />
                   
                 </section>
 
@@ -2192,6 +2193,185 @@
                      </div>
                   )
                )}
+            </div>
+         </div>
+      );
+    }
+
+    // --- Component: ChronoSpectralHeatmap ---
+    function ChronoSpectralHeatmap({ statYear, allData, todosData, habitLogs, categories }) {
+      const [selectedFilter, setSelectedFilter] = useState('total');
+      const year = parseInt(statYear, 10);
+      if (isNaN(year)) return null;
+
+      const getProductivityScore = useCallback((dateStr) => {
+         const dayData = allData[dateStr] || {};
+         
+         // 1. Category-Specific Logic (Spectral Filtering)
+         if (selectedFilter !== 'total') {
+            const cat = categories.find(c => c.id === selectedFilter);
+            if (!cat) return 0;
+            const targetHours = cat.target || 0;
+            let loggedHours = 0;
+            
+            Object.values(dayData).forEach(h => {
+               if (h.split1) {
+                  if (h.q1 === selectedFilter) loggedHours += 0.25;
+                  if (h.q2 === selectedFilter) loggedHours += 0.25;
+               } else {
+                  if (h.t1 === selectedFilter) loggedHours += 0.5;
+               }
+               if (h.split2) {
+                  if (h.q3 === selectedFilter) loggedHours += 0.25;
+                  if (h.q4 === selectedFilter) loggedHours += 0.25;
+               } else {
+                  if (h.t2 === selectedFilter) loggedHours += 0.5;
+               }
+            });
+
+            if (targetHours > 0) {
+               return Math.round(Math.min(1, loggedHours / targetHours) * 100);
+            } else {
+               return loggedHours > 0 ? 100 : 0;
+            }
+         }
+
+         // 2. Total Productivity Logic
+         const targetHours = categories.reduce((sum, cat) => sum + (cat.target || 0), 0);
+         let loggedHours = 0;
+         
+         Object.values(dayData).forEach(h => {
+             if (h.split1) {
+                if (h.q1) loggedHours += 0.25;
+                if (h.q2) loggedHours += 0.25;
+             } else {
+                if (h.t1) loggedHours += 0.5;
+             }
+             if (h.split2) {
+                if (h.q3) loggedHours += 0.25;
+                if (h.q4) loggedHours += 0.25;
+             } else {
+                if (h.t2) loggedHours += 0.5;
+             }
+         });
+
+         const dayTodos = todosData[dateStr] || [];
+         const totalTodos = dayTodos.length;
+         const completedTodos = dayTodos.filter(t => t.status === 'green' || t.done).length;
+
+         const dayHabits = (habitLogs[dateStr] || []).filter(h => !h.deleted);
+         const totalHabits = dayHabits.length;
+         const completedHabits = dayHabits.filter(h => h.status === 'green').length;
+
+         let totalWeight = 0;
+         let totalScore = 0;
+
+         // Factor A: Logged Hours vs Target
+         if (targetHours > 0) {
+             totalWeight += 1;
+             totalScore += Math.min(1, loggedHours / targetHours);
+         } else if (loggedHours > 0) {
+             totalWeight += 1;
+             totalScore += 1; 
+         }
+
+         // Factor B: Todos
+         if (totalTodos > 0) {
+             totalWeight += 1;
+             totalScore += (completedTodos / totalTodos);
+         }
+
+         // Factor C: Habits
+         if (totalHabits > 0) {
+             totalWeight += 1;
+             totalScore += (completedHabits / totalHabits);
+         }
+
+         if (totalWeight === 0) return 0;
+         return Math.round((totalScore / totalWeight) * 100);
+      }, [allData, todosData, habitLogs, categories, selectedFilter]);
+
+      const grid = useMemo(() => {
+          const startDate = new Date(year, 0, 1);
+          const endDate = new Date(year, 11, 31);
+          const days = [];
+          
+          const startDayOfWeek = startDate.getDay(); 
+          for (let i = 0; i < startDayOfWeek; i++) days.push(null); // Pad the first week
+
+          let d = new Date(startDate);
+          while (d <= endDate) {
+              const dateStr = formatDateString(d);
+              days.push({
+                  dateStr,
+                  dateObj: new Date(d),
+                  score: getProductivityScore(dateStr)
+              });
+              d.setDate(d.getDate() + 1);
+          }
+          return days;
+      }, [year, getProductivityScore]);
+
+      const getHeatmapStyle = (score) => {
+          if (score === 0) return {}; // Handled by default Tailwind empty classes
+          
+          // Smooth Continuous Gradient Calculation: 
+          // Hue smoothly moves from 0 (Deep Crimson Red) to 140 (Deep Forest Green)
+          const hue = (score / 100) * 140;
+          return {
+              backgroundColor: `hsl(${hue}, 85%, 45%)`,
+              borderColor: `hsl(${hue}, 85%, 35%)`,
+              boxShadow: score === 100 ? `0 0 10px hsl(${hue}, 85%, 45%, 0.8)` : 'none'
+          };
+      };
+
+      return (
+         <div className="mt-6 md:mt-8 bg-[#0b1120] p-4 md:p-6 rounded-2xl border border-white/10 w-full overflow-hidden flex flex-col">
+            <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 mb-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                   <h3 className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest">Chrono-Spectral Heatmap ({year})</h3>
+                   <select 
+                      value={selectedFilter} 
+                      onChange={e => { playSound('click'); setSelectedFilter(e.target.value); }} 
+                      className="bg-white/5 text-slate-200 text-[10px] md:text-xs font-bold px-3 py-1.5 rounded-lg border border-white/20 outline-none focus:border-cyan-400 transition-colors"
+                   >
+                      <option value="total">Total Productivity</option>
+                      {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                   </select>
+                </div>
+                <div className="flex items-center gap-1.5 text-[8px] md:text-[10px] font-bold text-slate-500 uppercase flex-wrap">
+                   <span>Less</span>
+                   <div className="w-3 h-3 rounded-sm bg-white/5 border border-white/10"></div>
+                   <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(0, 85%, 45%)', borderColor: 'hsl(0, 85%, 35%)' }}></div>
+                   <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(35, 85%, 45%)', borderColor: 'hsl(35, 85%, 35%)' }}></div>
+                   <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(70, 85%, 45%)', borderColor: 'hsl(70, 85%, 35%)' }}></div>
+                   <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(105, 85%, 45%)', borderColor: 'hsl(105, 85%, 35%)' }}></div>
+                   <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(140, 85%, 45%)', borderColor: 'hsl(140, 85%, 35%)', boxShadow: '0 0 6px hsl(140, 85%, 45%, 0.6)' }}></div>
+                   <span>More</span>
+                </div>
+            </div>
+            
+            {/* Added Padding to prevent tooltip crop (pt-10 px-4) */}
+            <div className="overflow-x-auto custom-scrollbar pb-4 pt-10 px-4 -mx-4">
+                <div className="min-w-max">
+                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(7, 1fr)', gridAutoFlow: 'column', gap: '4px' }}>
+                        {grid.map((cell, idx) => {
+                            if (!cell) return <div key={`empty-${idx}`} className="w-3 h-3 md:w-4 md:h-4"></div>;
+                            return (
+                                <div 
+                                    key={cell.dateStr} 
+                                    className={`w-3 h-3 md:w-4 md:h-4 rounded-sm border transition-all hover:scale-125 hover:z-10 relative group ${cell.score === 0 ? 'bg-white/5 border-white/10' : ''}`}
+                                    style={cell.score > 0 ? getHeatmapStyle(cell.score) : {}}
+                                >
+                                    <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/20 text-white text-[10px] py-1.5 px-2.5 rounded-lg shadow-[0_4px_15px_rgba(0,0,0,0.8)] pointer-events-none transition-opacity font-bold whitespace-nowrap z-[100]">
+                                        {cell.dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}: <span className="text-cyan-300">{cell.score}% P</span>
+                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900"></div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
             </div>
          </div>
       );
