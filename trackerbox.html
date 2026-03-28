@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Trackerbox</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <style>
+    @media print {
+      body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; }
+      .print-hidden { display: none !important; }
+      .print-break-inside-avoid { break-inside: avoid; }
+      .print-page-break { page-break-after: always; }
+      .shadow-pop { box-shadow: none !important; border-width: 2px !important; }
+      .shadow-pop-sm { box-shadow: none !important; border-width: 2px !important; }
+    }
+    .shadow-pop { box-shadow: 6px 6px 0px 0px rgba(17, 24, 39, 1); }
+    .shadow-pop-sm { box-shadow: 3px 3px 0px 0px rgba(17, 24, 39, 1); }
+    .shadow-pop-hover:hover { box-shadow: 0px 0px 0px 0px rgba(17, 24, 39, 1); transform: translate(3px, 3px); }
+    
+    /* Rigid square cells to prevent rectangle stretching */
+    .square-cell-inner { width: 52px; height: 52px; }
+    @media (min-width: 768px) { .square-cell-inner { width: 60px; height: 60px; } }
+    
+    /* Touch actions */
+    .paintable-svg { touch-action: none; } /* Prevents scrolling when dragging ON the box */
+    .scrollable-container { touch-action: pan-x pan-y; } /* Allows scrolling on gaps */
+
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar { height: 12px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #f3f4f6; border-radius: 8px; border: 2px solid #111827; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #111827; border-radius: 8px; }
+  </style>
+</head>
+<body class="bg-[#fdf8f5] text-gray-900 font-sans selection:bg-blue-200">
+  <div id="root"></div>
+
+  <!-- Note: Removed data-type="module" to prevent Babel require() errors -->
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback, Fragment } = React;
+
+    // --- Inline Icon Components ---
+    const CalendarIcon = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
+    const Trash2 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>;
+    const PieChart = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>;
+    const Download = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
+    const Moon = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>;
+    const Sun = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>;
+    const Sunrise = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/></svg>;
+    const Sunset = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 10V2"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m16 5-4-4-4 4"/><path d="M16 18a4 4 0 0 0-8 0"/></svg>;
+    const Eraser = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>;
+    const X = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
+    const AlertTriangle = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>;
+
+    // --- Local Storage Configuration ---
+    const LOCAL_STORAGE_KEY = 'trackerbox_data_v1';
+
+    // --- Constants ---
+    const CATEGORIES = [
+      { id: 'sleep', name: 'Sleep', color: '#86efac' }, 
+      { id: 'essential', name: 'Essential', color: '#166534' }, 
+      { id: 'study', name: 'Productivity', color: '#93c5fd' }, 
+      { id: 'work', name: 'Job', color: '#1e3a8a' }, 
+      { id: 'fun', name: 'Fun', color: '#fb923c' }, 
+      { id: 'waste', name: 'Waste', color: '#ef4444' }  
+    ];
+
+    const SECTIONS = [
+      { id: 'night', label: 'Night (12am - 6am)', icon: Moon, hours: [0, 1, 2, 3, 4, 5] },
+      { id: 'morning', label: 'Morning (6am - 12pm)', icon: Sunrise, hours: [6, 7, 8, 9, 10, 11] },
+      { id: 'afternoon', label: 'Afternoon (12pm - 6pm)', icon: Sun, hours: [12, 13, 14, 15, 16, 17] },
+      { id: 'evening', label: 'Evening (6pm - 12am)', icon: Sunset, hours: [18, 19, 20, 21, 22, 23] }
+    ];
+
+    // --- Utilities ---
+    const formatHourLabel = (h) => {
+      if (h === 0) return '12 AM';
+      if (h === 12) return '12 PM';
+      return h > 12 ? `${h - 12} PM` : `${h} AM`;
+    };
+
+    const formatDateString = (date) => {
+      const d = new Date(date);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const getDisplayDate = (dateString) => {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    };
+
+    const getWeeksInMonth = (yearMonthStr) => {
+      if(!yearMonthStr) return [];
+      const [year, month] = yearMonthStr.split('-').map(Number);
+      const weeks = [];
+      let currentDate = new Date(year, month - 1, 1);
+      let dayOfWeek = currentDate.getDay(); 
+      let diff = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
+      currentDate.setDate(currentDate.getDate() + diff);
+
+      for (let i = 0; i < 6; i++) {
+        const weekStart = new Date(currentDate);
+        const weekEnd = new Date(currentDate);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+
+        if (weekStart.getMonth() === month - 1 || weekEnd.getMonth() === month - 1) {
+          const datesArray = [];
+          const tempDate = new Date(weekStart);
+          for (let j = 0; j < 7; j++) {
+            datesArray.push(formatDateString(tempDate));
+            tempDate.setDate(tempDate.getDate() + 1);
+          }
+          weeks.push({
+            id: `week-${i}`,
+            label: `${getDisplayDate(weekStart)} - ${getDisplayDate(weekEnd)} (Mon-Sun)`,
+            dates: datesArray
+          });
+        }
+        currentDate.setDate(currentDate.getDate() + 7);
+      }
+      return weeks;
+    };
+
+    // --- Main Application ---
+    function App() {
+      const [isLoaded, setIsLoaded] = useState(false);
+      const [allData, setAllData] = useState({});
+      const [selectedColorId, setSelectedColorId] = useState(CATEGORIES[0].id);
+      const [isPainting, setIsPainting] = useState(false);
+
+      const today = new Date();
+      const todayStr = formatDateString(today);
+      const initialMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+      const initialYearStr = `${today.getFullYear()}`;
+      
+      const [selectedMonthStr, setSelectedMonthStr] = useState(initialMonthStr);
+      const availableWeeks = useMemo(() => getWeeksInMonth(selectedMonthStr), [selectedMonthStr]);
+      const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+
+      const [statDate, setStatDate] = useState(todayStr);
+      const [statWeekMonth, setStatWeekMonth] = useState(initialMonthStr);
+      const [statWeekIndex, setStatWeekIndex] = useState(0);
+      const statAvailableWeeks = useMemo(() => getWeeksInMonth(statWeekMonth), [statWeekMonth]);
+      const [statMonth, setStatMonth] = useState(initialMonthStr);
+      const [statYear, setStatYear] = useState(initialYearStr);
+
+      const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+      const [printMonthStr, setPrintMonthStr] = useState(initialMonthStr);
+      const printWeeks = useMemo(() => getWeeksInMonth(printMonthStr), [printMonthStr]);
+
+      // Reset Zone States
+      const [resetDay, setResetDay] = useState(todayStr);
+      const [resetWeekMonth, setResetWeekMonth] = useState(initialMonthStr);
+      const [resetWeekIdx, setResetWeekIdx] = useState(0);
+      const resetAvailableWeeks = useMemo(() => getWeeksInMonth(resetWeekMonth), [resetWeekMonth]);
+      const [resetMonthStr, setResetMonthStr] = useState(initialMonthStr);
+      const [pendingReset, setPendingReset] = useState(null);
+
+      // Initialization logic for current week views
+      useEffect(() => {
+        const weekIdx = availableWeeks.findIndex(w => w.dates.includes(todayStr));
+        setSelectedWeekIndex(weekIdx !== -1 ? weekIdx : 0);
+      }, [selectedMonthStr, availableWeeks, todayStr]);
+
+      useEffect(() => {
+        const weekIdx = statAvailableWeeks.findIndex(w => w.dates.includes(todayStr));
+        setStatWeekIndex(weekIdx !== -1 ? weekIdx : 0);
+      }, [statWeekMonth, statAvailableWeeks, todayStr]);
+
+      useEffect(() => {
+        const weekIdx = resetAvailableWeeks.findIndex(w => w.dates.includes(todayStr));
+        setResetWeekIdx(weekIdx !== -1 ? weekIdx : 0);
+      }, [resetWeekMonth, resetAvailableWeeks, todayStr]);
+
+      const currentWeekDates = availableWeeks[selectedWeekIndex]?.dates || [];
+
+      // --- 1. Load Local Storage ---
+      useEffect(() => {
+        const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedData) {
+          try {
+            setAllData(JSON.parse(savedData));
+          } catch (e) {
+            console.error("Error loading local data", e);
+          }
+        }
+        setIsLoaded(true);
+      }, []);
+
+      // --- 2. Handlers (Save to Local Storage) ---
+      const handleUpdateSegment = useCallback((dateStr, hourIndex, triangleId, colorId) => {
+        const finalColorId = colorId === 'erase' ? null : colorId;
+
+        setAllData(prev => {
+          const dayData = prev[dateStr] || {};
+          const hourData = dayData[hourIndex] || { t1: null, t2: null };
+          const newData = {
+            ...prev,
+            [dateStr]: { ...dayData, [hourIndex]: { ...hourData, [triangleId]: finalColorId } }
+          };
+          
+          // Save instantly to local storage
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
+          return newData;
+        });
+      }, []);
+
+      const handlePointerDown = (dateStr, hourIndex, triangleId, e) => {
+        if (e.button === 2) return; 
+        setIsPainting(true);
+        handleUpdateSegment(dateStr, hourIndex, triangleId, selectedColorId);
+      };
+
+      const handlePointerEnter = (dateStr, hourIndex, triangleId) => {
+        if (isPainting) handleUpdateSegment(dateStr, hourIndex, triangleId, selectedColorId);
+      };
+
+      useEffect(() => {
+        const handleMouseUp = () => setIsPainting(false);
+        window.addEventListener('pointerup', handleMouseUp);
+        return () => window.removeEventListener('pointerup', handleMouseUp);
+      }, []);
+
+      // Data Reset Execution
+      const executeReset = () => {
+        if (!pendingReset) return;
+        
+        let currentData = { ...allData };
+        
+        if (pendingReset.type === 'day') {
+          delete currentData[pendingReset.payload];
+        } else if (pendingReset.type === 'week') {
+          pendingReset.payload.forEach(d => delete currentData[d]);
+        } else if (pendingReset.type === 'month') {
+          Object.keys(currentData).forEach(d => {
+            if (d.startsWith(pendingReset.payload)) delete currentData[d];
+          });
+        }
+        
+        setAllData(currentData);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentData));
+        setPendingReset(null); 
+      };
+
+      // --- 3. Statistics Calculation ---
+      const calculateStats = (dateStringsArray) => {
+        const totals = CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
+        let totalTrackedHours = 0;
+        dateStringsArray.forEach(dateStr => {
+          const dayData = allData[dateStr] || {};
+          Object.values(dayData).forEach(hourData => {
+            if (hourData.t1) { totals[hourData.t1] += 0.5; totalTrackedHours += 0.5; }
+            if (hourData.t2) { totals[hourData.t2] += 0.5; totalTrackedHours += 0.5; }
+          });
+        });
+        return { totals, totalTrackedHours };
+      };
+
+      const statsDay = calculateStats([statDate]);
+      const statsWeek = calculateStats(statAvailableWeeks[statWeekIndex]?.dates || []);
+      const statsMonth = calculateStats(Object.keys(allData).filter(d => d.startsWith(statMonth)));
+      const statsYear = calculateStats(Object.keys(allData).filter(d => d.startsWith(statYear)));
+      const printMonthStats = calculateStats(Object.keys(allData).filter(d => d.startsWith(printMonthStr)));
+
+      if (!isLoaded) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-[#fdf8f5]">
+            <div className="animate-spin rounded-full h-16 w-16 border-4 border-gray-900 border-t-transparent shadow-[4px_4px_0px_rgba(0,0,0,1)]"></div>
+          </div>
+        );
+      }
+
+      return (
+        <Fragment>
+          {/* --- CONFIRMATION MODAL --- */}
+          {pendingReset && (
+            <div className="fixed inset-0 z-[300] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4 print-hidden">
+              <div className="bg-white border-4 border-red-600 shadow-pop rounded-3xl p-8 max-w-sm w-full relative text-center">
+                <AlertTriangle size={48} className="text-red-500 mx-auto mb-4" />
+                <h2 className="text-2xl font-black uppercase mb-2 text-gray-900">Are you sure?</h2>
+                <p className="text-sm font-bold text-gray-600 mb-6">
+                  You are about to permanently delete data for: <br/>
+                  <span className="text-red-600 font-black text-lg">
+                    {pendingReset.type === 'day' && pendingReset.payload}
+                    {pendingReset.type === 'week' && "Selected Week"}
+                    {pendingReset.type === 'month' && `Month of ${pendingReset.payload}`}
+                  </span>
+                </p>
+                <div className="flex gap-4">
+                  <button onClick={() => setPendingReset(null)} className="flex-1 bg-gray-100 border-4 border-gray-900 font-black text-gray-900 py-3 rounded-2xl uppercase tracking-wider hover:bg-gray-200">Cancel</button>
+                  <button onClick={executeReset} className="flex-1 bg-red-500 border-4 border-gray-900 font-black text-white py-3 rounded-2xl uppercase tracking-wider shadow-pop-sm shadow-pop-hover">Delete</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- PDF DOWNLOAD MODAL --- */}
+          {isPrintModalOpen && (
+            <div className="fixed inset-0 z-[200] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center print-hidden p-4">
+              <div className="bg-white border-4 border-gray-900 shadow-pop rounded-3xl p-8 max-w-sm w-full relative">
+                <button onClick={() => setIsPrintModalOpen(false)} className="absolute top-4 right-4 text-gray-500 hover:text-gray-900"><X size={24} /></button>
+                <h2 className="text-2xl font-black uppercase mb-4 text-gray-900">Export PDF</h2>
+                <p className="text-sm font-bold text-gray-600 mb-6">Select the month you want to generate a report for.</p>
+                <div className="flex flex-col gap-4">
+                  <input type="month" value={printMonthStr} onChange={(e) => setPrintMonthStr(e.target.value)} className="bg-gray-50 border-4 border-gray-900 rounded-2xl px-4 py-3 font-bold text-lg focus:outline-none" />
+                  <button onClick={() => { setIsPrintModalOpen(false); setTimeout(() => window.print(), 300); }} className="w-full bg-[#86efac] border-4 border-gray-900 shadow-pop-sm shadow-pop-hover font-black text-gray-900 py-3 rounded-2xl uppercase tracking-wider mt-4">Generate & Print</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- MAIN APP INTERFACE --- */}
+          <div className="min-h-screen pb-20 print-hidden">
+            {/* Header */}
+            <header className="bg-white border-b-4 border-gray-900 sticky top-0 z-50">
+              <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative w-12 h-12 rounded-2xl overflow-hidden flex flex-wrap border-4 border-gray-900 shadow-pop-sm bg-white shrink-0">
+                     <div className="w-1/2 h-1/2 bg-[#86efac]"></div><div className="w-1/2 h-1/2 bg-[#93c5fd]"></div>
+                     <div className="w-1/2 h-1/2 bg-[#fb923c]"></div><div className="w-1/2 h-1/2 bg-[#ef4444]"></div>
+                  </div>
+                  <h1 className="text-3xl md:text-4xl font-black tracking-tight uppercase text-gray-900">
+                    Trackerbox<sup className="text-lg font-black ml-1">©</sup>
+                  </h1>
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <button onClick={() => setIsPrintModalOpen(true)} className="flex items-center gap-2 font-black uppercase tracking-wider text-gray-900 bg-[#86efac] border-4 border-gray-900 shadow-pop-sm shadow-pop-hover px-5 py-3 rounded-2xl transition-all">
+                    <Download size={20} /> PDF Export
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            <main className="max-w-[1400px] mx-auto px-4 py-10 space-y-12">
+              
+              {/* Tracker Tools & Main Grid Header */}
+              <section className="bg-white p-6 rounded-3xl border-4 border-gray-900 shadow-pop">
+                <div className="flex flex-col xl:flex-row gap-6 justify-between xl:items-center">
+                  
+                  {/* Main Grid Navigation */}
+                  <div className="flex items-center gap-4 bg-blue-100 px-5 py-4 rounded-2xl border-4 border-gray-900 shadow-pop-sm shrink-0">
+                    <CalendarIcon size={28} className="text-blue-700 hidden sm:block" />
+                    <div className="flex flex-col w-full sm:w-auto">
+                      <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider">Viewing Log</span>
+                      <div className="flex flex-row items-center flex-wrap gap-2 mt-2">
+                        <input type="month" value={selectedMonthStr} onChange={(e) => { setSelectedMonthStr(e.target.value); setSelectedWeekIndex(0); }} className="flex-1 min-w-[140px] bg-white rounded-lg border-4 border-gray-900 px-3 py-1.5 font-black text-gray-800 focus:ring-0 cursor-pointer" />
+                        <select value={selectedWeekIndex} onChange={(e) => setSelectedWeekIndex(Number(e.target.value))} className="flex-1 min-w-[180px] bg-white border-4 border-gray-900 rounded-lg px-3 py-1.5 font-black text-sm cursor-pointer outline-none focus:ring-0">
+                          {availableWeeks.map((week, idx) => (<option key={week.id} value={idx}>{week.label}</option>))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Color Palette Toolbar */}
+                  <div className="flex flex-wrap gap-3">
+                    {CATEGORIES.map(cat => (
+                      <button key={cat.id} onClick={() => setSelectedColorId(cat.id)} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border-4 shadow-pop-sm shadow-pop-hover ${selectedColorId === cat.id ? 'border-gray-900 bg-gray-100 scale-105' : 'border-gray-900 bg-white'}`}>
+                        <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg border-4 border-gray-900" style={{ backgroundColor: cat.color }} />
+                        <span className="text-xs md:text-sm font-black uppercase tracking-wide text-gray-800 hidden sm:inline">{cat.name}</span>
+                      </button>
+                    ))}
+                    <button onClick={() => setSelectedColorId('erase')} className={`flex items-center gap-2 px-3 py-2 md:px-4 md:py-3 rounded-2xl transition-all border-4 shadow-pop-sm shadow-pop-hover ${selectedColorId === 'erase' ? 'border-gray-900 bg-red-100 text-red-700 scale-105' : 'border-gray-900 bg-white text-gray-500'}`} title="Eraser">
+                      <Eraser size={20} />
+                      <span className="text-xs md:text-sm font-black uppercase tracking-wide hidden sm:inline">Erase</span>
+                    </button>
+                  </div>
+
+                </div>
+              </section>
+
+              {/* THE TRACKER GRID */}
+              <section className="bg-white rounded-3xl border-4 border-gray-900 shadow-pop p-2 md:p-6 overflow-hidden">
+                <div className="overflow-x-auto pb-8 custom-scrollbar scrollable-container relative">
+                  {/* Changed to border-collapse and removed border-spacing so sticky columns block backgrounds completely */}
+                  <table className="w-full min-w-max border-collapse bg-white">
+                    <thead>
+                      <tr>
+                        {/* 1. Leftmost space for Section Toolbar (Solid white background to hide scrolling cells) */}
+                        <th className="w-[50px] md:w-[60px] sticky left-0 z-40 bg-white border-none p-0 shadow-[2px_0px_0px_white]"></th>
+                        {/* 2. Space for Time Labels (Solid white background) */}
+                        <th className="w-[55px] md:w-[65px] sticky left-[50px] md:left-[60px] z-30 bg-white border-none p-0 shadow-[2px_0px_0px_white]"></th>
+                        
+                        {/* Date Headers */}
+                        {currentWeekDates.map((dateStr) => {
+                          const isToday = dateStr === todayStr;
+                          const d = new Date(dateStr);
+                          return (
+                            <th key={dateStr} className="p-1 md:p-2 text-center relative z-20 align-bottom border-none bg-white">
+                              <div className={`flex flex-col items-center justify-center py-2 px-1 md:p-3 rounded-2xl border-4 border-gray-900 shadow-pop-sm mx-auto w-[52px] md:w-[60px] transition-transform ${isToday ? 'bg-[#93c5fd]' : 'bg-gray-50'}`}>
+                                <span className="text-[10px] font-black uppercase text-gray-800 tracking-wider">
+                                  {d.toLocaleDateString('en-US', { weekday: 'short' })}
+                                </span>
+                                <span className="text-xl md:text-2xl font-black text-gray-900 leading-none mt-1">
+                                  {d.getDate()}
+                                </span>
+                              </div>
+                            </th>
+                          );
+                        })}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {SECTIONS.map((section) => (
+                        <Fragment key={section.id}>
+                          {/* Section Divider Row */}
+                          <tr>
+                            <td className="sticky left-0 z-40 bg-white p-0 border-none shadow-[2px_0px_0px_white]"></td>
+                            <td className="sticky left-[50px] md:left-[60px] z-30 bg-white p-0 border-none shadow-[2px_0px_0px_white]"></td>
+                            <td colSpan={currentWeekDates.length} className="pt-6 pb-2 text-center relative z-10 border-none bg-white">
+                              <div className="inline-flex items-center gap-3 bg-gray-100 px-6 py-2 rounded-2xl border-4 border-gray-900 shadow-pop-sm font-black text-gray-800 tracking-widest uppercase text-xs">
+                                <section.icon size={18} className="text-gray-900" />
+                                {section.label}
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Hours */}
+                          {section.hours.map((hour, idx) => (
+                            <tr key={hour} className="group">
+                              
+                              {/* 1. Side Section Toolbar (Spans all 6 rows) - Solid white background hides cells passing beneath */}
+                              {idx === 0 && (
+                                <td rowSpan={6} className="align-middle bg-white sticky left-0 z-40 w-[50px] md:w-[60px] p-0 border-none shadow-[2px_0px_0px_white]">
+                                  <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-gray-50 py-3 px-1 rounded-[20px] border-4 border-gray-900 shadow-pop-sm mx-auto w-[42px] md:w-[50px]">
+                                    <button onClick={() => setSelectedColorId('erase')} className={`p-1 md:p-1.5 rounded-xl border-4 transition-all hover:-translate-y-1 shadow-pop-sm ${selectedColorId === 'erase' ? 'border-red-600 bg-red-100 text-red-600' : 'border-gray-900 bg-white text-gray-800'}`} title="Erase">
+                                      <Eraser size={16} />
+                                    </button>
+                                    <div className="w-full h-1 border-b-4 border-dashed border-gray-300 my-1"></div>
+                                    {CATEGORIES.map(cat => (
+                                      <button key={cat.id} onClick={() => setSelectedColorId(cat.id)} className={`w-5 h-5 md:w-6 md:h-6 rounded-lg border-4 transition-all hover:-translate-y-1 shadow-pop-sm ${selectedColorId === cat.id ? 'border-gray-900 scale-110 shadow-pop' : 'border-gray-900'}`} style={{ backgroundColor: cat.color }} title={cat.name} />
+                                    ))}
+                                  </div>
+                                </td>
+                              )}
+
+                              {/* 2. Time Label (Solid white background) */}
+                              <td className="text-right pr-1 md:pr-2 align-middle bg-white sticky left-[50px] md:left-[60px] z-30 w-[55px] md:w-[65px] p-0 border-none shadow-[2px_0px_0px_white]">
+                                <span className="text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap bg-gray-50 px-1.5 py-1.5 rounded-xl border-4 border-transparent group-hover:border-gray-200 transition-colors inline-block">
+                                  {formatHourLabel(hour)}
+                                </span>
+                              </td>
+
+                              {/* 3. The Grid Cells */}
+                              {currentWeekDates.map(dateStr => {
+                                const dayData = allData[dateStr] || {};
+                                const cellData = dayData[hour] || { t1: null, t2: null };
+                                const t1Color = cellData.t1 ? CATEGORIES.find(c => c.id === cellData.t1)?.color : '#ffffff';
+                                const t2Color = cellData.t2 ? CATEGORIES.find(c => c.id === cellData.t2)?.color : '#ffffff';
+
+                                return (
+                                  <td key={`${dateStr}-${hour}`} className="align-middle p-1 md:p-1.5 bg-white border-none">
+                                    {/* Forces rigid square shape, prevents rectangle stretching */}
+                                    <div className="square-cell-inner mx-auto relative rounded-2xl border-4 border-gray-900 overflow-hidden shadow-pop-sm bg-white transition-transform duration-100 hover:-translate-y-1 hover:shadow-pop z-10 hover:z-20">
+                                      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full block paintable-svg">
+                                        <rect width="100" height="100" fill={t1Color} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't1')} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                        <polygon points="0,100 100,100 100,0" fill={t2Color} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't2')} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                        <line x1="0" y1="100" x2="100" y2="0" className="stroke-gray-900 stroke-[4px] pointer-events-none" />
+                                      </svg>
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                  {/* Scroll Hint */}
+                  <div className="mt-8 flex items-center justify-center gap-4 bg-blue-50/50 border-4 border-dashed border-blue-200 rounded-2xl p-4 text-blue-600 font-black uppercase tracking-widest text-xs mx-auto max-w-lg shadow-inner">
+                    <span>⟵</span> Safe Zone: Scroll Horizontally Here <span>⟶</span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Analysis Center */}
+              <section className="bg-white p-6 md:p-8 rounded-3xl border-4 border-gray-900 shadow-pop">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="bg-[#fb923c] p-3 rounded-2xl border-4 border-gray-900 shadow-pop-sm">
+                    <PieChart size={28} className="text-white" />
+                  </div>
+                  <h2 className="text-2xl md:text-3xl font-black uppercase tracking-wider text-gray-900">Analysis Center</h2>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
+                  <div className="flex flex-col h-full gap-4">
+                    <div className="bg-orange-100 rounded-2xl border-4 border-gray-900 p-3 flex flex-col shadow-pop-sm">
+                      <span className="text-[10px] md:text-xs font-black uppercase text-gray-600 tracking-wider">Daily Analysis</span>
+                      <input type="date" value={statDate} onChange={e => setStatDate(e.target.value)} className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
+                    </div>
+                    <StatCard title="Selected Day" stats={statsDay} />
+                  </div>
+
+                  <div className="flex flex-col h-full gap-4">
+                    <div className="bg-blue-100 rounded-2xl border-4 border-gray-900 p-3 flex flex-col shadow-pop-sm">
+                      <span className="text-[10px] md:text-xs font-black uppercase text-gray-600 tracking-wider">Weekly Analysis</span>
+                      <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2 mt-1">
+                        <input type="month" value={statWeekMonth} onChange={e => { setStatWeekMonth(e.target.value); setStatWeekIndex(0); }} className="w-full xl:w-1/2 bg-white rounded-md border-2 border-gray-900 px-2 py-1 outline-none font-black text-gray-900 text-xs cursor-pointer" />
+                        <select value={statWeekIndex} onChange={e => setStatWeekIndex(Number(e.target.value))} className="w-full xl:w-1/2 bg-white rounded-md border-2 border-gray-900 px-2 py-1 font-black text-xs outline-none cursor-pointer">
+                          {statAvailableWeeks.map((week, idx) => (<option key={week.id} value={idx}>{week.label}</option>))}
+                        </select>
+                      </div>
+                    </div>
+                    <StatCard title="Selected Week" stats={statsWeek} />
+                  </div>
+
+                  <div className="flex flex-col h-full gap-4">
+                    <div className="bg-green-100 rounded-2xl border-4 border-gray-900 p-3 flex flex-col shadow-pop-sm">
+                      <span className="text-[10px] md:text-xs font-black uppercase text-gray-600 tracking-wider">Monthly Analysis</span>
+                      <input type="month" value={statMonth} onChange={e => setStatMonth(e.target.value)} className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
+                    </div>
+                    <StatCard title="Selected Month" stats={statsMonth} />
+                  </div>
+
+                  <div className="flex flex-col h-full gap-4">
+                    <div className="bg-purple-100 rounded-2xl border-4 border-gray-900 p-3 flex flex-col shadow-pop-sm">
+                      <span className="text-[10px] md:text-xs font-black uppercase text-gray-600 tracking-wider">Yearly Analysis</span>
+                      <input type="number" value={statYear} onChange={e => setStatYear(e.target.value)} min="2000" max="2100" className="bg-transparent border-none outline-none font-black text-gray-900 mt-1 cursor-pointer" />
+                    </div>
+                    <StatCard title="Selected Year" stats={statsYear} />
+                  </div>
+                </div>
+              </section>
+
+              {/* Data Management / Danger Zone */}
+              <section className="bg-white p-6 md:p-8 rounded-3xl border-4 border-red-900 shadow-pop relative overflow-hidden">
+                {/* Decorative background strips */}
+                <div className="absolute top-0 left-0 w-full h-2 bg-repeating-linear-gradient pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, #fecaca, #fecaca 10px, #ffffff 10px, #ffffff 20px)' }}></div>
+                
+                <div className="flex items-center gap-4 mb-8 pt-2">
+                  <div className="bg-red-500 p-3 rounded-2xl border-4 border-gray-900 shadow-pop-sm">
+                    <Trash2 size={28} className="text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl md:text-3xl font-black uppercase tracking-wider text-gray-900 leading-none">Data Manager</h2>
+                    <span className="text-xs font-bold text-red-500 uppercase tracking-widest">Warning: Permanent Deletion</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Reset Day */}
+                  <div className="bg-red-50 border-4 border-red-900 rounded-2xl p-4 flex flex-col gap-4 shadow-pop-sm">
+                    <h3 className="font-black uppercase text-red-900 border-b-4 border-red-200 pb-2">Reset Single Day</h3>
+                    <input type="date" value={resetDay} onChange={e => setResetDay(e.target.value)} className="bg-white border-4 border-red-900 rounded-xl px-3 py-2 font-black outline-none w-full" />
+                    <button onClick={() => setPendingReset({type: 'day', payload: resetDay})} className="mt-auto bg-red-500 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-900 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Reset Day</button>
+                  </div>
+
+                  {/* Reset Week */}
+                  <div className="bg-red-50 border-4 border-red-900 rounded-2xl p-4 flex flex-col gap-4 shadow-pop-sm">
+                    <h3 className="font-black uppercase text-red-900 border-b-4 border-red-200 pb-2">Reset Entire Week</h3>
+                    <div className="flex flex-col gap-2">
+                      <input type="month" value={resetWeekMonth} onChange={e => {setResetWeekMonth(e.target.value); setResetWeekIdx(0);}} className="bg-white border-4 border-red-900 rounded-xl px-3 py-2 font-black outline-none w-full text-sm" />
+                      <select value={resetWeekIdx} onChange={e => setResetWeekIdx(Number(e.target.value))} className="bg-white border-4 border-red-900 rounded-xl px-3 py-2 font-black outline-none w-full text-xs">
+                        {resetAvailableWeeks.map((w, i) => <option key={w.id} value={i}>{w.label}</option>)}
+                      </select>
+                    </div>
+                    <button onClick={() => setPendingReset({type: 'week', payload: resetAvailableWeeks[resetWeekIdx]?.dates})} className="mt-auto bg-red-500 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-900 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Reset Week</button>
+                  </div>
+
+                  {/* Reset Month */}
+                  <div className="bg-red-50 border-4 border-red-900 rounded-2xl p-4 flex flex-col gap-4 shadow-pop-sm">
+                    <h3 className="font-black uppercase text-red-900 border-b-4 border-red-200 pb-2">Reset Entire Month</h3>
+                    <input type="month" value={resetMonthStr} onChange={e => setResetMonthStr(e.target.value)} className="bg-white border-4 border-red-900 rounded-xl px-3 py-2 font-black outline-none w-full" />
+                    <button onClick={() => setPendingReset({type: 'month', payload: resetMonthStr})} className="mt-auto bg-red-900 text-white font-black uppercase tracking-wider py-2 rounded-xl border-4 border-red-950 shadow-pop-sm hover:translate-y-1 hover:shadow-none transition-all">Nuke Month</button>
+                  </div>
+                </div>
+              </section>
+
+            </main>
+          </div>
+
+          {/* --- HIDDEN PRINT VIEW --- */}
+          <div className="hidden print:block bg-white p-4">
+            <div className="flex items-center gap-4 mb-8 border-b-4 border-gray-900 pb-4">
+              <h1 className="text-4xl font-black tracking-tight uppercase text-gray-900">Trackerbox Report</h1>
+              <div className="ml-auto text-2xl font-black text-gray-500 bg-gray-100 px-6 py-2 rounded-2xl border-4 border-gray-900">
+                {new Date(printMonthStr + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </div>
+            </div>
+
+            <div className="mb-12 border-4 border-gray-900 p-6 rounded-3xl bg-gray-50">
+              <h2 className="text-2xl font-black uppercase text-gray-900 mb-6 flex items-center gap-3"><PieChart size={28}/> Monthly Analysis</h2>
+              <div className="w-full max-w-xl mx-auto"><StatCard title="Monthly Breakdown" stats={printMonthStats} /></div>
+            </div>
+
+            {printWeeks.map((week, idx) => (
+              <div key={week.id} className="mb-12 print-break-inside-avoid print-page-break">
+                <h3 className="text-xl font-black text-gray-700 bg-gray-100 inline-block px-4 py-2 rounded-t-2xl border-4 border-b-0 border-gray-900">Week {idx + 1}: {week.label}</h3>
+                <table className="w-full border-separate" style={{ borderSpacing: '8px' }}>
+                  <thead>
+                    <tr>
+                      <th className="w-16"></th>
+                      {week.dates.map(dateStr => (
+                        <th key={dateStr} className="p-2 text-center text-sm font-black uppercase bg-gray-100 border-4 border-gray-900 rounded-xl">
+                          {new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {SECTIONS.map((section) => (
+                      <Fragment key={section.id}>
+                        <tr>
+                          <td colSpan={8} className="py-2 text-center text-xs font-black tracking-wider uppercase">
+                             <span className="bg-gray-200 px-4 py-1 rounded-full border-2 border-gray-900">{section.label}</span>
+                          </td>
+                        </tr>
+                        {section.hours.map(hour => (
+                          <tr key={hour}>
+                            <td className="p-1 text-center text-[10px] font-bold text-gray-600 whitespace-nowrap">
+                              {formatHourLabel(hour)}
+                            </td>
+                            {week.dates.map(dateStr => {
+                              const dayData = allData[dateStr] || {};
+                              const cellData = dayData[hour] || { t1: null, t2: null };
+                              const t1Color = cellData.t1 ? CATEGORIES.find(c => c.id === cellData.t1)?.color : '#ffffff';
+                              const t2Color = cellData.t2 ? CATEGORIES.find(c => c.id === cellData.t2)?.color : '#ffffff';
+
+                              return (
+                                <td key={`${dateStr}-${hour}`} className="p-0 relative h-10 align-middle min-w-[50px]">
+                                  <div className="absolute inset-0 rounded-lg border-2 border-gray-900 overflow-hidden bg-white">
+                                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full block">
+                                      <rect width="100" height="100" fill={t1Color} />
+                                      <polygon points="0,100 100,100 100,0" fill={t2Color} />
+                                      <line x1="0" y1="100" x2="100" y2="0" className="stroke-gray-900 stroke-[2px]" />
+                                    </svg>
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </Fragment>
+      );
+    }
+
+    // --- Component: StatCard ---
+    function StatCard({ title, stats }) {
+      const { totals, totalTrackedHours } = stats;
+      
+      return (
+        <div className="bg-white p-6 rounded-2xl border-4 border-gray-900 shadow-pop-sm flex flex-col h-full print:shadow-none print:border-2">
+          <h3 className="font-black text-lg text-gray-900 uppercase tracking-wide mb-1">{title}</h3>
+          <p className="text-[10px] md:text-xs font-black text-gray-400 uppercase tracking-widest mb-6">{totalTrackedHours} hours tracked</p>
+          
+          {totalTrackedHours === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-gray-300 font-black uppercase border-4 border-dashed border-gray-200 rounded-xl p-4 tracking-widest">
+              No Data
+            </div>
+          ) : (
+            <div className="space-y-4 mt-auto">
+              {CATEGORIES.map(cat => {
+                const hours = totals[cat.id] || 0;
+                if (hours === 0) return null;
+                const percentage = Math.round((hours / totalTrackedHours) * 100);
+                return (
+                  <div key={cat.id} className="relative">
+                    <div className="flex justify-between text-xs md:text-sm font-black mb-1 md:mb-2">
+                      <span className="text-gray-800 uppercase tracking-wide truncate pr-2">{cat.name}</span>
+                      <span className="text-gray-900 shrink-0">{hours}h <span className="text-gray-400">({percentage}%)</span></span>
+                    </div>
+                    <div className="w-full h-3 md:h-4 bg-gray-100 rounded-full overflow-hidden border-2 md:border-4 border-gray-900 print:border-[1px]">
+                      <div className="h-full rounded-full border-r-2 md:border-r-4 border-gray-900 print:border-none print:!bg-opacity-100" style={{ width: `${percentage}%`, backgroundColor: cat.color, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // --- Render App ---
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
