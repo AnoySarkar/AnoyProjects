@@ -72,13 +72,26 @@
     input[type="number"] { -moz-appearance: textfield; }
     /* Light mode overrides */
     .light-mode {
-      --bg-color: #f8fafc;
-      --panel-bg: rgba(255,255,255,0.95);
-      --sticky-bg: #f1f5f9;
+      --bg-color: #f8f9fa;
+      --panel-bg: rgba(255,255,255,0.98);
+      --sticky-bg: #f1f3f5;
       --border-color: rgba(15,23,42,0.12);
     }
     .light-mode body { color: #0f172a; }
     .light-mode .glass-panel { background: var(--panel-bg); }
+    /* Force dark text in both light themes */
+    .light-mode .text-white,
+    .light-mode .text-slate-100,
+    .light-mode .text-slate-200,
+    .light-mode .text-slate-300 {
+      color: #0f172a !important;
+    }
+    .light-mode .text-slate-400 {
+      color: #64748b !important;
+    }
+    .light-mode .neon-text {
+      text-shadow: none !important;
+    }
     /* Collapsed epoch thin row */
     .collapsed-row td { height: 34px; }
   </style>
@@ -438,9 +451,9 @@
           pulse: { bg: '#110b1f', panel: 'rgba(30, 10, 40, 0.5)', sticky: '#1c1430', border: 'rgba(236, 72, 153, 0.12)' },
           electric: { bg: '#0a1122', panel: 'rgba(10, 25, 60, 0.55)', sticky: '#0f1c33', border: 'rgba(96, 165, 250, 0.18)' },
           abyss: { bg: '#010104', panel: 'rgba(8, 8, 18, 0.75)', sticky: '#03030c', border: 'rgba(148, 163, 184, 0.06)' },
-          // Removed ember + aurora
-          daylight: { bg: '#f8fafc', panel: 'rgba(255,255,255,0.95)', sticky: '#f1f5f9', border: 'rgba(15,23,42,0.12)' },
-          lightmode: { bg: '#ffffff', panel: 'rgba(248,250,252,0.95)', sticky: '#f8fafc', border: 'rgba(0,0,0,0.08)' }
+          // Fixed daylight + lightmode (more off-white + guaranteed black text)
+          daylight: { bg: '#f8f9fa', panel: 'rgba(255,255,255,0.98)', sticky: '#f1f3f5', border: 'rgba(15,23,42,0.12)' },
+          lightmode: { bg: '#fafafa', panel: 'rgba(255,255,255,0.98)', sticky: '#f8f9fa', border: 'rgba(0,0,0,0.08)' }
         };
         const t = themes[currentTheme] || themes.cyber;
         document.documentElement.style.setProperty('--bg-color', t.bg);
@@ -1444,7 +1457,8 @@
               if (imported.sysConfig) localStorage.setItem(LOCAL_SYS_CONFIG_KEY, JSON.stringify(imported.sysConfig));
               if (imported.descriptions) localStorage.setItem(LOCAL_DESCRIPTIONS_KEY, JSON.stringify(imported.descriptions));
               playSound('success');
-              alert("System Restore Successful: All data has been synchronized.");
+              // SUCCESS PROMPT FOR UPLOAD
+              alert("✅ Successfully uploaded! All data has been synchronized.");
             } else {
               alert("Error: Invalid backup file structure.");
             }
@@ -1662,24 +1676,28 @@
       // --- Data Core Logic ---
       const executeReset = () => {
         if (!pendingReset) return;
+        const resetType = pendingReset.type;
+        const resetPayload = pendingReset.payload;
         playSound('trash');
-        if (pendingReset.type === 'category') {
-          const newCats = categories.filter(c => c.id !== pendingReset.payload.id);
+        if (resetType === 'category') {
+          const newCats = categories.filter(c => c.id !== resetPayload.id);
           setCategories(newCats);
           localStorage.setItem(LOCAL_CATEGORIES_KEY, JSON.stringify(newCats));
-          if (selectedColorId === pendingReset.payload.id) setSelectedColorId('lock');
-          if (timer.categoryId === pendingReset.payload.id) setTimer(p => ({...p, categoryId: newCats[0]?.id}));
+          if (selectedColorId === resetPayload.id) setSelectedColorId('lock');
+          if (timer.categoryId === resetPayload.id) setTimer(p => ({...p, categoryId: newCats[0]?.id}));
           setPendingReset(null);
+          alert(`✅ Category "${resetPayload.name}" successfully removed.`);
           return;
         }
-        if (pendingReset.type === 'habit') {
-          const updated = habitsConfig.filter(h => h.id !== pendingReset.payload.id);
+        if (resetType === 'habit') {
+          const updated = habitsConfig.filter(h => h.id !== resetPayload.id);
           setHabitsConfig(updated);
           localStorage.setItem(LOCAL_HABITS_CONFIG_KEY, JSON.stringify(updated));
           setPendingReset(null);
+          alert(`✅ Habit "${resetPayload.name}" successfully removed.`);
           return;
         }
-        if (['day', 'week', 'month'].includes(pendingReset.type)) {
+        if (['day', 'week', 'month'].includes(resetType)) {
            saveHistoryState();
         }
         let currentData = { ...allData };
@@ -1687,26 +1705,26 @@
         let currentTodos = { ...todosData };
         let currentHabits = { ...habitLogs };
         let currentDescriptions = { ...descriptions };
-        if (pendingReset.type === 'day') {
-          delete currentData[pendingReset.payload];
-          delete currentJournal[pendingReset.payload];
-          delete currentTodos[pendingReset.payload];
-          delete currentHabits[pendingReset.payload];
-          delete currentDescriptions[pendingReset.payload];
-        } else if (pendingReset.type === 'week') {
-          pendingReset.payload.forEach(d => {
+        if (resetType === 'day') {
+          delete currentData[resetPayload];
+          delete currentJournal[resetPayload];
+          delete currentTodos[resetPayload];
+          delete currentHabits[resetPayload];
+          delete currentDescriptions[resetPayload];
+        } else if (resetType === 'week') {
+          resetPayload.forEach(d => {
             delete currentData[d];
             delete currentJournal[d];
             delete currentTodos[d];
             delete currentHabits[d];
             delete currentDescriptions[d];
           });
-        } else if (pendingReset.type === 'month') {
-          Object.keys(currentData).forEach(d => { if (d.startsWith(pendingReset.payload)) delete currentData[d]; });
-          Object.keys(currentJournal).forEach(d => { if (d.startsWith(pendingReset.payload)) delete currentJournal[d]; });
-          Object.keys(currentTodos).forEach(d => { if (d.startsWith(pendingReset.payload)) delete currentTodos[d]; });
-          Object.keys(currentHabits).forEach(d => { if (d.startsWith(pendingReset.payload)) delete currentHabits[d]; });
-          Object.keys(currentDescriptions).forEach(d => { if (d.startsWith(pendingReset.payload)) delete currentDescriptions[d]; });
+        } else if (resetType === 'month') {
+          Object.keys(currentData).forEach(d => { if (d.startsWith(resetPayload)) delete currentData[d]; });
+          Object.keys(currentJournal).forEach(d => { if (d.startsWith(resetPayload)) delete currentJournal[d]; });
+          Object.keys(currentTodos).forEach(d => { if (d.startsWith(resetPayload)) delete currentTodos[d]; });
+          Object.keys(currentHabits).forEach(d => { if (d.startsWith(resetPayload)) delete currentHabits[d]; });
+          Object.keys(currentDescriptions).forEach(d => { if (d.startsWith(resetPayload)) delete currentDescriptions[d]; });
         }
         setAllData(currentData);
         setJournalData(currentJournal);
@@ -1719,6 +1737,10 @@
         localStorage.setItem(LOCAL_HABIT_LOGS_KEY, JSON.stringify(currentHabits));
         localStorage.setItem(LOCAL_DESCRIPTIONS_KEY, JSON.stringify(currentDescriptions));
         setPendingReset(null);
+        // SUCCESS PROMPT FOR DELETION
+        if (resetType === 'day') alert('✅ Day successfully erased.');
+        else if (resetType === 'week') alert('✅ Week successfully erased.');
+        else if (resetType === 'month') alert('✅ Month successfully erased.');
       };
       const calculateStats = useCallback((dateStringsArray) => {
         const totals = categories.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
@@ -1736,7 +1758,6 @@
                     if (totals[id] !== undefined) totals[id] += duration;
                     totalTrackedHours += duration;
                     if (isComplete && completedTotals[id] !== undefined) completedTotals[id] += duration;
- 
                     const cat = categories.find(c => c.id === id);
                     if (cat) totalPoints += (parseFloat(cat.pointsPerHour) || 0) * duration;
                 }
@@ -1771,132 +1792,6 @@
       const statsWeek = calculateStats(statAvailableWeeks[statWeekIndex]?.dates || []);
       const statsMonth = calculateStats(Object.keys(allData).filter(d => d.startsWith(statMonth)));
       const statsYear = calculateStats(Object.keys(allData).filter(d => d.startsWith(statYear)));
-      // === NEW: ONE-CLICK WEEKLY PDF EXPORT (Analytics Core) ===
-      const handleExportWeeklyPDF = useCallback(() => {
-        playSound('click');
-        const week = statAvailableWeeks[statWeekIndex];
-        if (!week || !week.dates || week.dates.length === 0) {
-          alert("Please select a valid week in the Analytics Core first.");
-          return;
-        }
-        const weekDates = week.dates;
-        const weekLabel = week.label;
-
-        // Week stats (already computed)
-        const weekStats = statsWeek;
-
-        // Bar graph data (points for the week – matches the “current Week’s Bar Graph”)
-        const reportBars = weekDates.map(dateStr => {
-          const value = getDailyMetric(dateStr, 'points') || 0;
-          const d = new Date(dateStr);
-          const label = d.toLocaleDateString('en-US', { weekday: 'short' });
-          return { label, value: Math.round(value) };
-        });
-        const maxBar = Math.max(...reportBars.map(b => b.value), 1);
-
-        // Completed Mission Objectives (green ToDos + green habits)
-        let completedObjectives = [];
-        weekDates.forEach(dateStr => {
-          // ToDos
-          const todos = todosData[dateStr] || [];
-          todos.forEach(t => {
-            if (t.status === 'green' || t.done) {
-              completedObjectives.push({ date: dateStr, text: t.text, type: 'todo' });
-            }
-          });
-          // Habits
-          const habits = (habitLogs[dateStr] || []).filter(h => !h.deleted && h.status === 'green');
-          habits.forEach(h => {
-            completedObjectives.push({ date: dateStr, text: h.name, type: 'habit' });
-          });
-        });
-
-        // Beautiful printable A4 HTML (Tailwind-like inline styles for perfect PDF rendering)
-        const reportHTML = `
-          <div style="width:210mm; min-height:297mm; padding:25mm 20mm; margin:0 auto; background:#ffffff; color:#0f172a; font-family:system-ui,-apple-system,sans-serif; box-shadow:0 0 30px rgba(0,0,0,0.15);">
-            <div style="text-align:center; margin-bottom:35px;">
-              <div style="display:inline-flex; align-items:center; gap:14px; font-size:36px; font-weight:900; letter-spacing:-2px; background:linear-gradient(90deg,#22d3ee,#a855f7); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">📦 Trackerbox</div>
-              <h1 style="font-size:28px; font-weight:900; margin:8px 0 4px; color:#a855f7;">WEEKLY REVIEW</h1>
-              <p style="font-size:15px; font-weight:700; color:#64748b;">${weekLabel}</p>
-            </div>
-
-            <!-- Key Metrics -->
-            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-bottom:45px;">
-              <div style="background:#f8fafc; padding:22px 18px; border-radius:18px; text-align:center; border:3px solid #22d3ee;">
-                <div style="font-size:42px; font-weight:900; line-height:1; color:#22d3ee;">${Math.round(weekStats.totalTrackedHours)}</div>
-                <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; margin-top:6px;">HOURS TRACKED</div>
-              </div>
-              <div style="background:#f8fafc; padding:22px 18px; border-radius:18px; text-align:center; border:3px solid #84cc16;">
-                <div style="font-size:42px; font-weight:900; line-height:1; color:#84cc16;">${Math.round(weekStats.totalPoints)}</div>
-                <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; margin-top:6px;">POINTS EARNED</div>
-              </div>
-              <div style="background:#f8fafc; padding:22px 18px; border-radius:18px; text-align:center; border:3px solid #ec4899;">
-                <div style="font-size:42px; font-weight:900; line-height:1; color:#ec4899;">${completedObjectives.length}</div>
-                <div style="font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; margin-top:6px;">MISSIONS COMPLETE</div>
-              </div>
-            </div>
-
-            <!-- Bar Graph (current week’s points) -->
-            <div style="margin-bottom:50px;">
-              <h2 style="font-size:17px; font-weight:700; margin-bottom:14px; color:#0f172a;">📈 Weekly Points Trend</h2>
-              <div style="display:flex; align-items:flex-end; gap:10px; height:260px; padding:20px 24px; background:#f8fafc; border-radius:20px;">
-                ${reportBars.map(bar => `
-                  <div style="flex:1; display:flex; flex-direction:column; align-items:center;">
-                    <div style="font-size:14px; font-weight:700; color:#0f172a; margin-bottom:6px;">${bar.value}</div>
-                    <div style="width:100%; background:linear-gradient(to top, #a3e635, #22d3ee); height:${Math.max(28, Math.min(240, (bar.value / maxBar) * 240))}px; border-radius:12px 12px 0 0; box-shadow:0 6px 14px -4px #a3e635;"></div>
-                    <div style="font-size:11px; font-weight:600; color:#64748b; margin-top:10px; text-transform:uppercase;">${bar.label}</div>
-                  </div>
-                `).join('')}
-              </div>
-            </div>
-
-            <!-- Completed Mission Objectives -->
-            <div>
-              <h2 style="font-size:17px; font-weight:700; margin-bottom:16px; color:#0f172a;">✅ Completed Mission Objectives</h2>
-              ${completedObjectives.length > 0 ? completedObjectives.map(obj => `
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; background:#f8fafc; border-radius:14px; margin-bottom:10px; border-left:5px solid #22d3ee;">
-                  <div style="font-weight:500; color:#0f172a;">${obj.text}</div>
-                  <div style="font-size:12px; color:#64748b; white-space:nowrap;">${new Date(obj.date).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'})}</div>
-                </div>
-              `).join('') : `<div style="padding:40px 20px; text-align:center; color:#94a3b8; background:#f1f5f9; border-radius:16px; font-style:italic;">No completed objectives this week.<br>Keep the momentum going!</div>`}
-            </div>
-
-            <div style="margin-top:90px; text-align:center; font-size:12px; color:#64748b; border-top:1px dashed #cbd5e1; padding-top:24px;">
-              Generated on ${new Date().toLocaleDateString('en-GB')} • <strong>Trackerbox</strong>
-            </div>
-          </div>
-        `;
-
-        // Render hidden element
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = reportHTML;
-        tempDiv.style.position = 'absolute';
-        tempDiv.style.left = '-99999px';
-        tempDiv.style.top = '-99999px';
-        document.body.appendChild(tempDiv);
-
-        const opt = {
-          margin: [12, 10, 12, 10],
-          filename: `Trackerbox_Weekly_Review_${weekLabel.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 3, useCORS: true, letterRendering: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-
-        html2pdf()
-          .set(opt)
-          .from(tempDiv)
-          .save()
-          .then(() => {
-            document.body.removeChild(tempDiv);
-            playSound('success');
-          })
-          .catch(() => {
-            document.body.removeChild(tempDiv);
-            alert("PDF export failed. Please try again.");
-          });
-      }, [statAvailableWeeks, statWeekIndex, statsWeek, getDailyMetric, todosData, habitLogs]);
-
       if (!isLoaded) {
         return (
           <div className="min-h-screen flex items-center justify-center bg-[#05070e]">
@@ -2188,7 +2083,7 @@
                        </div>
                      </div>
   
-                     {/* Habit Tracking (unchanged name) - REMOVED per-day ▲▼ reorder (now global in System Modules) */}
+                     {/* Habit Tracking - Streak for each individual habit (always visible) */}
                      <div className="flex flex-col flex-1 border border-emerald-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
                        <div className="bg-emerald-500/10 p-3 border-b border-emerald-500/30">
                          <span className="font-bold text-emerald-400 uppercase tracking-widest text-xs">Habit Tracking</span>
@@ -2217,12 +2112,10 @@
                                     <Icon size={18}/>
                                  </button>
                                  <span className={`flex-1 text-sm font-bold ${textClass} transition-colors`}>{habit.name}</span>
-                                 {/* NEW: Per-habit streak (tiny flame + counter) in Captain's Log */}
-                                 {habitStreaks[habit.id] > 0 && (
-                                   <span className="flex items-center text-orange-400 text-xs font-black ml-auto">
-                                     <Flame size={14} />{habitStreaks[habit.id]}
-                                   </span>
-                                 )}
+                                 {/* Streak for each individual habit (always shown) */}
+                                 <span className="flex items-center text-orange-400 text-xs font-black ml-auto">
+                                   <Flame size={14} />{habitStreaks[habit.id] || 0}
+                                 </span>
                                  <button onClick={() => handleDeleteDailyHabit(activeJournalDate, habit.id)} className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-red-500 hover:text-red-400 transition-opacity">
                                    <Trash2 size={16}/>
                                  </button>
@@ -2870,7 +2763,6 @@
                                         <button onClick={(e) => { e.stopPropagation(); playSound('click'); setPendingReset({type: 'day', payload: dateStr}); }} className="p-1.5 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/40 hover:text-red-200 border border-red-500/30 transition-all" title="Erase Day">
                                           <Trash2 size={14} />
                                         </button>
-                                        {/* REMOVED: old “R” Convert BP button per user request */}
                                       </div>
                                     </div>
                                   </th>
@@ -3189,17 +3081,6 @@
                       categories={categories}
                       onDayClick={setActiveJournalDate}
                     />
-
-                    {/* === ONE-CLICK PDF WEEKLY REVIEW BUTTON (Analytics Core) === */}
-                    <div className="mt-8 flex justify-end">
-                      <button
-                        onClick={handleExportWeeklyPDF}
-                        className="flex items-center gap-3 bg-gradient-to-r from-purple-500 to-cyan-400 hover:from-purple-600 hover:to-cyan-500 text-white font-black px-8 py-4 rounded-3xl text-sm uppercase tracking-[1px] shadow-[0_0_25px_rgba(168,85,247,0.5)] transition-all active:scale-95"
-                      >
-                        <Download size={22} />
-                        Export Weekly Report (PDF)
-                      </button>
-                    </div>
                   </div>
                 )}
               </section>
@@ -3385,11 +3266,9 @@
                               <input type="number" step="0.1" value={habit.points !== undefined ? habit.points : ''} onChange={e => updateHabitConfig(habit.id, 'points', e.target.value === '' ? '' : parseFloat(e.target.value))} className="w-full bg-transparent text-center text-lime-300 font-black text-sm md:text-base outline-none border-b border-transparent focus:border-lime-400" />
                             </div>
                             {/* NEW: Per-habit streak (tiny flame + counter) in System Modules */}
-                            {habitStreaks[habit.id] > 0 && (
-                              <span className="flex items-center gap-px text-orange-400 text-xs font-black ml-auto">
-                                <Flame size={14} />{habitStreaks[habit.id]}
-                              </span>
-                            )}
+                            <span className="flex items-center gap-px text-orange-400 text-xs font-black ml-auto">
+                              <Flame size={14} />{habitStreaks[habit.id] || 0}
+                            </span>
                             <button onClick={() => removeHabitConfig(habit.id, habit.name)} className="text-red-400/50 hover:text-red-400 p-1 transition-colors shrink-0" title="Delete Habit Config"><Trash2 size={16}/></button>
                           </div>
                           <div className="flex justify-between mt-1 md:mt-2 gap-1 w-full overflow-x-auto custom-scrollbar pb-1">
@@ -3462,7 +3341,8 @@
                           <button
                             onClick={() => {
                               playSound('click');
-                              if (confirm('⚠️ FULL FACTORY RESET\n\nThis will permanently delete ALL your data and restore Trackerbox to its original default state.\n\nAre you sure?')) {
+                              if (confirm('⚠️ FULL FACTORY RESET\n\nThis will permanently delete ALL your data and restore Trackerbox to its original default state.\n\nAre you sure you want to proceed?')) {
+                                alert('⚠️ Factory reset complete. Reloading with fresh defaults...');
                                 localStorage.clear();
                                 window.location.reload();
                               }
