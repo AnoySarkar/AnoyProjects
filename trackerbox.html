@@ -45,7 +45,7 @@
       box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
     }
     .neon-text { text-shadow: 0 0 15px currentColor; }
-  
+ 
     @keyframes heartbeat {
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.05); }
@@ -59,7 +59,7 @@
     /* Rigid square cells */
     .square-cell-inner { width: 52px; height: 52px; }
     @media (min-width: 768px) { .square-cell-inner { width: 60px; height: 60px; } }
-  
+ 
     /* Touch actions */
     .paintable-svg { touch-action: none; }
     .scrollable-container { touch-action: pan-x pan-y; }
@@ -142,14 +142,14 @@
             const chordGain = audioCtx.createGain();
             chordOsc.connect(chordGain);
             chordGain.connect(audioCtx.destination);
-          
+         
             chordOsc.type = 'sine';
             chordOsc.frequency.setValueAtTime(freq, t);
-          
+         
             chordGain.gain.setValueAtTime(0, t);
             chordGain.gain.linearRampToValueAtTime(0.05, t + 0.5 + (i * 0.1));
             chordGain.gain.exponentialRampToValueAtTime(0.001, t + 4);
-          
+         
             chordOsc.start(t);
             chordOsc.stop(t + 4);
           });
@@ -195,7 +195,7 @@
     const LOCAL_TODOS_KEY = 'trackerbox_todos_v3';
     const LOCAL_HABITS_CONFIG_KEY = 'trackerbox_habits_config_v3';
     const LOCAL_HABIT_LOGS_KEY = 'trackerbox_habit_logs_v2';
-    const LOCAL_SYS_CONFIG_KEY = 'trackerbox_sys_config_v2';
+    const LOCAL_SYS_CONFIG_KEY = 'trackerbox_sys_config_v3'; // bumped version for per-mode settings
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
       { id: 'sleep', name: 'Sleep', color: '#86efac', target: '', pointsPerHour: 0 },
@@ -233,7 +233,7 @@
       const [year, month] = yearMonthStr.split('-').map(Number);
       const weeks = [];
       let currentDate = new Date(year, month - 1, 1);
-    
+   
       // Shift to previous Monday if necessary
       let dayOfWeek = currentDate.getDay();
       let diff = (dayOfWeek === 0 ? -6 : 1) - dayOfWeek;
@@ -281,7 +281,7 @@
     function App() {
       const [isLoaded, setIsLoaded] = useState(false);
       const [showHelp, setShowHelp] = useState(false);
-    
+   
       // Collapsible Section States
       const [sectionsOpen, setSectionsOpen] = useState({
          tracker: true,
@@ -293,12 +293,12 @@
          playSound('click');
          setSectionsOpen(prev => ({ ...prev, [sec]: !prev[sec] }));
       };
-    
+   
       // Core States
       const [allData, setAllData] = useState({});
       const [journalData, setJournalData] = useState({});
       const [todosData, setTodosData] = useState({});
-    
+   
       // History States for Undo/Redo
       const [past, setPast] = useState([]);
       const [future, setFuture] = useState([]);
@@ -314,11 +314,27 @@
       const [sysConfig, setSysConfig] = useState(() => {
         const saved = localStorage.getItem(LOCAL_SYS_CONFIG_KEY);
         const savedConfig = saved ? JSON.parse(saved) : {};
+        
+        // Migration from v2 (global) to v3 (per-mode + default nil for categories)
+        if (!savedConfig.perModeSettings) {
+          const migratedPerMode = {
+            points: {
+              worstPoint: savedConfig.worstPoint !== undefined ? savedConfig.worstPoint : null,
+              bestPoint: savedConfig.bestPoint !== undefined ? savedConfig.bestPoint : null,
+              xpPerPoint: savedConfig.xpPerPoint !== undefined ? savedConfig.xpPerPoint : 1
+            }
+          };
+          const migratedConfig = {
+            heatmapMode: savedConfig.heatmapMode || 'points',
+            perModeSettings: migratedPerMode
+          };
+          localStorage.setItem(LOCAL_SYS_CONFIG_KEY, JSON.stringify(migratedConfig));
+          return migratedConfig;
+        }
+        
         return {
-          worstPoint: savedConfig.worstPoint !== undefined ? savedConfig.worstPoint : -10,
-          bestPoint: savedConfig.bestPoint !== undefined ? savedConfig.bestPoint : 100,
-          xpPerPoint: savedConfig.xpPerPoint !== undefined ? savedConfig.xpPerPoint : 1,
-          heatmapMode: savedConfig.heatmapMode || 'points'
+          heatmapMode: savedConfig.heatmapMode || 'points',
+          perModeSettings: savedConfig.perModeSettings || {}
         };
       });
       const [dayClipboard, setDayClipboard] = useState(null);
@@ -339,6 +355,42 @@
           setSelectedColorId('lock');
         }
       }, [categories, selectedColorId]);
+      
+      // --- Ensure per-mode settings exist for "points" + every category (default nil) ---
+      // This runs whenever categories change so new categories get nil values automatically
+      useEffect(() => {
+        setSysConfig(prev => {
+          let newPerMode = { ...(prev.perModeSettings || {}) };
+          
+          // Always ensure global points mode (default XP = 1)
+          if (!newPerMode.points) {
+            newPerMode.points = { worstPoint: null, bestPoint: null, xpPerPoint: 1 };
+          }
+          
+          // Ensure every current category has its own settings (default nil)
+          categories.forEach(cat => {
+            if (!newPerMode[cat.id]) {
+              newPerMode[cat.id] = { worstPoint: null, bestPoint: null, xpPerPoint: null };
+            }
+          });
+          
+          // Clean up any stale category keys that no longer exist
+          Object.keys(newPerMode).forEach(key => {
+            if (key !== 'points' && !categories.some(c => c.id === key)) {
+              delete newPerMode[key];
+            }
+          });
+          
+          const hasChanged = JSON.stringify(newPerMode) !== JSON.stringify(prev.perModeSettings || {});
+          if (hasChanged) {
+            const updated = { ...prev, perModeSettings: newPerMode };
+            localStorage.setItem(LOCAL_SYS_CONFIG_KEY, JSON.stringify(updated));
+            return updated;
+          }
+          return prev;
+        });
+      }, [categories]);
+      
       // --- History (Undo/Redo) Actions ---
       const saveHistoryState = useCallback(() => {
          const newState = JSON.stringify(allDataRef.current);
@@ -353,7 +405,7 @@
              if (p.length === 0) return p;
              const previousStr = p[p.length - 1];
              const parsed = JSON.parse(previousStr);
-           
+          
              setAllData(currentData => {
                  setFuture(f => [JSON.stringify(currentData), ...f]);
                  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
@@ -368,7 +420,7 @@
              if (f.length === 0) return f;
              const nextStr = f[0];
              const parsed = JSON.parse(nextStr);
-           
+          
              setAllData(currentData => {
                  setPast(p => [...p, JSON.stringify(currentData)]);
                  localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed));
@@ -378,6 +430,36 @@
              return f.slice(1);
          });
       }, []);
+      
+      // --- Per-mode setting updater (worst/best/xp saved individually per category or "points") ---
+      const updateModeSetting = useCallback((modeKey, field, value) => {
+        setSysConfig(prev => {
+          const currentModeSettings = prev.perModeSettings?.[modeKey] || {
+            worstPoint: null,
+            bestPoint: null,
+            xpPerPoint: modeKey === 'points' ? 1 : null
+          };
+          
+          const newModeSettings = {
+            ...currentModeSettings,
+            [field]: value
+          };
+          
+          const newPerMode = {
+            ...(prev.perModeSettings || {}),
+            [modeKey]: newModeSettings
+          };
+          
+          const updatedSys = {
+            ...prev,
+            perModeSettings: newPerMode
+          };
+          
+          localStorage.setItem(LOCAL_SYS_CONFIG_KEY, JSON.stringify(updatedSys));
+          return updatedSys;
+        });
+      }, []);
+      
       // --- Focus Session Auto-Logger ---
       useEffect(() => {
         if (completedSessionRef.current) {
@@ -399,7 +481,7 @@
       const todayStr = formatDateString(today);
       const initialMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
       const initialYearStr = `${today.getFullYear()}`;
-    
+   
       const [selectedMonthStr, setSelectedMonthStr] = useState(initialMonthStr);
       const availableWeeks = useMemo(() => getWeeksInMonth(selectedMonthStr), [selectedMonthStr]);
       const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
@@ -420,7 +502,7 @@
       // Feature States: Journal & Timer
       const [activeJournalDate, setActiveJournalDate] = useState(null);
       const [todoInput, setTodoInput] = useState('');
-    
+   
       const [showTimer, setShowTimer] = useState(false); // DEFAULT CLOCK TOGGLE IS OFF
       const [timer, setTimer] = useState({
         isOpen: false,
@@ -476,7 +558,7 @@
           };
         });
       };
-    
+   
       const resetTimer = () => {
         playSound('erase');
         setTimer(prev => ({
@@ -508,7 +590,7 @@
         const handleKeyDown = (e) => {
           if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
           const key = e.key.toLowerCase();
-        
+       
           if ((e.ctrlKey || e.metaKey) && key === 'z') {
              if (e.shiftKey) handleRedo();
              else handleUndo();
@@ -518,13 +600,13 @@
              handleRedo();
              return;
           }
-        
+       
           if (key === 'l') {
             playSound('click');
             setSelectedColorId('lock');
             return;
           }
-        
+       
           const num = parseInt(key);
           if (!isNaN(num) && num > 0 && num <= categories.length) {
             playSound('click');
@@ -551,7 +633,7 @@
         const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
         const savedJournal = localStorage.getItem(LOCAL_JOURNAL_KEY);
         const savedTodos = localStorage.getItem(LOCAL_TODOS_KEY);
-      
+     
         if (savedData) {
           try { setAllData(JSON.parse(savedData)); }
           catch (e) { console.error("Error loading local data", e); }
@@ -604,7 +686,7 @@
               localStorage.setItem(LOCAL_HABIT_LOGS_KEY, JSON.stringify(updated));
               return updated;
             }
-          
+         
             return prev;
           });
         }
@@ -631,7 +713,7 @@
         saveHistoryState();
         playSound('success');
         const sleepCat = categories.find(c => c.name.toLowerCase().includes('sleep')) || categories[0];
-      
+     
         setAllData(prev => {
           const dayData = { ...(prev[dateStr] || {}) };
           for (let i = 0; i <= 7; i++) {
@@ -767,18 +849,11 @@
         playSound('click');
         setPendingReset({ type: 'habit', payload: { id, name } });
       }
-      const updateSysConfig = (field, value) => {
-         setSysConfig(prev => {
-            const updated = { ...prev, [field]: value };
-            localStorage.setItem(LOCAL_SYS_CONFIG_KEY, JSON.stringify(updated));
-            return updated;
-         });
-      };
       // --- Gamification & Streak Logic ---
       const currentStreak = useMemo(() => {
         let streak = 0;
         let checkDate = new Date();
-      
+     
         let checkStr = formatDateString(checkDate);
         if (!hasFullActivity(allData[checkStr])) {
           checkDate.setDate(checkDate.getDate() - 1);
@@ -798,12 +873,12 @@
       }, [allData]);
       const { totalXP, level, rankTitle, currentLevelBaseXP, nextLevelXP, totalLifetimePoints, todayPoints } = useMemo(() => {
          let xp = 0;
-       
+      
          // 1. Point Accumulation & XP
          let totalPts = 0;
          let tDayPts = 0;
          let trackedHours = 0;
-       
+      
          Object.entries(allData).forEach(([dateStr, day]) => {
             let dayPts = 0;
             Object.values(day).forEach(h => {
@@ -816,7 +891,7 @@
                };
                if (h.split1) { processSeg(h.q1, 0.25); processSeg(h.q2, 0.25); }
                else { processSeg(h.t1, 0.5); }
-             
+            
                if (h.split2) { processSeg(h.q3, 0.25); processSeg(h.q4, 0.25); }
                else { processSeg(h.t2, 0.5); }
             });
@@ -836,7 +911,11 @@
              if (dateStr === todayStr) tDayPts += dayPts;
          });
          xp += trackedHours * 10;
-         xp += Math.max(0, totalPts * (parseFloat(sysConfig.xpPerPoint) || 0));
+         
+         // Use per-mode XP multiplier (only points mode is used for global XP)
+         const pointsXpMultiplier = sysConfig.perModeSettings?.points?.xpPerPoint ?? 1;
+         xp += Math.max(0, totalPts * (parseFloat(pointsXpMultiplier) || 0));
+         
          // 2. XP for Todos Completed
          let todosDone = 0;
          Object.values(todosData).forEach(day => {
@@ -871,7 +950,7 @@
             totalLifetimePoints: totalPts,
             todayPoints: tDayPts
          };
-      }, [allData, todosData, habitLogs, currentStreak, categories, habitsConfig, sysConfig.xpPerPoint, todayStr]);
+      }, [allData, todosData, habitLogs, currentStreak, categories, habitsConfig, sysConfig, todayStr]);
       // --- Mission Report Generator (Canvas-based, dark-themed, no cropping) ---
       const generateMissionReport = useCallback(() => {
         playSound('click');
@@ -879,11 +958,11 @@
         canvas.width = 1280;
         canvas.height = 820;
         const ctx = canvas.getContext('2d');
-      
+     
         // Dark futuristic background
         ctx.fillStyle = '#05070e';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
+     
         // Subtle cyber grid
         ctx.strokeStyle = 'rgba(255,255,255,0.06)';
         ctx.lineWidth = 1;
@@ -893,17 +972,17 @@
         for (let y = 40; y < canvas.height; y += 40) {
           ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
         }
-      
+     
         // Header
         ctx.fillStyle = '#22d3ee';
         ctx.font = '900 62px ui-sans-serif';
         ctx.fillText('MISSION REPORT', 80, 110);
-      
+     
         const weekLabel = availableWeeks[selectedWeekIndex]?.label || 'This Week';
         ctx.fillStyle = '#e2e8f0';
         ctx.font = '700 28px ui-sans-serif';
         ctx.fillText(weekLabel, 80, 175);
-      
+     
         // Gamification stats
         ctx.fillStyle = '#c026d3';
         ctx.font = '700 36px ui-sans-serif';
@@ -911,26 +990,26 @@
         ctx.fillStyle = '#f59e0b';
         ctx.font = '700 36px ui-sans-serif';
         ctx.fillText(`${currentStreak} DAY STREAK 🔥`, 340, 235);
-      
+     
         ctx.fillStyle = '#a3e635';
         ctx.font = '600 22px ui-sans-serif';
         ctx.fillText(`${Math.round(totalLifetimePoints)} LIFETIME POINTS`, 80, 280);
-      
+     
         // Grid title
         ctx.fillStyle = '#64748b';
         ctx.font = '600 19px ui-sans-serif';
         ctx.fillText('YOUR WEEKLY TEMPORAL GRID', 80, 330);
-      
+     
         // Grid drawing (exact visual replica of the tracker grid - 24h × 7 days)
         const gridX = 80;
         const gridY = 360;
         const dayWidth = 142;
         const hourHeight = 16; // 24 hours = 384px tall
-      
+     
         currentWeekDates.forEach((dateStr, dayIdx) => {
           const dayX = gridX + dayIdx * dayWidth;
           const dayData = allData[dateStr] || {};
-      
+     
           // Day label
           const d = new Date(dateStr);
           ctx.fillStyle = '#e2e8f0';
@@ -938,11 +1017,11 @@
           ctx.textAlign = 'center';
           ctx.fillText(d.toLocaleDateString('en-US', { weekday: 'short' }), dayX + dayWidth / 2, gridY - 18);
           ctx.fillText(d.getDate(), dayX + dayWidth / 2, gridY - 3);
-      
+     
           let y = gridY;
           for (let h = 0; h < 24; h++) {
             const cell = dayData[h] || { t1: null, t2: null, split1: false, split2: false };
-      
+     
             // Top half (mimics first triangle)
             let topColor = '#1e2937';
             if (cell.split1) {
@@ -956,7 +1035,7 @@
             }
             ctx.fillStyle = topColor;
             ctx.fillRect(dayX, y, dayWidth - 10, hourHeight / 2);
-      
+     
             // Bottom half (mimics second triangle)
             let bottomColor = '#1e2937';
             if (cell.split2) {
@@ -970,7 +1049,7 @@
             }
             ctx.fillStyle = bottomColor;
             ctx.fillRect(dayX, y + hourHeight / 2, dayWidth - 10, hourHeight / 2);
-      
+     
             // Diagonal divider (exact visual match to SVG triangle separator)
             ctx.strokeStyle = '#0b1120';
             ctx.lineWidth = 3;
@@ -978,22 +1057,22 @@
             ctx.moveTo(dayX, y);
             ctx.lineTo(dayX + dayWidth - 10, y + hourHeight);
             ctx.stroke();
-      
+     
             y += hourHeight;
           }
-      
+     
           // Column border
           ctx.strokeStyle = 'rgba(255,255,255,0.25)';
           ctx.lineWidth = 4;
           ctx.strokeRect(dayX, gridY, dayWidth - 10, 24 * hourHeight);
         });
-      
+     
         // Footer
         ctx.fillStyle = '#64748b';
         ctx.font = '500 15px ui-sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`Trackerbox • Generated ${new Date().toLocaleDateString('en-GB')} • Share your streak!`, canvas.width / 2, canvas.height - 35);
-      
+     
         // Download PNG (nothing gets cropped - full canvas is saved)
         const link = document.createElement('a');
         link.download = `trackerbox-mission-report-${formatDateString(new Date())}.png`;
@@ -1036,7 +1115,7 @@
               if (imported.habits) setHabitsConfig(imported.habits);
               if (imported.habitLogs) setHabitLogs(imported.habitLogs);
               if (imported.sysConfig) setSysConfig(imported.sysConfig);
-            
+           
               localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(imported.data));
               localStorage.setItem(LOCAL_CATEGORIES_KEY, JSON.stringify(imported.categories));
               if (imported.journal) localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(imported.journal));
@@ -1093,19 +1172,19 @@
             ...prev,
             [dateStr]: { ...dayData, [hourIndex]: { ...hourData, [triangleId]: finalColorId } }
           };
-        
+       
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
           return newData;
         });
       }, []);
       const handlePointerDown = (dateStr, hourIndex, triangleId, e) => {
         if (e.button !== 0 || selectedColorId === 'lock') return;
-      
+     
         saveHistoryState();
         const hourData = allData[dateStr]?.[hourIndex] || {};
         const prevColor = hourData[triangleId];
         const mode = (prevColor === selectedColorId) ? 'erase' : 'paint';
-      
+     
         setIsPainting(mode);
         handleUpdateSegment(dateStr, hourIndex, triangleId, selectedColorId, mode);
       };
@@ -1118,14 +1197,14 @@
         e.preventDefault();
         saveHistoryState();
         playSound('click');
-      
+     
         setAllData(prev => {
             const dayData = prev[dateStr] || {};
             const hourData = dayData[hour] || { t1: null, t2: null };
-          
+         
             const newData = { ...prev };
             const newHourData = { ...hourData };
-          
+         
             if (half === 'half1') {
                 if (newHourData.split1) {
                     newHourData.split1 = false;
@@ -1147,7 +1226,7 @@
                     newHourData.q4 = newHourData.t2;
                 }
             }
-          
+         
             newData[dateStr] = { ...dayData, [hour]: newHourData };
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
             return newData;
@@ -1162,12 +1241,12 @@
       const executeReset = () => {
         if (!pendingReset) return;
         playSound('trash');
-      
+     
         if (pendingReset.type === 'category') {
           const newCats = categories.filter(c => c.id !== pendingReset.payload.id);
           setCategories(newCats);
           localStorage.setItem(LOCAL_CATEGORIES_KEY, JSON.stringify(newCats));
-        
+       
           if (selectedColorId === pendingReset.payload.id) setSelectedColorId('lock');
           if (timer.categoryId === pendingReset.payload.id) setTimer(p => ({...p, categoryId: newCats[0]?.id}));
           setPendingReset(null);
@@ -1200,7 +1279,7 @@
           Object.keys(currentTodos).forEach(d => { if (d.startsWith(pendingReset.payload)) delete currentTodos[d]; });
           Object.keys(currentHabits).forEach(d => { if (d.startsWith(pendingReset.payload)) delete currentHabits[d]; });
         }
-      
+     
         setAllData(currentData);
         setJournalData(currentJournal);
         setTodosData(currentTodos);
@@ -1214,14 +1293,14 @@
       const calculateStats = useCallback((dateStringsArray) => {
         const totals = categories.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
         const completedTotals = categories.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
-      
+     
         let totalTrackedHours = 0;
         let completedDaysCount = 0;
         let totalPoints = 0;
         dateStringsArray.forEach(dateStr => {
           const dayData = allData[dateStr] || {};
           const isComplete = hasActivity(dayData);
-        
+       
           if (isComplete) completedDaysCount++;
           Object.values(dayData).forEach(hourData => {
             const processPart = (id, duration) => {
@@ -1229,7 +1308,7 @@
                     if (totals[id] !== undefined) totals[id] += duration;
                     totalTrackedHours += duration;
                     if (isComplete && completedTotals[id] !== undefined) completedTotals[id] += duration;
-                  
+                 
                     const cat = categories.find(c => c.id === id);
                     if (cat) totalPoints += (parseFloat(cat.pointsPerHour) || 0) * duration;
                 }
@@ -1262,7 +1341,7 @@
       const statsWeek = calculateStats(statAvailableWeeks[statWeekIndex]?.dates || []);
       const statsMonth = calculateStats(Object.keys(allData).filter(d => d.startsWith(statMonth)));
       const statsYear = calculateStats(Object.keys(allData).filter(d => d.startsWith(statYear)));
-    
+   
       if (!isLoaded) {
         return (
           <div className="min-h-screen flex items-center justify-center bg-[#05070e]">
@@ -1271,7 +1350,7 @@
         );
       }
       const activeTimerCategory = categories.find(c => c.id === timer.categoryId) || categories[0];
-    
+   
       // --- Compute Active Day Progress Header (extended with points + category hours) ---
       const activeDayTodos = todosData[activeJournalDate] || [];
       const activeDayHabits = (habitLogs[activeJournalDate] || []).filter(h => !h.deleted);
@@ -1279,14 +1358,14 @@
       const activeCompletedTasks = activeDayTodos.filter(t => t.status === 'green' || t.done).length + activeDayHabits.filter(h => h.status === 'green').length;
       const activeCompletionRate = activeTotalTasks > 0 ? (activeCompletedTasks / activeTotalTasks) * 100 : 0;
       const activeDayData = allData[activeJournalDate] || {};
-    
+   
       let activeDayTrackedHours = 0;
       let activeDayPoints = 0;
       const activeCategoryHours = categories.reduce((acc, cat) => {
         acc[cat.id] = 0;
         return acc;
       }, {});
-    
+   
       Object.values(activeDayData).forEach(h => {
         const processSeg = (id, dur) => {
           if (id) {
@@ -1311,7 +1390,7 @@
           processSeg(h.t2, 0.5);
         }
       });
-    
+   
       // Habit points (added to total points)
       const activeDayHabitLogs = activeDayHabits;
       activeDayHabitLogs.forEach(hLog => {
@@ -1320,13 +1399,13 @@
           if (hConf) activeDayPoints += (parseFloat(hConf.points) || 0);
         }
       });
-    
+   
       return (
         <Fragment>
           <div className="mouse-glow"></div>
           {/* --- MAIN APP INTERFACE --- */}
           <div className="min-h-screen pb-20 flex flex-col">
-           
+          
             {/* --- TOGGLEABLE FOCUS CHRONOS --- */}
             {showTimer && (
                <div className="fixed bottom-4 right-4 z-[150] transition-transform duration-300 ${timer.isOpen ? 'translate-y-0' : 'translate-y-[calc(100%-48px)]'}">
@@ -1335,12 +1414,12 @@
                      <span className="flex items-center gap-2"><Clock size={14}/> Focus Chronos</span>
                      <span>{timer.isOpen ? '▼' : '▲'}</span>
                    </button>
-                 
+                
                    <div className="p-4 flex flex-col gap-4">
                      <select value={timer.categoryId || ''} onChange={e => { playSound('click'); setTimer(p => ({...p, categoryId: e.target.value})); }} className="w-full bg-[#0b1120] text-slate-200 rounded-lg border border-cyan-500/30 px-3 py-2 font-bold text-sm outline-none focus:border-cyan-400">
                        {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                      </select>
-                   
+                  
                      <div className="text-center relative">
                        {timer.mode === 'break' && (
                           <div className="text-green-400 text-[10px] font-bold uppercase tracking-widest mb-1 animate-pulse">Break / Stopwatch</div>
@@ -1386,7 +1465,7 @@
                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4" onClick={() => setActiveJournalDate(null)}>
                  <div className="glass-panel animate-modal border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.2)] rounded-3xl p-4 md:p-6 max-w-6xl w-full relative flex flex-col max-h-[95vh] md:h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
                    <button onClick={() => { playSound('click'); setActiveJournalDate(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors z-10 bg-black/50 p-1 rounded-full md:bg-transparent md:p-0"><X size={24} /></button>
-                 
+                
                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 md:mb-6 shrink-0 border-b border-white/10 pb-4">
                      <div className="flex items-center gap-3">
                        <FileText size={28} className="text-purple-400" />
@@ -1410,7 +1489,7 @@
                        <div className="w-full h-1.5 bg-[#0b1120] rounded-full overflow-hidden border border-white/10 shadow-inner">
                           <div className="h-full bg-gradient-to-r from-cyan-500 to-green-400 transition-all duration-500" style={{width: `${activeCompletionRate}%`}}></div>
                        </div>
-                      
+                     
                        {/* Category Analysis */}
                        {Object.values(activeCategoryHours).some(h => h > 0) && (
                          <div className="mt-3 pt-3 border-t border-white/10">
@@ -1434,7 +1513,7 @@
                    </div>
                    {/* TRIPLE Pane Body (Responsive Stack & Scroll) */}
                    <div className="flex flex-col lg:flex-row gap-4 md:gap-6 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar pb-2">
-                   
+                  
                      {/* Left Pane: Mission Objectives (Todos) */}
                      <div className="flex flex-col flex-1 border border-cyan-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
                        <div className="bg-cyan-500/10 p-3 border-b border-cyan-500/30">
@@ -1443,11 +1522,11 @@
                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                          {activeDayTodos.map(todo => {
                            const status = todo.status || (todo.done ? 'green' : 'red');
-                         
+                        
                            let Icon = Square;
                            let iconClass = 'text-red-500 hover:text-red-400';
                            let textClass = 'text-slate-200';
-                         
+                        
                            if (status === 'yellow') {
                              Icon = MinusSquare;
                              iconClass = 'text-yellow-400 hover:text-yellow-300';
@@ -1468,7 +1547,7 @@
                                    <Trash2 size={16}/>
                                  </button>
                                </div>
-                             
+                            
                                {status === 'yellow' && (
                                  <div className="pl-8 pr-6 w-full relative">
                                    <div className="absolute top-0 left-3.5 w-px h-full bg-yellow-500/30"></div>
@@ -1509,11 +1588,11 @@
                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                          {activeDayHabits.map(habit => {
                            const status = habit.status || 'red';
-                         
+                        
                            let Icon = Square;
                            let iconClass = 'text-red-500 hover:text-red-400';
                            let textClass = 'text-slate-200';
-                         
+                        
                            if (status === 'yellow') {
                              Icon = MinusSquare;
                              iconClass = 'text-yellow-400 hover:text-yellow-300';
@@ -1534,7 +1613,7 @@
                                    <Trash2 size={16}/>
                                  </button>
                                </div>
-                             
+                            
                                {status === 'yellow' && (
                                  <div className="pl-8 pr-6 w-full relative">
                                    <div className="absolute top-0 left-3.5 w-px h-full bg-yellow-500/30"></div>
@@ -1580,7 +1659,7 @@
                      <Info size={32} className="text-cyan-400" />
                      <h2 className="text-xl md:text-2xl font-black uppercase text-white">System Protocol</h2>
                    </div>
-                 
+                
                    <div className="space-y-4 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
                      <div className="bg-white/5 p-4 rounded-xl border border-white/10">
                        <h3 className="font-bold text-cyan-300 uppercase mb-2 border-b border-cyan-500/30 pb-1">Painting & Sub-dividing</h3>
@@ -1632,7 +1711,7 @@
             {/* Header */}
             <header className="glass-panel sticky top-0 z-50 border-b border-white/10 rounded-none shadow-none">
               <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              
+             
                 {/* Logo Section */}
                 <div className="flex items-center gap-4 min-w-0">
                   <div className="relative flex items-center justify-center shrink-0 alive-pulse">
@@ -1656,7 +1735,7 @@
                 </div>
                 {/* Main Toolbar & Stats */}
                 <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 mt-2 md:mt-0">
-                
+               
                   {/* Gamification Display */}
                   <div className="flex items-center bg-[#0b1120] border border-white/10 rounded-2xl overflow-hidden shadow-[0_0_10px_rgba(0,0,0,0.5)] h-[44px]">
                     <div className="bg-gradient-to-r from-purple-500/20 to-transparent px-3 py-2 border-r border-white/10 flex items-center justify-center text-purple-400" title="Current Rank">
@@ -1696,7 +1775,7 @@
               </div>
             </header>
             <main className="max-w-[1400px] w-full mx-auto px-4 py-8 flex-1 min-w-0">
-            
+           
               {/* ---------------- SECTION 1: TEMPORAL LOG & TRACKER ---------------- */}
               <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6">
                 {/* Accordion Header with selectors moved beside title */}
@@ -1745,19 +1824,19 @@
                             <tr>
                               <th className="w-[45px] md:w-[60px] sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
                               <th className="w-[50px] md:w-[65px] sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
-                            
+                           
                               {currentWeekDates.map((dateStr) => {
                                 const isToday = dateStr === todayStr;
                                 const d = new Date(dateStr);
                                 const hasJournal = journalData[dateStr] && journalData[dateStr].trim().length > 0;
-                              
+                             
                                 const dayTodos = todosData[dateStr] || [];
                                 const dayHabits = (habitLogs[dateStr] || []).filter(h => !h.deleted);
-                              
+                             
                                 const totalTasks = dayTodos.length + dayHabits.length;
                                 const completedTasks = dayTodos.filter(t => t.status === 'green' || t.done).length + dayHabits.filter(h => h.status === 'green').length;
                                 const completionRate = totalTasks > 0 ? completedTasks / totalTasks : 0;
-                              
+                             
                                 const hasUncompletedTodos = dayTodos.length > dayTodos.filter(t => t.status === 'green' || t.done).length;
                                 const hasUncompletedHabits = dayHabits.length > dayHabits.filter(h => h.status === 'green').length;
                                 let headerBg = isToday ? 'bg-cyan-500/20' : 'bg-white/5';
@@ -1792,7 +1871,7 @@
                                       <span className={`text-xl md:text-2xl font-black leading-none mt-1 ${isToday ? 'text-cyan-100 neon-text' : 'text-slate-200 group-hover/th:text-white'}`}>
                                         {d.getDate()}
                                       </span>
-                                    
+                                   
                                       {/* Journal/Todo/Habit Indicators */}
                                       <div className="absolute -top-1 -right-1 flex gap-1">
                                         {hasUncompletedHabits && <div className="w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" title="Pending Routines"></div>}
@@ -1863,7 +1942,7 @@
                                     {currentWeekDates.map(dateStr => {
                                       const dayData = allData[dateStr] || {};
                                       const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
-                                    
+                                   
                                       const isSplit1 = cellData.split1;
                                       const isSplit2 = cellData.split2;
                                       const t1Color = cellData.t1 ? categories.find(c => c.id === cellData.t1)?.color : 'rgba(255,255,255,0.02)';
@@ -1872,7 +1951,7 @@
                                       const q2Color = cellData.q2 ? categories.find(c => c.id === cellData.q2)?.color : 'rgba(255,255,255,0.02)';
                                       const q3Color = cellData.q3 ? categories.find(c => c.id === cellData.q3)?.color : 'rgba(255,255,255,0.02)';
                                       const q4Color = cellData.q4 ? categories.find(c => c.id === cellData.q4)?.color : 'rgba(255,255,255,0.02)';
-                                    
+                                   
                                       const activeColorId = cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2;
                                       const glowColorHex = activeColorId ? categories.find(c => c.id === activeColorId)?.color : 'transparent';
                                       const cellStyle = activeColorId ? { boxShadow: `0 0 15px ${glowColorHex}20, inset 0 0 10px ${glowColorHex}10` } : {};
@@ -1950,7 +2029,7 @@
                 </button>
                 {sectionsOpen.analytics && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
-                    
+                   
                     {/* === GAMIFICATION / HEATMAP VARIABLES MOVED DIRECTLY ABOVE THE 365 HEATMAP === */}
                     <div className="mb-8 bg-white/5 border border-white/10 rounded-3xl p-6">
                       <h3 className="font-bold text-pink-400 uppercase tracking-widest text-xs mb-5 border-b border-pink-500/30 pb-3">HEATMAP VISUALIZATION CONTROLS</h3>
@@ -1960,7 +2039,14 @@
                           <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Visualize</label>
                           <select
                             value={sysConfig.heatmapMode}
-                            onChange={(e) => { playSound('click'); updateSysConfig('heatmapMode', e.target.value); }}
+                            onChange={(e) => { playSound('click'); 
+                              // update only the mode (other settings stay per-mode)
+                              setSysConfig(prev => {
+                                const updated = { ...prev, heatmapMode: e.target.value };
+                                localStorage.setItem(LOCAL_SYS_CONFIG_KEY, JSON.stringify(updated));
+                                return updated;
+                              });
+                            }}
                             className="w-full bg-[#0b1120] border border-purple-400/30 focus:border-purple-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
                           >
                             <option value="points">Points (Overall Productivity)</option>
@@ -1969,53 +2055,78 @@
                             ))}
                           </select>
                         </div>
-                        
-                        {/* Worst limit - dynamic label */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">
-                            {sysConfig.heatmapMode === 'points' 
-                              ? 'Worst Point Limit (Deep Red)' 
-                              : `Worst ${categories.find(c => c.id === sysConfig.heatmapMode)?.name || ''} Hours`}
-                          </label>
-                          <input 
-                            type="number" 
-                            step="1"
-                            value={sysConfig.worstPoint !== undefined ? sysConfig.worstPoint : ''}
-                            onChange={e => updateSysConfig('worstPoint', e.target.value === '' ? '' : parseFloat(e.target.value))}
-                            className="w-full bg-[#0b1120] border border-red-500/50 focus:border-red-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
-                          />
-                        </div>
-                        
-                        {/* Best limit - dynamic label */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">
-                            {sysConfig.heatmapMode === 'points' 
-                              ? 'Best Point Limit (Deep Green)' 
-                              : `Best ${categories.find(c => c.id === sysConfig.heatmapMode)?.name || ''} Hours`}
-                          </label>
-                          <input 
-                            type="number" 
-                            step="1"
-                            value={sysConfig.bestPoint !== undefined ? sysConfig.bestPoint : ''}
-                            onChange={e => updateSysConfig('bestPoint', e.target.value === '' ? '' : parseFloat(e.target.value))}
-                            className="w-full bg-[#0b1120] border border-emerald-500/50 focus:border-emerald-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
-                          />
-                        </div>
-                        
-                        {/* XP per point (still global) */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-lime-400 uppercase tracking-widest mb-2">XP Per Point Earned</label>
-                          <input 
-                            type="number" 
-                            step="0.1"
-                            value={sysConfig.xpPerPoint !== undefined ? sysConfig.xpPerPoint : ''}
-                            onChange={e => updateSysConfig('xpPerPoint', e.target.value === '' ? '' : parseFloat(e.target.value))}
-                            className="w-full bg-[#0b1120] border border-lime-500/50 focus:border-lime-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
-                          />
-                        </div>
+                       
+                        {/* Current mode settings */}
+                        {(() => {
+                          const currentMode = sysConfig.heatmapMode;
+                          const modeSettings = sysConfig.perModeSettings?.[currentMode] || {
+                            worstPoint: null,
+                            bestPoint: null,
+                            xpPerPoint: currentMode === 'points' ? 1 : null
+                          };
+                          return (
+                            <>
+                              {/* Worst limit - dynamic label */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-red-400 uppercase tracking-widest mb-2">
+                                  {currentMode === 'points'
+                                    ? 'Worst Point Limit (Deep Red)'
+                                    : `Worst ${categories.find(c => c.id === currentMode)?.name || ''} Hours`}
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={modeSettings.worstPoint !== null ? modeSettings.worstPoint : ''}
+                                  onChange={e => {
+                                    playSound('click');
+                                    const val = e.target.value === '' ? null : parseFloat(e.target.value);
+                                    updateModeSetting(currentMode, 'worstPoint', val);
+                                  }}
+                                  className="w-full bg-[#0b1120] border border-red-500/50 focus:border-red-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
+                                />
+                              </div>
+                             
+                              {/* Best limit - dynamic label */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">
+                                  {currentMode === 'points'
+                                    ? 'Best Point Limit (Deep Green)'
+                                    : `Best ${categories.find(c => c.id === currentMode)?.name || ''} Hours`}
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={modeSettings.bestPoint !== null ? modeSettings.bestPoint : ''}
+                                  onChange={e => {
+                                    playSound('click');
+                                    const val = e.target.value === '' ? null : parseFloat(e.target.value);
+                                    updateModeSetting(currentMode, 'bestPoint', val);
+                                  }}
+                                  className="w-full bg-[#0b1120] border border-emerald-500/50 focus:border-emerald-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
+                                />
+                              </div>
+                             
+                              {/* XP per point (per-mode but only points mode affects global XP) */}
+                              <div>
+                                <label className="block text-[10px] font-bold text-lime-400 uppercase tracking-widest mb-2">XP Per Point Earned</label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={modeSettings.xpPerPoint !== null ? modeSettings.xpPerPoint : ''}
+                                  onChange={e => {
+                                    playSound('click');
+                                    const val = e.target.value === '' ? null : parseFloat(e.target.value);
+                                    updateModeSetting(currentMode, 'xpPerPoint', val);
+                                  }}
+                                  className="w-full bg-[#0b1120] border border-lime-500/50 focus:border-lime-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
+                                />
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
-                    
+                   
                     <ChronoSpectralHeatmap
                       statYear={statYear}
                       allData={allData}
@@ -2061,7 +2172,7 @@
                         <StatCard title="Selected Year" stats={statsYear} categories={categories} showGoals={true} multiplier={365} showAverage={true} />
                       </div>
                     </div>
-                  
+                 
                     <WeeklyChart weekDates={statAvailableWeeks[statWeekIndex]?.dates || []} allData={allData} categories={categories} />
                   </div>
                 )}
@@ -2077,7 +2188,7 @@
                 </button>
                 {sectionsOpen.modules && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
-                  
+                 
                     {/* Category Manifest */}
                     <h3 className="font-bold text-cyan-400 uppercase tracking-widest text-xs mb-4 border-b border-cyan-500/30 pb-2">Category Manifest</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-12">
@@ -2087,7 +2198,7 @@
                             <input type="color" value={cat.color} onChange={e => updateCategory(cat.id, 'color', e.target.value)} className="absolute -top-4 -left-4 w-16 h-16 cursor-pointer border-0 p-0" />
                           </div>
                           <input type="text" value={cat.name} onChange={e => updateCategory(cat.id, 'name', e.target.value)} className="flex-1 w-full sm:w-auto bg-transparent text-slate-200 font-bold text-sm md:text-base border-b border-transparent focus:border-cyan-400 outline-none transition-all py-1 min-w-[80px]" placeholder="Name" />
-                        
+                       
                           <div className="flex flex-col items-center w-12 shrink-0 border-l border-white/10 pl-2">
                             <span className="text-[8px] uppercase tracking-widest text-slate-400">Goal(h)</span>
                             <input type="number" min="0" max="24" value={cat.target !== undefined ? cat.target : ''} onChange={e => updateCategory(cat.id, 'target', e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-transparent text-center text-cyan-300 font-black text-sm md:text-base outline-none border-b border-transparent focus:border-cyan-400" />
@@ -2207,7 +2318,7 @@
          let totalHours = 0;
          for (let i = 0; i < 24; i++) {
             const h = dayData[i] || {};
-          
+         
             if (h.split1) {
                 segments.push({ id: h.q1, duration: 0.25 });
                 segments.push({ id: h.q2, duration: 0.25 });
@@ -2255,16 +2366,16 @@
          </div>
       );
     }
-    // --- Component: ChronoSpectralHeatmap (now supports points OR any category hours) ---
+    // --- Component: ChronoSpectralHeatmap (per-mode worst/best support) ---
     function ChronoSpectralHeatmap({ statYear, allData, todosData, habitLogs, categories, sysConfig, onDayClick, heatmapMode }) {
       const year = parseInt(statYear, 10);
       if (isNaN(year)) return null;
-      
+     
       const getHeatmapValue = useCallback((dateStr) => {
         const dayData = allData[dateStr] || {};
         let value = 0;
         let hasActivity = false;
-      
+     
         if (heatmapMode === 'points') {
           // Original points logic
           Object.values(dayData).forEach(h => {
@@ -2310,12 +2421,12 @@
           return { value, hasActivity };
         }
       }, [heatmapMode, allData, todosData, habitLogs, categories]);
-      
+     
       const grid = useMemo(() => {
           const startDate = new Date(year, 0, 1);
           const endDate = new Date(year, 11, 31);
           const days = [];
-        
+       
           let startDayOfWeek = startDate.getDay();
           startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1; // Align to Monday (0) - Sunday (6)
           for (let i = 0; i < startDayOfWeek; i++) days.push(null); // Pad the first week
@@ -2331,16 +2442,18 @@
           }
           return days;
       }, [year, getHeatmapValue]);
+     
+      const modeSettings = sysConfig.perModeSettings?.[heatmapMode] || { worstPoint: null, bestPoint: null };
       
       const getHeatmapStyle = (val) => {
-          const worst = parseFloat(sysConfig.worstPoint) || 0;
-          const best = parseFloat(sysConfig.bestPoint) || 100;
-        
+          const worst = modeSettings.worstPoint !== null ? parseFloat(modeSettings.worstPoint) : 0;
+          const best = modeSettings.bestPoint !== null ? parseFloat(modeSettings.bestPoint) : 100;
+       
           let percentage = (val - worst) / (best - worst);
           percentage = Math.max(0, Math.min(1, percentage)); // Clamp between 0 and 1
-        
+       
           const hue = percentage * 140; // 0 is Deep Red, 140 is Deep Green
-        
+       
           return {
               backgroundColor: `hsl(${hue}, 85%, 45%)`,
               borderColor: `hsl(${hue}, 85%, 35%)`,
@@ -2354,17 +2467,17 @@
                    <h3 className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest">Chrono-Spectral Heatmap ({year}) — {heatmapMode === 'points' ? 'POINTS' : `${categories.find(c => c.id === heatmapMode)?.name || ''} HOURS`}</h3>
                 </div>
                 <div className="flex items-center gap-1.5 text-[8px] md:text-[10px] font-bold text-slate-500 uppercase flex-wrap">
-                   <span>{sysConfig.worstPoint !== '' ? sysConfig.worstPoint : 0} {heatmapMode === 'points' ? 'PTS' : 'HRS'}</span>
+                   <span>{modeSettings.worstPoint !== null ? modeSettings.worstPoint : 0} {heatmapMode === 'points' ? 'PTS' : 'HRS'}</span>
                    <div className="w-3 h-3 rounded-sm bg-white/5 border border-white/10"></div>
                    <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(0, 85%, 45%)', borderColor: 'hsl(0, 85%, 35%)' }}></div>
                    <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(35, 85%, 45%)', borderColor: 'hsl(35, 85%, 35%)' }}></div>
                    <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(70, 85%, 45%)', borderColor: 'hsl(70, 85%, 35%)' }}></div>
                    <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(105, 85%, 45%)', borderColor: 'hsl(105, 85%, 35%)' }}></div>
                    <div className="w-3 h-3 rounded-sm border" style={{ backgroundColor: 'hsl(140, 85%, 45%)', borderColor: 'hsl(140, 85%, 35%)', boxShadow: '0 0 6px hsl(140, 85%, 45%, 0.6)' }}></div>
-                   <span>{sysConfig.bestPoint !== '' ? sysConfig.bestPoint : 100} {heatmapMode === 'points' ? 'PTS' : 'HRS'}</span>
+                   <span>{modeSettings.bestPoint !== null ? modeSettings.bestPoint : 100} {heatmapMode === 'points' ? 'PTS' : 'HRS'}</span>
                 </div>
             </div>
-          
+         
             <div className="overflow-x-auto custom-scrollbar pb-4 pt-10 px-4 -mx-4 print:pt-4 print:pb-0">
                 <div className="min-w-max">
                     <div style={{ display: 'grid', gridTemplateRows: 'repeat(7, 1fr)', gridAutoFlow: 'column', gap: '4px' }}>
@@ -2393,14 +2506,14 @@
     // --- Component: StatCard ---
     function StatCard({ title, stats, categories, showGoals = false, multiplier = 1, showAverage = true }) {
       const { totals, completedTotals, totalTrackedHours, completedDaysCount, totalPoints } = stats;
-    
+   
       return (
         <div className="bg-white/5 p-4 md:p-6 rounded-2xl border border-white/10 flex flex-col h-full print:bg-transparent print:border-2 print:border-gray-800 print:shadow-none w-full">
           <div className="flex justify-between items-start mb-1 gap-2">
             <h3 className="font-bold text-base md:text-lg text-white uppercase tracking-wide drop-shadow-[0_0_5px_rgba(255,255,255,0.2)]">{title}</h3>
             <span className="bg-lime-500/20 text-lime-300 border border-lime-500/30 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest whitespace-nowrap drop-shadow-[0_0_8px_rgba(163,230,53,0.5)]">{totalPoints > 0 ? '+' : ''}{totalPoints} PTS</span>
           </div>
-        
+       
           <div className="flex flex-col gap-1 md:gap-2 mb-4 md:mb-6">
             <span className="text-[10px] md:text-xs font-black text-slate-400 uppercase tracking-widest">{totalTrackedHours} hours logged</span>
             {showAverage && (
@@ -2415,7 +2528,7 @@
               )
             )}
           </div>
-        
+       
           {totalTrackedHours === 0 ? (
             <div className="flex-1 flex items-center justify-center text-slate-500 font-bold uppercase border border-dashed border-slate-600 rounded-xl p-4 tracking-widest text-center text-xs md:text-sm print:border-gray-800 print:text-gray-500">
               No Data Found
@@ -2425,10 +2538,10 @@
               {categories.map(cat => {
                 const hours = totals[cat.id] || 0;
                 if (hours === 0) return null;
-              
+             
                 const targetHours = (cat.target || 0) * multiplier;
                 const isGoalMet = showGoals && targetHours > 0 && hours >= targetHours;
-              
+             
                 let percentage = 0;
                 if (showGoals && targetHours > 0) {
                   percentage = Math.min(100, (hours / targetHours) * 100);
