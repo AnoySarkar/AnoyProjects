@@ -3254,6 +3254,245 @@
                     {/* THE TRACKER GRID */}
                     <div className="overflow-x-auto custom-scrollbar scrollable-container relative flex-1 pb-4 pt-20">
                       <div className="min-w-max h-full flex flex-col">
+                        {/* Focus Mode: show 4 epochs side-by-side (if space), each with hour labels */}
+                        {isFocusMode ? (
+                          <div className="w-full min-w-0">
+                            <div className="mb-4 md:mb-5 flex justify-center">
+                              {(() => {
+                                const dateStr = todayStr;
+                                const isCryo = frozenDays[dateStr];
+                                const d = new Date(dateStr);
+                                const hasJournal = journalData[dateStr] && journalData[dateStr].trim().length > 0;
+                                const dayTodos = todosData[dateStr] || [];
+                                const dayHabits = (habitLogs[dateStr] || []).filter(h => !h.deleted);
+                                const totalTasks = dayTodos.length + dayHabits.length;
+                                const completedTasks = dayTodos.filter(t => t.status === 'green' || t.done).length + dayHabits.filter(h => h.status === 'green').length;
+                                const completionRate = totalTasks > 0 ? completedTasks / totalTasks : 0;
+                                const hasUncompletedTodos = dayTodos.length > dayTodos.filter(t => t.status === 'green' || t.done).length;
+                                const hasUncompletedHabits = dayHabits.length > dayHabits.filter(h => h.status === 'green').length;
+
+                                let headerBg = 'bg-cyan-500/20';
+                                let headerBorder = 'border-cyan-400';
+                                let headerShadow = 'shadow-[0_0_15px_rgba(34,211,238,0.2)]';
+                                if (totalTasks > 0) {
+                                  if (completionRate >= 0.9) {
+                                    headerBg = 'bg-green-600/30 hover:bg-green-600/40';
+                                    headerBorder = 'border-green-500';
+                                    headerShadow = 'shadow-[0_0_20px_rgba(22,163,74,0.6)]';
+                                  } else if (completionRate >= 0.7) {
+                                    headerBg = 'bg-emerald-500/20 hover:bg-emerald-500/30';
+                                    headerBorder = 'border-emerald-400';
+                                    headerShadow = 'shadow-[0_0_15px_rgba(52,211,153,0.4)]';
+                                  } else if (completionRate >= 0.5) {
+                                    headerBg = 'bg-yellow-500/20 hover:bg-yellow-500/30';
+                                    headerBorder = 'border-yellow-400';
+                                    headerShadow = 'shadow-[0_0_15px_rgba(250,204,21,0.4)]';
+                                  } else if (completionRate < 0.3) {
+                                    headerBg = 'bg-red-500/20 hover:bg-red-500/30';
+                                    headerBorder = 'border-red-400';
+                                    headerShadow = 'shadow-[0_0_15px_rgba(248,113,113,0.4)]';
+                                  }
+                                }
+                                if (isCryo) {
+                                  headerBg = 'cryo-day';
+                                  headerBorder = 'border-sky-300';
+                                  headerShadow = 'shadow-[0_0_12px_rgba(103,232,249,0.4)]';
+                                }
+
+                                return (
+                                  <div className="relative group/focusday">
+                                    <div onClick={() => { playSound('click'); setActiveJournalDate(dateStr); }} className={`cursor-pointer flex flex-col items-center justify-center py-2 px-2 md:p-3 rounded-2xl border ${headerBg} ${headerBorder} ${headerShadow} mx-auto w-[72px] md:w-[84px] h-[72px] md:h-[84px] transition-all relative`}>
+                                      <span className="text-[10px] md:text-[11px] font-black uppercase tracking-wider text-cyan-300">
+                                        {d.toLocaleDateString('en-US', { weekday: 'short' })}
+                                      </span>
+                                      <span className="text-2xl md:text-3xl font-black leading-none mt-1 text-cyan-100 neon-text">
+                                        {d.getDate()}
+                                      </span>
+                                      <div className="absolute -top-1 -right-1 flex gap-1">
+                                        {hasUncompletedHabits && <div className="w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" title="Pending Routines"></div>}
+                                        {hasUncompletedTodos && <div className="w-3 h-3 bg-cyan-400 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse" title="Pending Objectives"></div>}
+                                        {hasJournal && <div className="w-3 h-3 bg-purple-400 rounded-full shadow-[0_0_8px_rgba(192,132,252,0.8)] animate-pulse" title="Journal Entry"></div>}
+                                        {isCryo && <div className="w-3 h-3 bg-sky-300 rounded-full shadow-[0_0_8px_rgba(103,232,249,0.8)] animate-pulse" title="Cryo-Sleep (Rest Day)"></div>}
+                                      </div>
+                                    </div>
+                                    <div className="absolute bottom-[100%] pb-2 left-1/2 -translate-x-1/2 flex gap-1.5 opacity-0 invisible group-hover/focusday:opacity-100 group-hover/focusday:visible transition-all z-[200] drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]">
+                                      <div className="flex bg-[#0b1120]/95 backdrop-blur-md p-1.5 rounded-xl border border-white/20 gap-1.5 shadow-[0_8px_16px_rgba(0,0,0,0.5)]">
+                                        <button onClick={(e) => { e.stopPropagation(); handleMagicFill(dateStr); }} className="p-1.5 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/40 hover:text-yellow-200 border border-yellow-500/30 transition-all" title="Magic Fill (Sleep)"><Zap size={14}/></button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleCopyDay(dateStr); }} className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/40 hover:text-blue-200 border border-blue-500/30 transition-all" title="Copy Day"><Copy size={14}/></button>
+                                        {dayClipboard && <button onClick={(e) => { e.stopPropagation(); handlePasteDay(dateStr); }} className="p-1.5 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/40 hover:text-purple-200 border border-purple-500/30 transition-all alive-pulse" title="Paste Day"><Clipboard size={14}/></button>}
+                                        <button onClick={(e) => { e.stopPropagation(); toggleCryoDay(dateStr); }} className={`p-1.5 rounded-lg border transition-all ${frozenDays[dateStr] ? 'bg-sky-400 text-[#0b1120] border-sky-300' : 'bg-sky-500/20 text-sky-300 border-sky-500/30 hover:bg-sky-500/40 hover:text-sky-100'}`} title={frozenDays[dateStr] ? "Remove Cryo-Sleep" : "Mark as Cryo-Sleep (Rest Day)"}>❄️</button>
+                                        <button onClick={(e) => { e.stopPropagation(); setShowBlueprintManagerModal(true); setCurrentContextDate(dateStr); }} className="p-1.5 bg-indigo-500/20 text-indigo-400 rounded-lg hover:bg-indigo-500/40 hover:text-indigo-200 border border-indigo-500/30 transition-all" title="Open Blueprint Manager (save day/week • load • delete)"><Database size={14} /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleCommitBlueprintForDay(dateStr); }} className="p-1.5 bg-sky-500/20 text-sky-400 rounded-lg hover:bg-sky-500/40 hover:text-sky-200 border border-sky-500/30 transition-all" title="Make it Real – Commit all blueprints"><CheckSquare size={14} /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); playSound('click'); setPendingReset({type: 'day', payload: dateStr}); }} className="p-1.5 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/40 hover:text-red-200 border border-red-500/30 transition-all" title="Erase Day"><Trash2 size={14} /></button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                            <div className="flex items-start gap-3 md:gap-4">
+                              <div className="sticky left-0 top-24 z-20 w-[38px] md:w-[50px] shrink-0">
+                                <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
+                                  <button onClick={handleUndo} disabled={past.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${past.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
+                                  <button onClick={handleRedo} disabled={future.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${future.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
+                                  <div className="w-full h-px bg-white/10 my-1"></div>
+                                  <button
+                                    onClick={() => {
+                                      playSound('click');
+                                      const newMode = !isBlueprintMode;
+                                      setIsBlueprintMode(newMode);
+                                      showToast(newMode ? '📐 Plan Mode ON (hatched future planning)' : '📐 Plan Mode OFF');
+                                    }}
+                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full text-xs font-black tracking-widest ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                    title={isBlueprintMode ? "Plan Mode ON — hatched future planning" : "Toggle Plan Mode"}
+                                  >
+                                    P
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      playSound('click');
+                                      const newMode = !isDescriptionMode;
+                                      setIsDescriptionMode(newMode);
+                                      showToast(newMode ? '📝 Notes Mode ON' : '📝 Notes Mode OFF');
+                                    }}
+                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                    title={isDescriptionMode ? "Notes Mode ON — click triangles to edit notes" : "Toggle Notes Mode"}
+                                  >
+                                    <span className="text-xs font-black tracking-widest">N</span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      playSound('click');
+                                      const newMode = !isFocusMode;
+                                      setIsFocusMode(newMode);
+                                      showToast(newMode ? '🔍 Focus Mode ON (today only)' : '🔍 Focus Mode OFF');
+                                    }}
+                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                    title={isFocusMode ? "Focus Mode ON — only today visible" : "Toggle Focus Mode (today only)"}
+                                  >
+                                    <span className="text-xs font-black tracking-widest">F</span>
+                                  </button>
+                                  <div className="w-full h-px bg-white/10 my-1"></div>
+                                  <button onClick={() => handleColorSelect('lock')} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-500 bg-red-500/20 text-red-300 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`} title="Lock">
+                                    <Lock size={14} />
+                                  </button>
+                                  <div className="w-full h-px bg-white/10 my-1"></div>
+                                  {categories.map(cat => (
+                                    <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border border-white/20 transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110' : ''}`} style={{ backgroundColor: cat.color, boxShadow: selectedColorId === cat.id ? `0 0 12px ${cat.color}` : `0 0 4px ${cat.color}80` }} title={cat.name} />
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-5">
+                              {SECTIONS.map((section) => (
+                                <div key={section.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm">
+                                  <button
+                                    onClick={() => toggleEpoch(section.id)}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 transition-colors"
+                                    title="Collapse / expand this 6-hour block"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <section.icon size={16} className="text-slate-200 shrink-0" />
+                                      <span className="font-black uppercase tracking-widest text-[11px] text-slate-200 truncate">{section.label}</span>
+                                    </div>
+                                    <ChevronDown size={16} className={`text-slate-400 transition-transform shrink-0 ${collapsedEpochs[section.id] ? '' : 'rotate-180'}`} />
+                                  </button>
+
+                                  {!collapsedEpochs[section.id] ? (
+                                    <div className="p-3 md:p-4 space-y-2">
+                                      {section.hours.map((hour) => {
+                                        const dateStr = todayStr;
+                                        const dayData = allData[dateStr] || {};
+                                        const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
+                                        const isFrozenDay = !!frozenDays[dateStr];
+
+                                        const isSplit1 = cellData.split1;
+                                        const isSplit2 = cellData.split2;
+
+                                        const t1Fill = getSegmentFill(cellData.t1);
+                                        const t2Fill = getSegmentFill(cellData.t2);
+                                        const q1Fill = getSegmentFill(cellData.q1);
+                                        const q2Fill = getSegmentFill(cellData.q2);
+                                        const q3Fill = getSegmentFill(cellData.q3);
+                                        const q4Fill = getSegmentFill(cellData.q4);
+
+                                        const activeColorId = cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2;
+                                        const baseActiveId = activeColorId && activeColorId.startsWith('bp_') ? activeColorId.slice(3) : activeColorId;
+                                        const glowColorHex = baseActiveId ? categories.find(c => c.id === baseActiveId)?.color : 'transparent';
+                                        const cellStyle = activeColorId ? { boxShadow: `0 0 15px ${glowColorHex}20, inset 0 0 10px ${glowColorHex}10` } : {};
+
+                                        const dayDescs = descriptions?.[dateStr]?.[hour] || {};
+                                        const hasUpperNote = ['t1', 'q1', 'q2'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
+                                        const hasLowerNote = ['t2', 'q3', 'q4'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
+
+                                        return (
+                                          <div key={hour} className="flex items-center gap-2">
+                                            <div className="w-[64px] shrink-0 text-right">
+                                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap bg-white/5 px-2 py-1.5 rounded-xl border border-white/10 inline-block">
+                                                {formatHourLabel(hour)}
+                                              </span>
+                                            </div>
+                                            <div className="flex-1 flex justify-center min-w-0">
+                                              <div
+                                                className={`square-cell-inner relative rounded-xl md:rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm ${isFrozenDay ? 'cryo-day' : ''} ${dateStr === todayStr && hour === currentHour ? 'current-hour-glow' : ''}`}
+                                                style={cellStyle}
+                                              >
+                                                <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={`w-full h-full block ${selectedColorId !== 'lock' && !isDescriptionMode && !isFrozenDay ? 'paintable-svg' : ''}`}>
+                                                  <defs>
+                                                    {categories.map(cat => (
+                                                      <pattern
+                                                        key={`bp-${cat.id}`}
+                                                        id={`blueprint-${cat.id}`}
+                                                        width="10"
+                                                        height="10"
+                                                        patternUnits="userSpaceOnUse"
+                                                      >
+                                                        <rect width="10" height="10" fill={cat.color} fillOpacity="0.12" />
+                                                        <line x1="0" y1="0" x2="10" y2="10" stroke={cat.color} strokeWidth="1.5" strokeOpacity="0.75" />
+                                                        <line x1="10" y1="0" x2="0" y2="10" stroke={cat.color} strokeWidth="1.5" strokeOpacity="0.75" />
+                                                      </pattern>
+                                                    ))}
+                                                  </defs>
+                                                  {isSplit1 ? (
+                                                    <>
+                                                      <polygon points="0,0 100,0 50,50" fill={q1Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 'q1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 'q1')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 'q1' }); return; } handleSplitToggle(dateStr, hour, 'half1', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['q1'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['q1'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                      <polygon points="0,0 0,100 50,50" fill={q2Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 'q2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 'q2')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 'q2' }); return; } handleSplitToggle(dateStr, hour, 'half1', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['q2'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['q2'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                      <line x1="0" y1="0" x2="50" y2="50" stroke="var(--sticky-bg)" strokeWidth="4" className="pointer-events-none" />
+                                                    </>
+                                                  ) : (
+                                                    <polygon points="0,100 0,0 100,0" fill={t1Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't1')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 't1' }); return; } handleSplitToggle(dateStr, hour, 'half1', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['t1'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['t1'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                  )}
+                                                  {isSplit2 ? (
+                                                    <>
+                                                      <polygon points="100,100 100,0 50,50" fill={q3Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 'q3', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 'q3')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 'q3' }); return; } handleSplitToggle(dateStr, hour, 'half2', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['q3'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['q3'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                      <polygon points="100,100 0,100 50,50" fill={q4Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 'q4', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 'q4')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 'q4' }); return; } handleSplitToggle(dateStr, hour, 'half2', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['q4'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['q4'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                      <line x1="100" y1="100" x2="50" y2="50" stroke="var(--sticky-bg)" strokeWidth="4" className="pointer-events-none" />
+                                                    </>
+                                                  ) : (
+                                                    <polygon points="0,100 100,100 100,0" fill={t2Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't2')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 't2' }); return; } handleSplitToggle(dateStr, hour, 'half2', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['t2'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['t2'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                  )}
+                                                  <line x1="0" y1="100" x2="100" y2="0" stroke="var(--sticky-bg)" strokeWidth="6" className="pointer-events-none" />
+                                                </svg>
+                                                {hasUpperNote && <div className="absolute top-1 left-1 bg-amber-400 text-[#0b1120] text-[10px] w-4 h-4 flex items-center justify-center rounded-full shadow-[0_0_8px_rgba(251,191,36,0.8)] z-30 pointer-events-none">💡</div>}
+                                                {hasLowerNote && <div className="absolute bottom-1 right-1 bg-amber-400 text-[#0b1120] text-[10px] w-4 h-4 flex items-center justify-center rounded-full shadow-[0_0_8px_rgba(251,191,36,0.8)] z-30 pointer-events-none">💡</div>}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div className="p-3 md:p-4">
+                                      <div className="h-px bg-white/20 w-full"></div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
                         <table className="w-full border-collapse">
                           <thead>
                             <tr>
@@ -3549,6 +3788,7 @@
                             ))}
                           </tbody>
                         </table>
+                        )}
                       </div>
                     </div>
                   </div>
