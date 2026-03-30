@@ -1,7 +1,7 @@
 const CACHE_NAME = 'trackerbox-cache-v1';
 const APP_SHELL = [
   './',
-  './trackerbox1.html',
+  './trackerbox.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
