@@ -1,7 +1,7 @@
 {
   "name": "Trackerbox",
   "short_name": "Trackerbox",
-  "start_url": "./trackerbox1.html",
+  "start_url": "./trackerbox.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#05070e",
