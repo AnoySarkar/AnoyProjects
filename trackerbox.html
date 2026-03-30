@@ -82,25 +82,28 @@
     /* Clean Number Inputs for Timer */
     input[type="number"]::-webkit-inner-spin-button,
     input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-    input[type="number"] { -moz-appearance: textfield; }
+    input[type="number"] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
     /* Light mode overrides */
     .light-mode {
-      --bg-color: #f8f9fa;
-      --panel-bg: rgba(255,255,255,0.98);
-      --sticky-bg: #f1f3f5;
-      --border-color: rgba(15,23,42,0.12);
+      --bg-color: #f4f6fb;
+      --panel-bg: rgba(248, 250, 252, 0.96);
+      --sticky-bg: #e8edf5;
+      --border-color: rgba(71, 85, 105, 0.16);
     }
-    .light-mode body { color: #0f172a; }
+    .light-mode body { color: #1f2937; }
     .light-mode .glass-panel { background: var(--panel-bg); }
     /* Force dark text in both light themes */
     .light-mode .text-white,
     .light-mode .text-slate-100,
     .light-mode .text-slate-200,
     .light-mode .text-slate-300 {
-      color: #0f172a !important;
+      color: #1f2937 !important;
     }
     .light-mode .text-slate-400 {
-      color: #64748b !important;
+      color: #6b7280 !important;
     }
     .light-mode .neon-text {
       text-shadow: none !important;
@@ -526,9 +529,9 @@
           pulse: { bg: '#110b1f', panel: 'rgba(30, 10, 40, 0.5)', sticky: '#1c1430', border: 'rgba(236, 72, 153, 0.12)' },
           electric: { bg: '#0a1122', panel: 'rgba(10, 25, 60, 0.55)', sticky: '#0f1c33', border: 'rgba(96, 165, 250, 0.18)' },
           abyss: { bg: '#010104', panel: 'rgba(8, 8, 18, 0.75)', sticky: '#03030c', border: 'rgba(148, 163, 184, 0.06)' },
-          // Fixed daylight + lightmode (more off-white + guaranteed black text)
-          daylight: { bg: '#f8f9fa', panel: 'rgba(255,255,255,0.98)', sticky: '#f1f3f5', border: 'rgba(15,23,42,0.12)' },
-          lightmode: { bg: '#fafafa', panel: 'rgba(255,255,255,0.98)', sticky: '#f8f9fa', border: 'rgba(0,0,0,0.08)' }
+          // Softer light themes to reduce eye strain
+          daylight: { bg: '#f4f6fb', panel: 'rgba(248,250,252,0.96)', sticky: '#e8edf5', border: 'rgba(71,85,105,0.16)' },
+          lightmode: { bg: '#f8f4ec', panel: 'rgba(255,251,245,0.96)', sticky: '#efe8da', border: 'rgba(120,113,108,0.16)' }
         };
         const t = themes[currentTheme] || themes.cyber;
         document.documentElement.style.setProperty('--bg-color', t.bg);
@@ -597,6 +600,74 @@
           setToasts(prev => prev.filter(t => t.id !== id));
         }, 3000);
       }, []);
+      // --- PWA update watcher + actions ---
+      useEffect(() => {
+        if (!('serviceWorker' in navigator)) return;
+        let unmounted = false;
+        const wireRegistration = (reg) => {
+          if (!reg || unmounted) return;
+          if (reg.waiting) {
+            waitingWorkerRef.current = reg.waiting;
+            setAppUpdateState(prev => ({ ...prev, available: true, message: 'Update ready to install' }));
+          }
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            if (!newWorker) return;
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                waitingWorkerRef.current = reg.waiting || newWorker;
+                setAppUpdateState(prev => ({ ...prev, available: true, message: 'New version downloaded' }));
+                showToast('⬆️ New app version downloaded. Tap "Update Now".');
+              }
+            });
+          });
+        };
+        navigator.serviceWorker.getRegistration().then(wireRegistration).catch(() => {});
+        return () => {
+          unmounted = true;
+        };
+      }, [showToast]);
+      const checkForAppUpdate = useCallback(async () => {
+        if (!('serviceWorker' in navigator)) {
+          showToast('❌ App update is not supported in this browser', 'error');
+          return;
+        }
+        setAppUpdateState(prev => ({ ...prev, checking: true, message: 'Checking for updates...' }));
+        try {
+          const reg = await navigator.serviceWorker.getRegistration() || await navigator.serviceWorker.register('./sw.js');
+          await reg.update();
+          const waiting = reg.waiting || waitingWorkerRef.current;
+          if (waiting) {
+            waitingWorkerRef.current = waiting;
+            setAppUpdateState(prev => ({ ...prev, checking: false, available: true, message: 'Update ready to install' }));
+            showToast('⬆️ Update available. Tap "Update Now".');
+          } else {
+            setAppUpdateState(prev => ({ ...prev, checking: false, available: false, message: 'You are already on latest version' }));
+            showToast('✅ You are already on the latest version');
+          }
+        } catch (e) {
+          setAppUpdateState(prev => ({ ...prev, checking: false, message: 'Update check failed' }));
+          showToast('❌ Could not check for app updates', 'error');
+        }
+      }, [showToast]);
+      const applyAppUpdate = useCallback(async () => {
+        if (!('serviceWorker' in navigator)) {
+          showToast('❌ App update is not supported in this browser', 'error');
+          return;
+        }
+        const reg = await navigator.serviceWorker.getRegistration();
+        const waiting = (reg && reg.waiting) || waitingWorkerRef.current;
+        if (!waiting) {
+          showToast('No downloaded update yet. Use "Check Updates".', 'error');
+          return;
+        }
+        const onControllerChange = () => {
+          navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+          window.location.reload();
+        };
+        navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+        waiting.postMessage({ type: 'SKIP_WAITING' });
+      }, [showToast]);
       // --- History (Undo/Redo) Actions ---
       const saveHistoryState = useCallback(() => {
          const newState = JSON.stringify(allDataRef.current);
@@ -725,6 +796,13 @@
       const [activeJournalDate, setActiveJournalDate] = useState(null);
       const [todoInput, setTodoInput] = useState('');
       const [showTimer, setShowTimer] = useState(false);
+      const [appUpdateState, setAppUpdateState] = useState({
+        supported: typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
+        checking: false,
+        available: false,
+        message: ''
+      });
+      const waitingWorkerRef = useRef(null);
       const [timer, setTimer] = useState(() => {
         const savedCat = localStorage.getItem(LOCAL_TIMER_CAT_KEY);
         const defaultCatId = categories.find(c => c.id === 'work') ? 'work' : (categories[0] ? categories[0].id : null);
@@ -927,7 +1005,7 @@
       }, [resetWeekMonth, resetAvailableWeeks, todayStr]);
       const currentWeekDates = availableWeeks[selectedWeekIndex]?.dates || [];
       // === NEW: Compute display dates for FOCUS MODE ===
-      const displayDates = (isFocusMode && currentWeekDates.includes(todayStr)) ? [todayStr] : currentWeekDates;
+      const displayDates = isFocusMode ? [todayStr] : currentWeekDates;
       useEffect(() => {
         const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
         const savedJournal = localStorage.getItem(LOCAL_JOURNAL_KEY);
@@ -3774,12 +3852,10 @@
                                   /* Collapsed thin row – minimal line only (no repeated text) */
                                   <tr className="collapsed-row">
                                     <td className="sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
-                                    <td className="sticky left-[45px] md:left-[60px] z-30 p-1 border-none sticky-bg-override text-center">
-                                      <div className="h-px bg-white/20 w-12 mx-auto"></div>
-                                    </td>
+                                    <td className="sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
                                     {displayDates.map(dateStr => (
-                                      <td key={dateStr} className="p-1 align-middle">
-                                        <div className="h-px bg-white/20 w-full mx-auto"></div>
+                                      <td key={dateStr} className="p-0 align-middle">
+                                        <div className="h-px bg-white/20 w-full"></div>
                                       </td>
                                     ))}
                                   </tr>
@@ -4195,6 +4271,23 @@
                           <button onClick={() => { playSound('click'); fileInputRef.current.click(); }} className="w-full bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 hover:text-purple-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-purple-500/50 transition-all flex items-center justify-center gap-2">
                             <UploadCloud size={16}/> Upload Data
                           </button>
+                          <button
+                            onClick={checkForAppUpdate}
+                            disabled={!appUpdateState.supported || appUpdateState.checking}
+                            className={`w-full font-bold uppercase tracking-wider py-2 rounded-xl border transition-all flex items-center justify-center gap-2 ${!appUpdateState.supported || appUpdateState.checking ? 'bg-white/5 text-slate-500 border-white/10 cursor-not-allowed' : 'bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40 hover:text-cyan-100 border-cyan-500/50'}`}
+                          >
+                            {appUpdateState.checking ? 'Checking...' : 'Check App Update'}
+                          </button>
+                          <button
+                            onClick={applyAppUpdate}
+                            disabled={!appUpdateState.available}
+                            className={`w-full font-bold uppercase tracking-wider py-2 rounded-xl border transition-all ${appUpdateState.available ? 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 hover:text-emerald-100 border-emerald-500/50' : 'bg-white/5 text-slate-500 border-white/10 cursor-not-allowed'}`}
+                          >
+                            Update Now
+                          </button>
+                          {appUpdateState.message && (
+                            <div className="text-[10px] text-slate-400 px-1">{appUpdateState.message}</div>
+                          )}
                           <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportData} className="hidden" />
                         </div>
                       </div>
