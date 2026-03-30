@@ -1206,15 +1206,18 @@
         setBlueprintPresets(prev => [...prev, newPreset]);
         showToast(`✅ Week preset "${presetName}" saved (real + blueprint colours + split states)`);
       }, [allData, availableWeeks, showToast]);
-      // NEW: Load any preset (day or week) — REWORKED FROM SCRATCH: fully replaces target + restores splits + always loads as blueprint
+      // NEW: Load any preset (day or week) — fully replaces target + restores splits + always loads as blueprint
+      // IMPORTANT: must not close over stale `currentContextDate` (load button previously did nothing).
       const loadBlueprintPreset = useCallback((preset) => {
-        if (!preset || !currentContextDate) return;
+        if (!preset) return;
+        const targetBaseDate = currentContextDate || todayStr; // manager uses context date; library load falls back to today
+        if (!targetBaseDate) return;
         saveHistoryState();
         playSound('success');
         setAllData(prev => {
           const newData = { ...prev };
           if (preset.type === 'day') {
-            const targetDay = currentContextDate;
+            const targetDay = targetBaseDate;
             const pData = preset.data || {};
             const day = {}; // FULL REPLACE
             Object.keys(pData).forEach(hKey => {
@@ -1233,7 +1236,7 @@
             });
             newData[targetDay] = day;
           } else if (preset.type === 'week') {
-            const weekIndex = availableWeeks.findIndex(w => w.dates.includes(currentContextDate));
+            const weekIndex = availableWeeks.findIndex(w => w.dates.includes(targetBaseDate));
             if (weekIndex === -1) {
               showToast('Cannot determine target week for loading', 'error');
               return prev;
@@ -1271,7 +1274,7 @@
         showToast(`✅ Loaded "${preset.name}" (${preset.type}) blueprint (real + plan colours + splits restored)`);
         setShowBlueprintManagerModal(false);
         setCurrentContextDate(null);
-      }, [saveHistoryState, showToast, availableWeeks]);
+      }, [saveHistoryState, playSound, showToast, availableWeeks, currentContextDate, todayStr]);
       // NEW: Delete a saved blueprint preset
       const deleteBlueprintPreset = useCallback((id) => {
         playSound('trash');
