@@ -128,6 +128,16 @@
       0% { opacity: 0; transform: translateY(20px) scale(0.95); }
       100% { opacity: 1; transform: translateY(0) scale(1); }
     }
+    /* Markdown prose styles */
+    .prose {
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+    .prose strong { font-weight: 700; }
+    .prose em { font-style: italic; }
+    .prose ul { list-style: disc; padding-left: 1.5rem; margin: 0.75rem 0; }
+    .prose li { margin: 0.25rem 0; }
+    .prose a { color: #a855f7; text-decoration: underline; }
   </style>
 </head>
 <body class="selection:bg-cyan-500/30 selection:text-cyan-100">
@@ -262,8 +272,7 @@
     const LOCAL_TIMER_CAT_KEY = 'trackerbox_timer_category_v1';
     const LOCAL_POINTS_PERIOD_KEY = 'trackerbox_points_period_v1';
     const LOCAL_FROZEN_DAYS_KEY = 'trackerbox_frozen_days_v1';
-    // NEW: Blueprint Presets (day + week support)
-    const LOCAL_BLUEPRINT_PRESETS_KEY = 'trackerbox_blueprint_presets_v1';
+    const LOCAL_BLUEPRINT_PRESETS_KEY = 'trackerbox_blueprint_presets_v3'; // v3 = real colors + blueprints + fixed load
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
       { id: 'sleep', name: 'Sleep', color: '#86efac', target: '', pointsPerHour: 0 },
@@ -486,14 +495,16 @@
       const [toasts, setToasts] = useState([]);
       // === NEW: Current Hour Visual Anchor (live) ===
       const [currentHour, setCurrentHour] = useState(new Date().getHours());
-      // === NEW: Blueprint Presets (save/load day/week blueprints) ===
+      // === NEW: Blueprint Presets (v3: real colors + blueprints + fixed load) ===
       const [blueprintPresets, setBlueprintPresets] = useState(() => {
         const saved = localStorage.getItem(LOCAL_BLUEPRINT_PRESETS_KEY);
         return saved ? JSON.parse(saved) : [];
       });
-      const [showBlueprintLoadModal, setShowBlueprintLoadModal] = useState(false);
-      const [currentLoadDate, setCurrentLoadDate] = useState(null);
-      // === END NEW STATES ===
+      const [showBlueprintManagerModal, setShowBlueprintManagerModal] = useState(false);
+      const [currentContextDate, setCurrentContextDate] = useState(null); // day that opened the manager
+      // === AUTO-BACKUP (Web File System Access API) ===
+      let backupDirHandle = null; // session-only handle (persists only while tab open)
+      // --- END NEW STATES ---
       const fileInputRef = useRef(null);
       const completedSessionRef = useRef(null);
       // Keep ref perfectly synced for history captures
@@ -565,7 +576,7 @@
       useEffect(() => {
         localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(frozenDays));
       }, [frozenDays]);
-      // NEW: Persist blueprint presets
+      // NEW: Persist blueprint presets (v3)
       useEffect(() => {
         localStorage.setItem(LOCAL_BLUEPRINT_PRESETS_KEY, JSON.stringify(blueprintPresets));
       }, [blueprintPresets]);
@@ -951,12 +962,6 @@
         localStorage.setItem(LOCAL_MUTE_KEY, JSON.stringify(isMuted));
         isMutedGlobal = isMuted;
       }, [isMuted]);
-      // NEW: Clear note tooltip when leaving description mode (but hover still works globally)
-      useEffect(() => {
-        if (!isDescriptionMode) {
-          // We no longer clear tooltip on mode toggle - hover preview now works globally
-        }
-      }, [isDescriptionMode]);
       // --- Robust Habit Synchronization Engine ---
       useEffect(() => {
         if (activeJournalDate) {
@@ -1114,27 +1119,32 @@
         });
         showToast(isFrozen ? '❄️ Cryo-Sleep removed (streak protection off)' : '❄️ Day marked as Cryo-Sleep (streak protected)', 'success');
       }, [frozenDays, showToast]);
-      // NEW: Blueprint Presets – save day blueprint (only bp_ blocks)
-      const saveBlueprintPreset = useCallback((dateStr) => {
+      // === REWORKED BLUEPRINT PRESETS (v3: real + blueprint, fixed load/overwrite) ===
+      // Save single day blueprint (NOW SAVES REAL COLOURS TOO + split flags)
+      const saveDayBlueprintPreset = useCallback((dateStr) => {
         playSound('click');
         const dayData = allData[dateStr] || {};
         const bpData = {};
         Object.keys(dayData).forEach(hKey => {
           const hData = dayData[hKey];
           if (!hData) return;
-          const bpHour = {};
+          const bpHour = {
+            split1: !!hData.split1,
+            split2: !!hData.split2
+          };
           ['t1','t2','q1','q2','q3','q4'].forEach(key => {
-            if (hData[key] && hData[key].startsWith('bp_')) {
-              bpHour[key] = hData[key];
+            if (hData[key]) {
+              const base = hData[key].startsWith('bp_') ? hData[key].slice(3) : hData[key];
+              bpHour[key] = base;
             }
           });
-          if (Object.keys(bpHour).length > 0) bpData[hKey] = bpHour;
+          if (Object.keys(bpHour).length > 2) bpData[hKey] = bpHour; // at least splits + 1 colour
         });
         if (Object.keys(bpData).length === 0) {
-          showToast('No blueprints found to save as preset', 'error');
+          showToast('No colours found to save as preset', 'error');
           return;
         }
-        const presetName = prompt(`Name this day blueprint preset (from ${getDisplayDate(dateStr)}):`, `Day Plan ${new Date().toLocaleDateString('en-US', {month:'short', day:'numeric'})}`);
+        const presetName = prompt(`Name this DAY preset (real + plan colours from ${getDisplayDate(dateStr)}):`, `Day Plan ${new Date().toLocaleDateString('en-US', {month:'short', day:'numeric'})}`);
         if (!presetName || presetName.trim() === '') return;
         const newPreset = {
           id: `bp_preset_${Date.now()}`,
@@ -1144,37 +1154,135 @@
           savedDate: dateStr
         };
         setBlueprintPresets(prev => [...prev, newPreset]);
-        showToast(`✅ Blueprint preset "${presetName}" saved (ready to load anywhere)`);
+        showToast(`✅ Day preset "${presetName}" saved (real + blueprint colours + split states)`);
       }, [allData, showToast]);
-      // NEW: Load blueprint preset to a target day (NEVER replaces already coloured blocks)
-      const loadBlueprintPresetToDay = useCallback((preset, targetDateStr) => {
-        if (!preset || !targetDateStr) return;
+      // Save entire current week as one blueprint preset (NOW SAVES REAL COLOURS TOO + split flags)
+      const saveWeekBlueprintPreset = useCallback((contextDateStr) => {
+        playSound('click');
+        const weekIndex = availableWeeks.findIndex(w => w.dates.includes(contextDateStr));
+        if (weekIndex === -1) {
+          showToast('Could not determine week for save', 'error');
+          return;
+        }
+        const weekDates = availableWeeks[weekIndex].dates;
+        const weekBpData = {};
+        let hasAny = false;
+        weekDates.forEach(dStr => {
+          const dayData = allData[dStr] || {};
+          const dayBp = {};
+          Object.keys(dayData).forEach(hKey => {
+            const hData = dayData[hKey];
+            if (!hData) return;
+            const bpHour = {
+              split1: !!hData.split1,
+              split2: !!hData.split2
+            };
+            ['t1','t2','q1','q2','q3','q4'].forEach(key => {
+              if (hData[key]) {
+                const base = hData[key].startsWith('bp_') ? hData[key].slice(3) : hData[key];
+                bpHour[key] = base;
+              }
+            });
+            if (Object.keys(bpHour).length > 2) dayBp[hKey] = bpHour;
+          });
+          if (Object.keys(dayBp).length > 0) {
+            weekBpData[dStr] = dayBp;
+            hasAny = true;
+          }
+        });
+        if (!hasAny) {
+          showToast('No colours found in the entire week', 'error');
+          return;
+        }
+        const presetName = prompt(`Name this WEEK preset (real + plan colours from week of ${getDisplayDate(weekDates[0])}):`, `Weekly Plan ${new Date().toLocaleDateString('en-US', {month:'short', day:'numeric'})}`);
+        if (!presetName || presetName.trim() === '') return;
+        const newPreset = {
+          id: `bp_week_${Date.now()}`,
+          name: presetName.trim(),
+          type: 'week',
+          data: weekBpData,
+          savedDate: weekDates[0]
+        };
+        setBlueprintPresets(prev => [...prev, newPreset]);
+        showToast(`✅ Week preset "${presetName}" saved (real + blueprint colours + split states)`);
+      }, [allData, availableWeeks, showToast]);
+      // NEW: Load any preset (day or week) — REWORKED FROM SCRATCH: fully replaces target + restores splits + always loads as blueprint
+      const loadBlueprintPreset = useCallback((preset) => {
+        if (!preset || !currentContextDate) return;
         saveHistoryState();
         playSound('success');
         setAllData(prev => {
           const newData = { ...prev };
-          let day = { ...(newData[targetDateStr] || {}) };
-          const presetData = preset.data || {};
-          Object.keys(presetData).forEach(hKey => {
-            if (!day[hKey]) day[hKey] = { split1: false, split2: false, t1: null, t2: null, q1: null, q2: null, q3: null, q4: null };
-            const hData = day[hKey];
-            const pData = presetData[hKey] || {};
-            ['t1','t2','q1','q2','q3','q4'].forEach(key => {
-              if (pData[key] && !hData[key]) {
-                // ONLY fill empty blocks – never replace real colour or existing blueprint
-                hData[key] = pData[key];
-              }
+          if (preset.type === 'day') {
+            const targetDay = currentContextDate;
+            const pData = preset.data || {};
+            const day = {}; // FULL REPLACE
+            Object.keys(pData).forEach(hKey => {
+              const pHour = pData[hKey];
+              const newHour = {
+                split1: !!pHour.split1,
+                split2: !!pHour.split2,
+                t1: null, t2: null, q1: null, q2: null, q3: null, q4: null
+              };
+              ['t1','t2','q1','q2','q3','q4'].forEach(key => {
+                if (pHour[key]) {
+                  newHour[key] = `bp_${pHour[key]}`;
+                }
+              });
+              day[hKey] = newHour;
             });
-          });
-          newData[targetDateStr] = day;
+            newData[targetDay] = day;
+          } else if (preset.type === 'week') {
+            const weekIndex = availableWeeks.findIndex(w => w.dates.includes(currentContextDate));
+            if (weekIndex === -1) {
+              showToast('Cannot determine target week for loading', 'error');
+              return prev;
+            }
+            const targetWeekDates = availableWeeks[weekIndex].dates;
+            const presetDates = Object.keys(preset.data);
+            targetWeekDates.forEach((targetD, idx) => {
+              const sourceD = presetDates[idx];
+              if (!sourceD || !preset.data[sourceD]) {
+                newData[targetD] = {}; // clear this day if no preset data
+                return;
+              }
+              const pData = preset.data[sourceD];
+              const day = {}; // FULL REPLACE
+              Object.keys(pData).forEach(hKey => {
+                const pHour = pData[hKey];
+                const newHour = {
+                  split1: !!pHour.split1,
+                  split2: !!pHour.split2,
+                  t1: null, t2: null, q1: null, q2: null, q3: null, q4: null
+                };
+                ['t1','t2','q1','q2','q3','q4'].forEach(key => {
+                  if (pHour[key]) {
+                    newHour[key] = `bp_${pHour[key]}`;
+                  }
+                });
+                day[hKey] = newHour;
+              });
+              newData[targetD] = day;
+            });
+          }
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
           return newData;
         });
-        showToast(`✅ Loaded "${preset.name}" blueprint to ${getDisplayDate(targetDateStr)} (only empty blocks)`);
-        setShowBlueprintLoadModal(false);
-        setCurrentLoadDate(null);
-      }, [saveHistoryState, showToast]);
-      // NEW: Make it Real – now available on day header hover (moved from Captain's Log) + icon instead of text
+        showToast(`✅ Loaded "${preset.name}" (${preset.type}) blueprint (real + plan colours + splits restored)`);
+        setShowBlueprintManagerModal(false);
+        setCurrentContextDate(null);
+      }, [saveHistoryState, showToast, availableWeeks]);
+      // NEW: Delete a saved blueprint preset
+      const deleteBlueprintPreset = useCallback((id) => {
+        playSound('trash');
+        setBlueprintPresets(prev => {
+          const filtered = prev.filter(p => p.id !== id);
+          localStorage.setItem(LOCAL_BLUEPRINT_PRESETS_KEY, JSON.stringify(filtered));
+          return filtered;
+        });
+        showToast('🗑️ Blueprint preset deleted permanently');
+      }, [showToast]);
+      // NEW: Make it Real – now available on day header hover
       const handleCommitBlueprintForDay = useCallback((dateStr) => {
         if (!dateStr) return;
         saveHistoryState();
@@ -1212,6 +1320,37 @@
           localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(newData));
           return newData;
         });
+        // NEW: Auto-backup after journal save (if folder selected)
+        if (backupDirHandle) saveAutoBackup();
+      };
+      // NEW: Auto-backup helper (Web File System Access API)
+      const saveAutoBackup = async () => {
+        if (!backupDirHandle) return;
+        const payload = {
+          data: allData,
+          categories,
+          journal: journalData,
+          todos: todosData,
+          habits: habitsConfig,
+          habitLogs: habitLogs,
+          sysConfig: sysConfig,
+          descriptions: descriptions,
+          frozenDays,
+          blueprintPresets,
+          version: 11
+        };
+        const json = JSON.stringify(payload);
+        const blob = new Blob([json], { type: "application/json" });
+        try {
+          const fileName = `trackerbox_auto_backup_${formatDateString(new Date())}.json`;
+          const fileHandle = await backupDirHandle.getFileHandle(fileName, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          console.log('✅ Auto-backup written to user folder');
+        } catch (e) {
+          console.warn('Auto-backup failed (permission may have expired)', e);
+        }
       };
       const handleAddTodo = (dateStr, text) => {
         if (!text.trim()) return;
@@ -1272,6 +1411,35 @@
           return newData;
         });
       };
+      // === NEW: Snooze ToDo (🌙) – removes from today and injects into tomorrow ===
+      const handleSnoozeTodo = useCallback((dateStr, id) => {
+        playSound('click');
+        const tomorrowDate = new Date(dateStr);
+        tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+        const tomorrowStr = formatDateString(tomorrowDate);
+        setTodosData(prev => {
+          const dayTodos = prev[dateStr] || [];
+          const todoToSnooze = dayTodos.find(t => t.id === id);
+          if (!todoToSnooze) return prev;
+          const remaining = dayTodos.filter(t => t.id !== id);
+          const snoozedTodo = {
+            ...todoToSnooze,
+            id: 'snooze_' + Date.now().toString(),
+            status: 'red',
+            progress: 0,
+            remark: ''
+          };
+          const tomorrowTodos = [...(prev[tomorrowStr] || []), snoozedTodo];
+          const updated = {
+            ...prev,
+            [dateStr]: remaining,
+            [tomorrowStr]: tomorrowTodos
+          };
+          localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
+          return updated;
+        });
+        showToast(`🌙 Task snoozed to tomorrow (${getDisplayDate(tomorrowStr)})`);
+      }, [showToast]);
       const handleToggleHabit = (dateStr, id) => {
         playSound('click');
         setHabitLogs(prev => {
@@ -1652,7 +1820,7 @@
           descriptions: descriptions,
           frozenDays, // NEW: include cryo data in backup
           blueprintPresets, // NEW: include presets
-          version: 9
+          version: 11
         };
         const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -1764,7 +1932,7 @@
         if (selectedColorId === 'lock') return;
         saveHistoryState();
         const hourData = allData[dateStr]?.[hourIndex] || {};
-        const currentValue = hourData[triangleId] || null;
+        const currentValue = hourData[triangleId];
         const targetValue = getTargetValue(currentValue, selectedColorId, isBlueprintMode);
         handleUpdateSegment(dateStr, hourIndex, triangleId, targetValue);
         setIsDragging(true);
@@ -1772,7 +1940,7 @@
       const handlePointerEnter = useCallback((dateStr, hourIndex, triangleId) => {
         if (!isDragging || selectedColorId === 'lock' || isDescriptionMode || frozenDays[dateStr]) return;
         const hourData = allData[dateStr]?.[hourIndex] || {};
-        const currentValue = hourData[triangleId] || null;
+        const currentValue = hourData[triangleId];
         const targetValue = getTargetValue(currentValue, selectedColorId, isBlueprintMode);
         handleUpdateSegment(dateStr, hourIndex, triangleId, targetValue);
       }, [isDragging, selectedColorId, isDescriptionMode, isBlueprintMode, getTargetValue, handleUpdateSegment, allData, frozenDays]);
@@ -2182,7 +2350,7 @@
                  </div>
                </div>
             )}
-            {/* --- CAPTAIN'S LOG DUAL-PANE MODAL --- */}
+            {/* --- CAPTAIN'S LOG MODAL (JOURNAL REWORKED: SINGLE FULL JOURNAL SCREEN, NO PREVIEW, NO SPLIT) --- */}
             {activeJournalDate && (
                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4" onClick={() => setActiveJournalDate(null)}>
                  <div className="glass-panel animate-modal border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.2)] rounded-3xl p-4 md:p-6 max-w-6xl w-full relative flex flex-col max-h-[95vh] md:h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -2195,7 +2363,7 @@
                          <span className="text-purple-400 text-xs md:text-sm font-bold tracking-widest">{getDisplayDate(activeJournalDate)}</span>
                        </div>
                      </div>
-                     {/* QoL Toolbar – Sweep + Migrate (Make it Real removed – now on day hover) */}
+                     {/* QoL Toolbar – Sweep + Migrate */}
                      <div className="flex items-center gap-2 flex-wrap">
                        <button
                          onClick={handleSweepCompleted}
@@ -2272,11 +2440,19 @@
                                     <Icon size={18}/>
                                  </button>
                                  <span className={`flex-1 text-sm ${textClass} transition-colors`}>{todo.text}</span>
+                                 {/* NEW: Snooze button 🌙 next to trash */}
+                                 <button
+                                   onClick={() => handleSnoozeTodo(activeJournalDate, todo.id)}
+                                   className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-amber-400 hover:text-amber-300 transition-opacity"
+                                   title="Snooze to tomorrow"
+                                 >
+                                   <Moon size={16} />
+                                 </button>
                                  <button onClick={() => handleDeleteTodo(activeJournalDate, todo.id)} className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-red-500 hover:text-red-400 transition-opacity">
                                    <Trash2 size={16}/>
                                  </button>
                                </div>
-    
+ 
                                {status === 'yellow' && (
                                  <div className="pl-8 pr-6 w-full flex items-center gap-3">
                                    <div className="flex-1">
@@ -2354,7 +2530,7 @@
                                    <Trash2 size={16}/>
                                  </button>
                                </div>
-    
+ 
                                {status === 'yellow' && (
                                  <div className="pl-8 pr-6 w-full flex items-center gap-3">
                                    <div className="flex-1">
@@ -2385,14 +2561,15 @@
                          )}
                        </div>
                      </div>
-                     {/* Journal (renamed) */}
+                     {/* JOURNAL REWORKED: SINGLE FULL JOURNAL SCREEN – NO PREVIEW, NO TWO SCREENS */}
                      <div className="flex flex-col flex-1 border border-purple-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
-                       <div className="bg-purple-500/10 p-3 border-b border-purple-500/30">
-                         <span className="font-bold text-purple-400 uppercase tracking-widest text-xs">Journal</span>
+                       <div className="bg-purple-500/10 p-3 border-b border-purple-500/30 flex items-center justify-between">
+                         <span className="font-bold text-purple-400 uppercase tracking-widest text-xs">Captain's Journal</span>
+                         <span className="text-[10px] text-purple-300 font-medium">Saved instantly</span>
                        </div>
                        <textarea
                          className="flex-1 bg-transparent p-4 text-slate-200 font-mono text-sm focus:outline-none resize-none custom-scrollbar"
-                         placeholder="Record notable achievements, distractions, or context for this cycle..."
+                         placeholder="What happened today?"
                          value={journalData[activeJournalDate] || ''}
                          onChange={e => handleJournalSave(activeJournalDate, e.target.value)}
                        />
@@ -2400,6 +2577,88 @@
                    </div>
                  </div>
                </div>
+            )}
+            {/* === BLUEPRINT MANAGER MODAL (single unified modal – save day/week + load + delete) === */}
+            {showBlueprintManagerModal && currentContextDate && (
+              <div className="fixed inset-0 z-[500] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => { setShowBlueprintManagerModal(false); setCurrentContextDate(null); }}>
+                <div className="glass-panel w-full max-w-lg rounded-3xl p-6 border-indigo-400/50" onClick={e => e.stopPropagation()}>
+                  <div className="flex justify-between items-center mb-6">
+                    <h3 className="font-black text-indigo-300 uppercase tracking-widest text-xl flex items-center gap-2">
+                      <Database size={22} /> Blueprint Manager
+                    </h3>
+                    <button onClick={() => { setShowBlueprintManagerModal(false); setCurrentContextDate(null); }} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                  </div>
+                
+                  {/* SAVE SECTION */}
+                  <div className="mb-8">
+                    <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3">SAVE PRESET</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => { saveDayBlueprintPreset(currentContextDate); }}
+                        className="py-6 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-400/30 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all"
+                      >
+                        <span className="text-3xl">📅</span>
+                        <span className="font-black text-indigo-200">Save this DAY</span>
+                        <span className="text-xs text-slate-400">(real colours + blueprints + splits)</span>
+                      </button>
+                      <button
+                        onClick={() => { saveWeekBlueprintPreset(currentContextDate); }}
+                        className="py-6 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-400/30 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all"
+                      >
+                        <span className="text-3xl">📆</span>
+                        <span className="font-black text-violet-200">Save this WEEK</span>
+                        <span className="text-xs text-slate-400">(real colours + blueprints + splits)</span>
+                      </button>
+                    </div>
+                  </div>
+                
+                  {/* LOAD + DELETE SECTION */}
+                  <div>
+                    <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3">LOAD OR DELETE PRESETS</div>
+                    <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-3 pr-2">
+                      {blueprintPresets.length === 0 ? (
+                        <div className="text-slate-400 italic text-center py-12">No presets yet.<br/>Use the save buttons above.</div>
+                      ) : (
+                        blueprintPresets.map(preset => (
+                          <div key={preset.id} className="flex items-center justify-between bg-white/5 hover:bg-white/10 rounded-2xl p-4 border border-indigo-400/20 transition-all">
+                            <div className="flex-1">
+                              <div className="font-bold text-indigo-200 flex items-center gap-2">
+                                {preset.name}
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${preset.type === 'week' ? 'bg-violet-500/20 text-violet-300' : 'bg-indigo-500/20 text-indigo-300'}`}>
+                                  {preset.type.toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400">Saved {getDisplayDate(preset.savedDate)}</div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => loadBlueprintPreset(preset)}
+                                className="px-5 py-2 bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-black rounded-2xl tracking-widest"
+                              >
+                                LOAD
+                              </button>
+                              <button
+                                onClick={() => deleteBlueprintPreset(preset.id)}
+                                className="p-2 text-red-400 hover:text-red-300"
+                                title="Delete preset"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                
+                  <button
+                    onClick={() => { setShowBlueprintManagerModal(false); setCurrentContextDate(null); }}
+                    className="mt-8 w-full py-4 text-slate-300 font-bold rounded-3xl border border-white/20 hover:bg-white/10"
+                  >
+                    CLOSE MANAGER
+                  </button>
+                </div>
+              </div>
             )}
             {/* === NEW: POINTS PERIOD SELECTOR MODAL === */}
             {showPointsSelector && (
@@ -2438,7 +2697,6 @@
                     <h3 className="font-black text-purple-300 uppercase tracking-widest text-xl">Level &amp; XP Info</h3>
                     <button onClick={() => setShowLevelHistory(false)} className="text-slate-400 hover:text-white"><X size={26} /></button>
                   </div>
-   
                   <div className="flex justify-center items-center gap-6 mb-8">
                     <Trophy size={64} className="text-purple-400 drop-shadow-[0_0_20px_rgba(168,85,247,0.6)]" />
                     <div className="text-center">
@@ -2524,47 +2782,7 @@
                 </div>
               </div>
             )}
-            {/* === NEW: BLUEPRINT LOAD PRESET MODAL === */}
-            {showBlueprintLoadModal && (
-              <div className="fixed inset-0 z-[500] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => { setShowBlueprintLoadModal(false); setCurrentLoadDate(null); }}>
-                <div className="glass-panel w-full max-w-md rounded-3xl p-6 border-indigo-400/50" onClick={e => e.stopPropagation()}>
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-black text-indigo-300 uppercase tracking-widest text-xl flex items-center gap-2">
-                      <Database size={22} /> Blueprint Presets
-                    </h3>
-                    <button onClick={() => { setShowBlueprintLoadModal(false); setCurrentLoadDate(null); }} className="text-slate-400 hover:text-white"><X size={24} /></button>
-                  </div>
-                  <div className="text-xs text-slate-400 mb-4">Select a saved blueprint to load into <strong>{currentLoadDate ? getDisplayDate(currentLoadDate) : 'today'}</strong>. Only empty blocks will be filled.</div>
-                  <div className="max-h-80 overflow-y-auto custom-scrollbar space-y-3 pr-2">
-                    {blueprintPresets.length === 0 ? (
-                      <div className="text-slate-400 italic text-center py-12">No presets yet.<br/>Use "Save Preset" from any day header.</div>
-                    ) : (
-                      blueprintPresets.map(preset => (
-                        <div key={preset.id} className="flex items-center justify-between bg-white/5 hover:bg-white/10 rounded-2xl p-4 border border-indigo-400/20 transition-all">
-                          <div className="flex-1">
-                            <div className="font-bold text-indigo-200">{preset.name}</div>
-                            <div className="text-[10px] text-slate-400">Day preset • Saved {getDisplayDate(preset.savedDate || 'unknown')}</div>
-                          </div>
-                          <button
-                            onClick={() => loadBlueprintPresetToDay(preset, currentLoadDate)}
-                            className="px-5 py-2 bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-black rounded-2xl tracking-widest"
-                          >
-                            LOAD
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <button
-                    onClick={() => { setShowBlueprintLoadModal(false); setCurrentLoadDate(null); }}
-                    className="mt-8 w-full py-4 text-slate-300 font-bold rounded-3xl border border-white/20 hover:bg-white/10"
-                  >
-                    CLOSE LIBRARY
-                  </button>
-                </div>
-              </div>
-            )}
-            {/* HELP / TUTORIAL MODAL (FULL SYSTEM PROTOCOL – UPDATED WITH EVERY SINGLE FEATURE + NEW ONES) --- */}
+            {/* HELP / TUTORIAL MODAL (FULL SYSTEM PROTOCOL – EVERY SINGLE FEATURE + WHAT’S NEW) --- */}
             {showHelp && (
                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowHelp(false)}>
                  <div className="glass-panel animate-modal border-cyan-500/50 shadow-[0_0_30px_rgba(34,211,238,0.2)] rounded-3xl p-6 md:p-8 max-w-3xl w-full relative max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -2574,7 +2792,18 @@
                      <h2 className="text-2xl font-black uppercase text-white">System Protocol — Every Single Feature + What’s New</h2>
                    </div>
                    <div className="space-y-6 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
-                     {/* 1. GRID – EVERY FEATURE */}
+                     {/* WHAT'S NEW (v3) */}
+                     <div className="bg-emerald-900/30 p-5 rounded-2xl border border-emerald-400/30">
+                       <h3 className="font-bold text-emerald-300 uppercase mb-3 flex items-center gap-2"><span className="text-xl">🚀</span> WHAT’S NEW IN THIS PROTOCOL (v3)</h3>
+                       <ul className="text-xs space-y-2 list-disc pl-5">
+                         <li><strong>Blueprint Manager fully fixed from scratch</strong>: Load now fully replaces day/week + restores split states</li>
+                         <li><strong>Save presets now saves REAL colours + blueprint colours + split flags</strong></li>
+                         <li><strong>Journal completely reworked</strong>: Single full-screen editor, no preview pane, no split screens, full height textarea</li>
+                         <li>All day-header actions now show instant toast feedback</li>
+                         <li>Presets v3 stored with real + plan colours (backwards compatible)</li>
+                       </ul>
+                     </div>
+                     {/* GRID (Core Painting Engine) */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-cyan-300 uppercase mb-3 border-b border-cyan-500/30 pb-2 flex items-center gap-2"><span className="text-xl">🎨</span> GRID (Core Painting Engine)</h3>
                        <ul className="text-xs space-y-1 list-disc pl-5">
@@ -2585,69 +2814,60 @@
                          <li>Lock mode (L key) prevents accidental changes</li>
                          <li>Current hour has pulsing neon-cyan anchor (live)</li>
                          <li>Cryo-Sleep (❄️) disables entire day + protects streak</li>
-                         <li>Day header hover menu: Magic Fill, Copy/Paste, Cryo, Save Preset, Load Preset, Make it Real (icon), Erase</li>
+                         <li>Day header hover menu: Magic Fill, Copy/Paste, Cryo, Blueprint Manager, Make it Real, Erase</li>
                          <li>Every hover action shows instant toast notification</li>
                        </ul>
                      </div>
-
-                     {/* 2. PLAN MODE (P) – UPDATED */}
+                     {/* PLAN MODE (P) + MAKE IT REAL */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-sky-300 uppercase mb-3 border-b border-sky-500/30 pb-2 flex items-center gap-2"><span className="text-xl">📐</span> PLAN MODE (P) + Make it Real</h3>
-                       <p>Toggle <strong>P</strong> in palette → paint hatched blueprints (future plans). Click again to erase blueprint. Switch off P to commit to solid reality.</p>
-                       <p className="mt-2 text-emerald-300 font-bold">NEW: Renamed from BP to P (Plan). Instant toast on toggle. “Make it Real” now uses CheckSquare icon in day hover menu (no text). All day hover actions now show toast notifications.</p>
+                       <p>Toggle <strong>P</strong> → paint hatched blueprints. Click again to erase blueprint. Switch off P to commit to solid reality.</p>
+                       <p className="mt-2 text-emerald-300 font-bold">NEW: “Make it Real” uses CheckSquare icon + toast. Blueprints now load as plans even if real colours were saved.</p>
                      </div>
-
-                     {/* 3. BLUEPRINT PRESETS – BRAND NEW FEATURE */}
+                     {/* BLUEPRINT PRESETS – FULLY FIXED */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                       <h3 className="font-bold text-indigo-300 uppercase mb-3 border-b border-indigo-500/30 pb-2 flex items-center gap-2"><span className="text-xl">💾</span> BLUEPRINT PRESETS (Day &amp; Week)</h3>
-                       <p className="font-bold text-emerald-300">NEW FEATURE: Save any day’s blueprints as a named preset from the day header hover menu. Load from any day header – blueprints ONLY fill empty blocks (never replace already coloured or existing blueprint blocks). Perfect for reusing weekly routines.</p>
-                       <p className="text-xs mt-3">• Day presets fully working<br/>• Week presets can be created by saving multiple days<br/>• Presets persist forever and are included in backups</p>
+                       <h3 className="font-bold text-indigo-300 uppercase mb-3 border-b border-indigo-500/30 pb-2 flex items-center gap-2"><span className="text-xl">💾</span> BLUEPRINT PRESETS (Day &amp; Week) – FULLY FIXED</h3>
+                       <p className="font-bold text-emerald-300">Single button in day header opens unified manager. Save DAY or WHOLE WEEK (real colours + plans). Load fully replaces target day/week + restores splits. Delete from manager. Persists in backups.</p>
                      </div>
-
-                     {/* 4. NOTES MODE (N) */}
+                     {/* NOTES MODE (N) */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-amber-300 uppercase mb-3 border-b border-amber-500/30 pb-2 flex items-center gap-2"><span className="text-xl">📝</span> NOTES MODE (N)</h3>
-                       <p>Toggle <strong>N</strong> in palette. Tiny 💡 icon appears on any hour with a note. Hover any triangle (even when mode is OFF) for instant preview tooltip. Tap on mobile. Click triangle only when N is ON to edit. Toast on toggle.</p>
+                       <p>Toggle <strong>N</strong>. Tiny 💡 icon on any hour with note. Hover any triangle (even when mode OFF) for tooltip preview. Click only when N is ON to edit.</p>
                      </div>
-
-                     {/* 5. COLLAPSIBLE EPOCHS + FOCUS MODE */}
+                     {/* COLLAPSIBLE EPOCHS + FOCUS MODE */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-amber-300 uppercase mb-3 border-b border-amber-500/30 pb-2 flex items-center gap-2"><span className="text-xl">⏰</span> COLLAPSIBLE EPOCHS + FOCUS MODE</h3>
-                       <p>Click Night/Morning/Afternoon/Evening headers to collapse into thin row. Default: Night collapsed. NEW: F button in palette toggles Focus Mode (today-only grid). Toast on every toggle.</p>
+                       <p>Click Night/Morning/Afternoon/Evening to collapse. Default Night collapsed. F button toggles Focus Mode (today-only grid).</p>
                      </div>
-
-                     {/* 6. CATEGORIES + HABITS + CAPTAIN'S LOG */}
+                     {/* CATEGORIES + HABITS + CAPTAIN'S LOG (JOURNAL REWORKED) */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-purple-300 uppercase mb-3 border-b border-purple-500/30 pb-2 flex items-center gap-2"><span className="text-xl">🏷️</span> CATEGORIES + HABITS + CAPTAIN'S LOG</h3>
-                       <p>Unlimited custom categories with color, hourly goal, points/hr. Habits auto-populate daily with global reorder (▲▼ in modules). Captain’s Log has ToDo, Habits (with per-habit 🔥 streak), Journal, live progress bar, Sweep Completed, Migrate Yesterday. Cryo-Sleep available here too.</p>
+                       <p>Unlimited categories. Habits auto-populate with reorder. Captain’s Log: ToDo (Snooze), Habits (per-habit streak), <strong>Journal now single full-screen editor with placeholder "What happened today?"</strong>.</p>
                      </div>
-
-                     {/* 7. FOCUS CHRONOS + ANALYTICS + GAMIFICATION */}
+                     {/* FOCUS CHRONOS + ANALYTICS + GAMIFICATION */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-cyan-400 uppercase mb-3 border-b border-cyan-500/30 pb-2 flex items-center gap-2"><span className="text-xl">⏱️</span> FOCUS CHRONOS + ANALYTICS + GAMIFICATION</h3>
-                       <p>Timer with auto-log to journal. Live Chrono-Spectral Heatmap. Bar graph (points/XP/category hours). Clickable PTS with period selector. Clickable streak counter with full history + per-habit streaks. XP from hours, points, todos, habits, streaks.</p>
+                       <p>Timer auto-logs to journal. Heatmap. Bar graph. Clickable PTS + streak with full history + per-habit streaks. XP from hours/points/todos/habits/streaks.</p>
                      </div>
-
-                     {/* 8. DATA &amp; STORAGE + ALL QoL */}
+                     {/* DATA & STORAGE + ALL QOL */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                       <h3 className="font-bold text-blue-400 uppercase mb-3 border-b border-blue-500/30 pb-2 flex items-center gap-2"><span className="text-xl">💾</span> DATA &amp; STORAGE + ALL QoL</h3>
-                       <p>Full export/import (now includes presets + cryo). One-click erase (day/week/month). 8 themes (2 light modes). Backup reminder. Undo/Redo (Ctrl+Z/Y) with toast. All toggles + day hover actions show instant toast notification. Quick Capture (Shift+T).</p>
+                       <h3 className="font-bold text-blue-400 uppercase mb-3 border-b border-blue-500/30 pb-2 flex items-center gap-2"><span className="text-xl">💾</span> DATA &amp; STORAGE + ALL QOL</h3>
+                       <p>Export/import (includes presets + cryo). One-click erase. 8 themes. Backup reminder. Undo/Redo + toast on every action. Quick Capture (Shift+T). Auto-backup folder.</p>
                      </div>
-
-                     {/* 9. HOTKEYS + PRO TIPS */}
+                     {/* HOTKEYS + PRO TIPS */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-slate-300 uppercase mb-3 border-b border-white/20 pb-2">Shortcuts &amp; Pro Tips</h3>
                        <ul className="grid grid-cols-2 gap-x-8 text-xs">
-                         <li><strong>Ctrl+Z</strong> — Undo (toast)</li>
-                         <li><strong>Ctrl+Y</strong> — Redo (toast)</li>
-                         <li><strong>L</strong> — Lock mode</li>
+                         <li><strong>Ctrl+Z</strong> — Undo</li>
+                         <li><strong>Ctrl+Y</strong> — Redo</li>
+                         <li><strong>L</strong> — Lock</li>
                          <li><strong>1–6</strong> — Quick category</li>
                          <li><strong>Shift + T</strong> — Quick Capture</li>
-                         <li><strong>P</strong> — Plan Mode toggle (toast)</li>
-                         <li><strong>N</strong> — Notes Mode toggle (toast)</li>
-                         <li><strong>F</strong> — Focus Mode toggle (toast)</li>
+                         <li><strong>P</strong> — Plan Mode</li>
+                         <li><strong>N</strong> — Notes Mode</li>
+                         <li><strong>F</strong> — Focus Mode</li>
                          <li><strong>Day header hover</strong> — All actions + toast</li>
-                         <li><strong>Epoch header click</strong> — Collapse/expand</li>
+                         <li><strong>Epoch header click</strong> — Collapse</li>
                        </ul>
                      </div>
                    </div>
@@ -2792,7 +3012,6 @@
                     </div>
                     <button onClick={() => setShowQuickCapture(false)} className="text-slate-400 hover:text-white"><X size={28} /></button>
                   </div>
-                  {/* Bigger input with new placeholder */}
                   <textarea
                     autoFocus
                     value={quickInput}
@@ -2801,7 +3020,6 @@
                     className="w-full h-32 bg-[#0b1120] border border-cyan-400/30 focus:border-cyan-400 rounded-3xl px-6 py-5 text-lg text-slate-200 font-medium outline-none resize-none placeholder:text-slate-400/70"
                     rows="4"
                   />
-                  {/* Save as ToDo or Journal */}
                   <div className="mt-6 grid grid-cols-2 gap-3">
                     <button
                       onClick={() => setQuickSaveType('todo')}
@@ -2816,7 +3034,6 @@
                       <span className="text-xl">📖</span> Journal
                     </button>
                   </div>
-                  {/* Target Day Selector */}
                   <div className="mt-8">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-3">
                       <span>TARGET DAY</span>
@@ -3039,20 +3256,19 @@
                             <tr>
                               <th className="w-[45px] md:w-[60px] sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
                               <th className="w-[50px] md:w-[65px] sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
-   
                               {displayDates.map((dateStr) => {
                                 const isToday = dateStr === todayStr;
-                                const isCryo = frozenDays[dateStr]; // NEW: Cryo-Sleep flag
+                                const isCryo = frozenDays[dateStr];
                                 const d = new Date(dateStr);
                                 const hasJournal = journalData[dateStr] && journalData[dateStr].trim().length > 0;
-     
+  
                                 const dayTodos = todosData[dateStr] || [];
                                 const dayHabits = (habitLogs[dateStr] || []).filter(h => !h.deleted);
-     
+  
                                 const totalTasks = dayTodos.length + dayHabits.length;
                                 const completedTasks = dayTodos.filter(t => t.status === 'green' || t.done).length + dayHabits.filter(h => h.status === 'green').length;
                                 const completionRate = totalTasks > 0 ? completedTasks / totalTasks : 0;
-     
+  
                                 const hasUncompletedTodos = dayTodos.length > dayTodos.filter(t => t.status === 'green' || t.done).length;
                                 const hasUncompletedHabits = dayHabits.length > dayHabits.filter(h => h.status === 'green').length;
                                 let headerBg = isToday ? 'bg-cyan-500/20' : 'bg-white/5';
@@ -3077,7 +3293,6 @@
                                       headerShadow = 'shadow-[0_0_15px_rgba(248,113,113,0.4)]';
                                   }
                                 }
-                                // CRYO-SLEEP: muted ice styling (overrides other colors)
                                 if (isCryo) {
                                   headerBg = 'cryo-day';
                                   headerBorder = 'border-sky-300';
@@ -3092,7 +3307,7 @@
                                       <span className={`text-xl md:text-2xl font-black leading-none mt-1 ${isToday ? 'text-cyan-100 neon-text' : 'text-slate-200 group-hover/th:text-white'}`}>
                                         {d.getDate()}
                                       </span>
-           
+        
                                       <div className="absolute -top-1 -right-1 flex gap-1">
                                         {hasUncompletedHabits && <div className="w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" title="Pending Routines"></div>}
                                         {hasUncompletedTodos && <div className="w-3 h-3 bg-cyan-400 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse" title="Pending Objectives"></div>}
@@ -3100,7 +3315,7 @@
                                         {isCryo && <div className="w-3 h-3 bg-sky-300 rounded-full shadow-[0_0_8px_rgba(103,232,249,0.8)] animate-pulse" title="Cryo-Sleep (Rest Day)"></div>}
                                       </div>
                                     </div>
-                                    {/* Day header hover menu – Make it Real button is now here + NEW preset buttons */}
+                                    {/* Day header hover menu */}
                                     <div className="absolute bottom-[100%] pb-2 left-1/2 -translate-x-1/2 flex gap-1.5 opacity-0 invisible group-hover/th:opacity-100 group-hover/th:visible transition-all z-[200] drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]">
                                       <div className="flex bg-[#0b1120]/95 backdrop-blur-md p-1.5 rounded-xl border border-white/20 gap-1.5 shadow-[0_8px_16px_rgba(0,0,0,0.5)]">
                                         <button onClick={(e) => { e.stopPropagation(); handleMagicFill(dateStr); }} className="p-1.5 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/40 hover:text-yellow-200 border border-yellow-500/30 transition-all" title="Magic Fill (Sleep)">
@@ -3114,7 +3329,6 @@
                                             <Clipboard size={14}/>
                                           </button>
                                         )}
-                                        {/* Cryo-Sleep toggle */}
                                         <button
                                           onClick={(e) => { e.stopPropagation(); toggleCryoDay(dateStr); }}
                                           className={`p-1.5 rounded-lg border transition-all ${frozenDays[dateStr] ? 'bg-sky-400 text-[#0b1120] border-sky-300' : 'bg-sky-500/20 text-sky-300 border-sky-500/30 hover:bg-sky-500/40 hover:text-sky-100'}`}
@@ -3122,23 +3336,17 @@
                                         >
                                           ❄️
                                         </button>
-                                        {/* NEW: Save Blueprint Preset */}
                                         <button
-                                          onClick={(e) => { e.stopPropagation(); saveBlueprintPreset(dateStr); }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowBlueprintManagerModal(true);
+                                            setCurrentContextDate(dateStr);
+                                          }}
                                           className="p-1.5 bg-indigo-500/20 text-indigo-400 rounded-lg hover:bg-indigo-500/40 hover:text-indigo-200 border border-indigo-500/30 transition-all"
-                                          title="Save this day as Blueprint Preset"
+                                          title="Open Blueprint Manager (save day/week • load • delete)"
                                         >
                                           <Database size={14} />
                                         </button>
-                                        {/* NEW: Load Blueprint Preset */}
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); setShowBlueprintLoadModal(true); setCurrentLoadDate(dateStr); }}
-                                          className="p-1.5 bg-violet-500/20 text-violet-400 rounded-lg hover:bg-violet-500/40 hover:text-violet-200 border border-violet-500/30 transition-all"
-                                          title="Load Blueprint Preset into this day"
-                                        >
-                                          <UploadCloud size={14} />
-                                        </button>
-                                        {/* Make it Real – icon instead of text */}
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -3190,12 +3398,12 @@
                                             <button onClick={handleUndo} disabled={past.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${past.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
                                             <button onClick={handleRedo} disabled={future.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${future.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
                                             <div className="w-full h-px bg-white/10 my-1"></div>
-                                            {/* Compact Plan Toggle (P) – renamed from BP */}
+                                            {/* Compact Plan Toggle (P) */}
                                             <button
-                                              onClick={() => { 
-                                                playSound('click'); 
+                                              onClick={() => {
+                                                playSound('click');
                                                 const newMode = !isBlueprintMode;
-                                                setIsBlueprintMode(newMode); 
+                                                setIsBlueprintMode(newMode);
                                                 showToast(newMode ? '📐 Plan Mode ON (hatched future planning)' : '📐 Plan Mode OFF');
                                               }}
                                               className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full text-xs font-black tracking-widest ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
@@ -3205,10 +3413,10 @@
                                             </button>
                                             {/* Compact Notes Toggle – N */}
                                             <button
-                                              onClick={() => { 
-                                                playSound('click'); 
+                                              onClick={() => {
+                                                playSound('click');
                                                 const newMode = !isDescriptionMode;
-                                                setIsDescriptionMode(newMode); 
+                                                setIsDescriptionMode(newMode);
                                                 showToast(newMode ? '📝 Notes Mode ON' : '📝 Notes Mode OFF');
                                               }}
                                               className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
@@ -3216,12 +3424,12 @@
                                             >
                                               <span className="text-xs font-black tracking-widest">N</span>
                                             </button>
-                                            {/* === NEW: FOCUS MODE TOGGLE (F button in palette) === */}
+                                            {/* FOCUS MODE TOGGLE (F button in palette) */}
                                             <button
-                                              onClick={() => { 
-                                                playSound('click'); 
+                                              onClick={() => {
+                                                playSound('click');
                                                 const newMode = !isFocusMode;
-                                                setIsFocusMode(newMode); 
+                                                setIsFocusMode(newMode);
                                                 showToast(newMode ? '🔍 Focus Mode ON (today only)' : '🔍 Focus Mode OFF');
                                               }}
                                               className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
@@ -3249,26 +3457,26 @@
                                         const dayData = allData[dateStr] || {};
                                         const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
                                         const isFrozenDay = !!frozenDays[dateStr];
-           
+        
                                         const isSplit1 = cellData.split1;
                                         const isSplit2 = cellData.split2;
-           
+        
                                         const t1Fill = getSegmentFill(cellData.t1);
                                         const t2Fill = getSegmentFill(cellData.t2);
                                         const q1Fill = getSegmentFill(cellData.q1);
                                         const q2Fill = getSegmentFill(cellData.q2);
                                         const q3Fill = getSegmentFill(cellData.q3);
                                         const q4Fill = getSegmentFill(cellData.q4);
-           
+        
                                         const activeColorId = cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2;
                                         const baseActiveId = activeColorId && activeColorId.startsWith('bp_') ? activeColorId.slice(3) : activeColorId;
                                         const glowColorHex = baseActiveId ? categories.find(c => c.id === baseActiveId)?.color : 'transparent';
                                         const cellStyle = activeColorId ? { boxShadow: `0 0 15px ${glowColorHex}20, inset 0 0 10px ${glowColorHex}10` } : {};
-                   
+                
                                         const dayDescs = descriptions?.[dateStr]?.[hour] || {};
                                         const hasUpperNote = ['t1', 'q1', 'q2'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
                                         const hasLowerNote = ['t2', 'q3', 'q4'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
-           
+        
                                         return (
                                           <td key={`${dateStr}-${hour}`} className="align-middle p-1 md:p-1.5 border-none">
                                             <div
@@ -3403,7 +3611,7 @@
                                   className="w-full bg-[#0b1120] border border-red-500/50 focus:border-red-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
                                 />
                               </div>
-     
+  
                               <div>
                                 <label className="block text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">
                                   {currentMode === 'points'
@@ -3422,7 +3630,7 @@
                                   className="w-full bg-[#0b1120] border border-emerald-500/50 focus:border-emerald-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
                                 />
                               </div>
-     
+  
                               <div>
                                 <label className="block text-[10px] font-bold text-lime-400 uppercase tracking-widest mb-2">XP Per Point Earned</label>
                                 <input
@@ -3665,7 +3873,7 @@
                       {habitsConfig.map((habit, idx) => (
                         <div key={habit.id} className="bg-white/5 border border-white/10 rounded-2xl p-3 md:p-4 flex flex-col gap-3 transition-all hover:border-emerald-500/30">
                           <div className="flex items-center gap-3">
-                            {/* Global reorder buttons (▲▼) – moved here per user request */}
+                            {/* Global reorder buttons (▲▼) */}
                             <div className="flex flex-col text-emerald-400 text-[10px] leading-none opacity-70 hover:opacity-100">
                               <button onClick={() => moveHabitUp(habit.id)} className="hover:text-emerald-300">▲</button>
                               <button onClick={() => moveHabitDown(habit.id)} className="hover:text-emerald-300">▼</button>
@@ -3675,7 +3883,6 @@
                               <span className="text-[8px] uppercase tracking-widest text-slate-400">Pts/Done</span>
                               <input type="number" step="0.1" value={habit.points !== undefined ? habit.points : ''} onChange={e => updateHabitConfig(habit.id, 'points', e.target.value === '' ? '' : parseFloat(e.target.value))} className="w-full bg-transparent text-center text-lime-300 font-black text-sm md:text-base outline-none border-b border-transparent focus:border-lime-400" />
                             </div>
-                            {/* NEW: Per-habit streak (tiny flame + counter) in System Modules */}
                             <span className="flex items-center gap-px text-orange-400 text-xs font-black ml-auto">
                               <Flame size={14} />{habitStreaks[habit.id] || 0}
                             </span>
@@ -3694,25 +3901,23 @@
                          <Plus size={20} /> Add Habit
                       </button>
                     </div>
-
-                    {/* === NEW: BLUEPRINT PRESETS SECTION IN MODULES (for completeness) === */}
+                    {/* Blueprint Presets Library in Modules */}
                     <div className="mt-12 pt-8 border-t border-white/10">
                       <h3 className="font-bold text-indigo-400 uppercase tracking-widest text-xs mb-4 flex items-center gap-2"><Database size={18} /> Blueprint Presets Library</h3>
-                      <div className="text-xs text-slate-400 mb-4">Your saved day blueprints appear here. You can also manage them from day header hover menus.</div>
+                      <div className="text-xs text-slate-400 mb-4">Your saved day + week presets (real + plan colours) appear here.</div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {blueprintPresets.map(p => (
                           <div key={p.id} className="bg-white/5 border border-indigo-400/20 rounded-2xl p-4 flex justify-between items-center">
                             <div>
                               <span className="font-bold">{p.name}</span>
-                              <span className="ml-3 text-[10px] text-slate-400">Day preset</span>
+                              <span className="ml-3 text-[10px] text-slate-400">{p.type.toUpperCase()} preset</span>
                             </div>
                             <button onClick={() => {
-                              // Quick load to today as example
-                              loadBlueprintPresetToDay(p, todayStr);
-                            }} className="text-xs px-4 py-2 bg-indigo-500 text-white rounded-xl font-black">Load to Today</button>
+                              loadBlueprintPreset(p);
+                            }} className="text-xs px-4 py-2 bg-indigo-500 text-white rounded-xl font-black">Load</button>
                           </div>
                         ))}
-                        {blueprintPresets.length === 0 && <div className="col-span-2 text-slate-400 italic text-center py-8">No presets yet – save from any day header</div>}
+                        {blueprintPresets.length === 0 && <div className="col-span-2 text-slate-400 italic text-center py-8">No presets yet – use the new single button in any day header</div>}
                       </div>
                     </div>
                   </div>
@@ -3750,7 +3955,31 @@
                           <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportData} className="hidden" />
                         </div>
                       </div>
-                      <div className="xl:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 w-full">
+                      {/* NEW: AUTO-SAVE FOLDER SETUP */}
+                      <div className="xl:col-span-1 bg-emerald-900/10 border border-emerald-500/20 rounded-2xl p-4 flex flex-col gap-4">
+                        <h3 className="font-bold uppercase text-emerald-400 border-b border-emerald-500/20 pb-2">Automated Local Auto-Save</h3>
+                        <p className="text-xs text-slate-400 flex-1">Select a folder once. The app will silently write a full .json backup every time you close the tab or complete a day.</p>
+                        <button
+                          onClick={async () => {
+                            playSound('click');
+                            if (!('showDirectoryPicker' in window)) {
+                              showToast('❌ Auto-save requires a modern browser (Chrome/Edge)', 'error');
+                              return;
+                            }
+                            try {
+                              backupDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                              showToast('✅ Auto-save folder ready! Backups will happen silently.');
+                              await saveAutoBackup();
+                            } catch (e) {
+                              showToast('❌ Folder access cancelled or denied', 'error');
+                            }
+                          }}
+                          className="mt-auto bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 hover:text-emerald-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-emerald-500/50 transition-all flex items-center justify-center gap-2"
+                        >
+                          <UploadCloud size={16}/> Setup Auto-Save Folder
+                        </button>
+                      </div>
+                      <div className="xl:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 w-full">
                         <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-4 flex flex-col gap-4">
                           <h3 className="font-bold uppercase text-red-400 border-b border-red-500/20 pb-2">Erase Week</h3>
                           <div className="flex flex-col gap-2 w-full">
