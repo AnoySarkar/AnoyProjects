@@ -113,6 +113,21 @@
       opacity: 0.25;
       box-shadow: 0 0 12px rgba(103, 232, 249, 0.3) !important;
     }
+    /* Current Hour" Visual Anchor – subtle pulsing neon glow */
+    @keyframes pulseNeon {
+      0%, 100% { box-shadow: 0 0 12px #22d3ee, 0 0 24px #22d3ee; }
+      50% { box-shadow: 0 0 4px #22d3ee, 0 0 8px #22d3ee; }
+    }
+    .current-hour-glow {
+      animation: pulseNeon 1.8s ease-in-out infinite;
+      border: 2.5px solid #22d3ee !important;
+      z-index: 10;
+    }
+    /* Toast animation */
+    @keyframes toastPop {
+      0% { opacity: 0; transform: translateY(20px) scale(0.95); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
   </style>
 </head>
 <body class="selection:bg-cyan-500/30 selection:text-cyan-100">
@@ -459,9 +474,16 @@
       });
       // === NEW: Streak modal ===
       const [showStreakModal, setShowStreakModal] = useState(false);
-      // === NEW FOR QUICK-CAPTURE GLOBAL TASK INPUT ===
+      // === NEW FOR QUICK-CAPTURE GLOBAL TASK INPUT (REWORKED) ===
       const [showQuickCapture, setShowQuickCapture] = useState(false);
       const [quickInput, setQuickInput] = useState('');
+      const [quickSaveType, setQuickSaveType] = useState('todo'); // 'todo' or 'journal'
+      const [quickIsToday, setQuickIsToday] = useState(true);
+      const [quickTargetDate, setQuickTargetDate] = useState(() => formatDateString(new Date()));
+      // NEW: Toast notifications (non-blocking success messages)
+      const [toasts, setToasts] = useState([]);
+      // === NEW: Current Hour Visual Anchor (live) ===
+      const [currentHour, setCurrentHour] = useState(new Date().getHours());
       // === END NEW STATES ===
       const fileInputRef = useRef(null);
       const completedSessionRef = useRef(null);
@@ -534,6 +556,23 @@
       useEffect(() => {
         localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(frozenDays));
       }, [frozenDays]);
+      // --- NEW: Live Current Hour for Visual Anchor (updates every minute) ---
+      useEffect(() => {
+        const updateCurrentHour = () => {
+          setCurrentHour(new Date().getHours());
+        };
+        updateCurrentHour();
+        const interval = setInterval(updateCurrentHour, 60000);
+        return () => clearInterval(interval);
+      }, []);
+      // --- NEW: Toast helper (non-blocking, auto-dismiss) ---
+      const showToast = useCallback((message, type = 'success') => {
+        const id = Date.now().toString();
+        setToasts(prev => [...prev, { id, message, type }]);
+        setTimeout(() => {
+          setToasts(prev => prev.filter(t => t.id !== id));
+        }, 3000);
+      }, []);
       // --- History (Undo/Redo) Actions ---
       const saveHistoryState = useCallback(() => {
          const newState = JSON.stringify(allDataRef.current);
@@ -956,27 +995,40 @@
           descriptionTextareaRef.current.setSelectionRange(len, len);
         }
       }, [editingDescription]);
-      // --- NEW: Quick-Capture Global Task Input Handler ---
-      const handleQuickCapture = useCallback(() => {
+      // --- NEW: Quick-Capture REWORKED Handler (supports Journal + custom day) ---
+      const handleQuickCaptureSave = useCallback(() => {
         if (!quickInput.trim()) return;
         playSound('click');
-        const todayStrLocal = formatDateString(new Date());
-        setTodosData(prev => {
-          const current = prev[todayStrLocal] || [];
-          const newTodo = {
-            id: 'qc_' + Date.now().toString(),
-            text: quickInput.trim(),
-            status: 'red',
-            remark: '',
-            progress: 0
-          };
-          const updated = { ...prev, [todayStrLocal]: [...current, newTodo] };
-          localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
-          return updated;
-        });
-        setQuickInput('');
+        const targetDate = quickTargetDate;
+        if (quickSaveType === 'todo') {
+          setTodosData(prev => {
+            const current = prev[targetDate] || [];
+            const newTodo = {
+              id: 'qc_' + Date.now().toString(),
+              text: quickInput.trim(),
+              status: 'red',
+              remark: '',
+              progress: 0
+            };
+            const updated = { ...prev, [targetDate]: [...current, newTodo] };
+            localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
+            return updated;
+          });
+          showToast(`✅ Added to ToDo on ${getDisplayDate(targetDate)}`);
+        } else {
+          setJournalData(prev => {
+            const current = prev[targetDate] || '';
+            const bullet = `• ${quickInput.trim()}`;
+            const newText = current ? `${current}\n${bullet}` : bullet;
+            const updated = { ...prev, [targetDate]: newText };
+            localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(updated));
+            return updated;
+          });
+          showToast(`✅ Added to Journal on ${getDisplayDate(targetDate)}`);
+        }
         setShowQuickCapture(false);
-      }, [quickInput]);
+        setQuickInput('');
+      }, [quickInput, quickSaveType, quickTargetDate, showToast]);
       // --- Chrono-Clone Handlers ---
       const handleCopyDay = (dateStr) => {
         playSound('click');
@@ -1042,32 +1094,37 @@
           return copy;
         });
       }, []);
-      // NEW: Bulk Blueprint Commitment – "Make it Real" for current log day (only up to current hour on today)
-      const handleCommitBlueprint = useCallback(() => {
-        if (!activeJournalDate) return;
+      // NEW: Make it Real – now available on day header hover (moved from Captain's Log)
+      const handleCommitBlueprintForDay = useCallback((dateStr) => {
+        if (!dateStr) return;
         saveHistoryState();
-        playSound('success');
-        const isToday = activeJournalDate === todayStr;
+        const isToday = dateStr === todayStr;
         const currentHour = new Date().getHours();
         setAllData(prev => {
           const newData = { ...prev };
-          const day = { ...(newData[activeJournalDate] || {}) };
+          const day = { ...(newData[dateStr] || {}) };
+          let hasChanges = false;
           Object.keys(day).forEach(hKey => {
             const hNum = parseInt(hKey, 10);
-            if (isToday && hNum > currentHour) return; // only past/present hours on today
+            if (isToday && hNum > currentHour) return;
             const hourD = { ...day[hKey] };
+            let changed = false;
             ['t1','t2','q1','q2','q3','q4'].forEach(key => {
               if (hourD[key] && hourD[key].startsWith('bp_')) {
                 hourD[key] = hourD[key].slice(3);
+                changed = true;
               }
             });
+            if (changed) hasChanges = true;
             day[hKey] = hourD;
           });
-          newData[activeJournalDate] = day;
+          if (!hasChanges) return prev;
+          newData[dateStr] = day;
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
           return newData;
         });
-      }, [activeJournalDate, todayStr]);
+        showToast(`✅ Blueprints committed to reality for ${getDisplayDate(dateStr)}`);
+      }, [saveHistoryState, todayStr, showToast]);
       // --- Journal & Todo & Habit Handlers ---
       const handleJournalSave = (dateStr, text) => {
         setJournalData(prev => {
@@ -1216,6 +1273,7 @@
           localStorage.setItem(LOCAL_HABIT_LOGS_KEY, JSON.stringify(updated));
           return updated;
         });
+        showToast('✅ Completed items swept to bottom');
       };
       // --- NEW: Migrate Unfinished Tasks from yesterday (now from top of Captain's Log – affects ToDo List) ---
       const handleMigrateUnfinishedTasks = () => {
@@ -1240,6 +1298,7 @@
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
+        showToast('✅ Unfinished tasks migrated');
       };
       // --- Habit & Sys Config Handlers ---
       const addHabitConfig = () => {
@@ -1525,6 +1584,7 @@
         const now = Date.now();
         localStorage.setItem(LOCAL_LAST_EXPORT_KEY, now.toString());
         setLastExportTime(now);
+        showToast('✅ Backup downloaded successfully');
       };
       const handleImportData = (e) => {
         const file = e.target.files[0];
@@ -1553,12 +1613,13 @@
               if (imported.descriptions) localStorage.setItem(LOCAL_DESCRIPTIONS_KEY, JSON.stringify(imported.descriptions));
               if (imported.frozenDays) localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(imported.frozenDays));
               playSound('success');
-              // SUCCESS PROMPT FOR UPLOAD
-              alert("✅ Successfully uploaded! All data has been synchronized.");
+              showToast("✅ Successfully uploaded! All data has been synchronized.");
             } else {
-              alert("Error: Invalid backup file structure.");
+              showToast("❌ Error: Invalid backup file structure.", 'error');
             }
-          } catch (err) { alert("Error: Corrupted file."); }
+          } catch (err) { 
+            showToast("❌ Error: Corrupted file.", 'error'); 
+          }
           e.target.value = null;
         };
         reader.readAsText(file);
@@ -1571,7 +1632,7 @@
       };
       const removeCategory = (id, name) => {
         if (categories.length <= 1) {
-          alert("System Error: You must have at least one active category.");
+          showToast("System Error: You must have at least one active category.", 'error');
           return;
         }
         playSound('click');
@@ -1607,9 +1668,11 @@
           return newData;
         });
       }, []);
-      // --- Pointer Handlers (Blueprint-aware + Description Mode) ---
+      // --- Pointer Handlers (Blueprint-aware + Description Mode + CRYO DISABLE) ---
       const handlePointerDown = useCallback((dateStr, hourIndex, triangleId, e) => {
         if (e.button !== 0) return;
+        // NEW: Cryo-Sleep disables ALL input for the entire day
+        if (frozenDays[dateStr]) return;
         if (isDescriptionMode) {
           e.preventDefault();
           openDescription(dateStr, hourIndex, triangleId);
@@ -1622,16 +1685,18 @@
         const targetValue = getTargetValue(currentValue, selectedColorId, isBlueprintMode);
         handleUpdateSegment(dateStr, hourIndex, triangleId, targetValue);
         setIsDragging(true);
-      }, [isDescriptionMode, selectedColorId, isBlueprintMode, saveHistoryState, getTargetValue, handleUpdateSegment, allData, openDescription]);
+      }, [isDescriptionMode, selectedColorId, isBlueprintMode, saveHistoryState, getTargetValue, handleUpdateSegment, allData, openDescription, frozenDays]);
       const handlePointerEnter = useCallback((dateStr, hourIndex, triangleId) => {
-        if (!isDragging || selectedColorId === 'lock' || isDescriptionMode) return;
+        if (!isDragging || selectedColorId === 'lock' || isDescriptionMode || frozenDays[dateStr]) return;
         const hourData = allData[dateStr]?.[hourIndex] || {};
         const currentValue = hourData[triangleId] || null;
         const targetValue = getTargetValue(currentValue, selectedColorId, isBlueprintMode);
         handleUpdateSegment(dateStr, hourIndex, triangleId, targetValue);
-      }, [isDragging, selectedColorId, isDescriptionMode, isBlueprintMode, getTargetValue, handleUpdateSegment, allData]);
+      }, [isDragging, selectedColorId, isDescriptionMode, isBlueprintMode, getTargetValue, handleUpdateSegment, allData, frozenDays]);
       const handleSplitToggle = (dateStr, hour, half, e) => {
-        if (isDescriptionMode) return; // no split in description mode
+        if (isDescriptionMode) return;
+        // NEW: Cryo-Sleep disables ALL input
+        if (frozenDays[dateStr]) return;
         e.preventDefault();
         saveHistoryState();
         playSound('click');
@@ -1782,7 +1847,7 @@
           if (selectedColorId === resetPayload.id) setSelectedColorId('lock');
           if (timer.categoryId === resetPayload.id) setTimer(p => ({...p, categoryId: newCats[0]?.id}));
           setPendingReset(null);
-          alert(`✅ Category "${resetPayload.name}" successfully removed.`);
+          showToast(`✅ Category "${resetPayload.name}" successfully removed.`);
           return;
         }
         if (resetType === 'habit') {
@@ -1790,7 +1855,7 @@
           setHabitsConfig(updated);
           localStorage.setItem(LOCAL_HABITS_CONFIG_KEY, JSON.stringify(updated));
           setPendingReset(null);
-          alert(`✅ Habit "${resetPayload.name}" successfully removed.`);
+          showToast(`✅ Habit "${resetPayload.name}" successfully removed.`);
           return;
         }
         if (['day', 'week', 'month'].includes(resetType)) {
@@ -1838,10 +1903,10 @@
         localStorage.setItem(LOCAL_DESCRIPTIONS_KEY, JSON.stringify(currentDescriptions));
         localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(frozenDays));
         setPendingReset(null);
-        // SUCCESS PROMPT FOR DELETION
-        if (resetType === 'day') alert('✅ Day successfully erased.');
-        else if (resetType === 'week') alert('✅ Week successfully erased.');
-        else if (resetType === 'month') alert('✅ Month successfully erased.');
+        // SUCCESS TOAST (no more forced OK)
+        if (resetType === 'day') showToast('✅ Day successfully erased.');
+        else if (resetType === 'week') showToast('✅ Week successfully erased.');
+        else if (resetType === 'month') showToast('✅ Month successfully erased.');
       };
       const calculateStats = useCallback((dateStringsArray) => {
         const totals = categories.reduce((acc, cat) => ({ ...acc, [cat.id]: 0 }), {});
@@ -2047,7 +2112,7 @@
                          <span className="text-purple-400 text-xs md:text-sm font-bold tracking-widest">{getDisplayDate(activeJournalDate)}</span>
                        </div>
                      </div>
-                     {/* NEW: QoL Toolbar – Sweep, Migrate, Make it Real at TOP of Captain's Log */}
+                     {/* QoL Toolbar – Sweep + Migrate (Make it Real removed – now on day hover) */}
                      <div className="flex items-center gap-2 flex-wrap">
                        <button
                          onClick={handleSweepCompleted}
@@ -2060,12 +2125,6 @@
                          className="text-xs px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-2xl font-bold uppercase tracking-widest transition-all flex items-center gap-1"
                        >
                          <span>Migrate Yesterday</span>
-                       </button>
-                       <button
-                         onClick={handleCommitBlueprint}
-                         className="text-xs px-4 py-2 bg-sky-500/20 hover:bg-sky-500/30 text-sky-400 rounded-2xl font-bold uppercase tracking-widest transition-all flex items-center gap-1 shadow-[0_0_10px_rgba(14,165,233,0.3)]"
-                       >
-                         <span>Make it Real</span>
                        </button>
                      </div>
                      <div className="flex flex-col flex-1 max-w-md w-full gap-2">
@@ -2082,7 +2141,6 @@
                        <div className="w-full h-1.5 bg-[#0b1120] rounded-full overflow-hidden border border-white/10 shadow-inner">
                           <div className="h-full bg-gradient-to-r from-cyan-500 to-green-400 transition-all duration-500" style={{width: `${activeCompletionRate}%`}}></div>
                        </div>
-  
                        {Object.values(activeCategoryHours).some(h => h > 0) && (
                          <div className="mt-3 pt-3 border-t border-white/10">
                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Category Analysis</span>
@@ -2112,11 +2170,11 @@
                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                          {activeDayTodos.map(todo => {
                            const status = todo.status || (todo.done ? 'green' : 'red');
-     
+  
                            let Icon = Square;
                            let iconClass = 'text-red-500 hover:text-red-400';
                            let textClass = 'text-slate-200';
-     
+  
                            if (status === 'yellow') {
                              Icon = MinusSquare;
                              iconClass = 'text-yellow-400 hover:text-yellow-300';
@@ -2137,7 +2195,7 @@
                                    <Trash2 size={16}/>
                                  </button>
                                </div>
-         
+      
                                {status === 'yellow' && (
                                  <div className="pl-8 pr-6 w-full flex items-center gap-3">
                                    <div className="flex-1">
@@ -2188,11 +2246,11 @@
                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                          {activeDayHabits.map((habit) => {
                            const status = habit.status || 'red';
-     
+  
                            let Icon = Square;
                            let iconClass = 'text-red-500 hover:text-red-400';
                            let textClass = 'text-slate-200';
-     
+  
                            if (status === 'yellow') {
                              Icon = MinusSquare;
                              iconClass = 'text-yellow-400 hover:text-yellow-300';
@@ -2217,7 +2275,7 @@
                                    <Trash2 size={16}/>
                                  </button>
                                </div>
-         
+      
                                {status === 'yellow' && (
                                  <div className="pl-8 pr-6 w-full flex items-center gap-3">
                                    <div className="flex-1">
@@ -2301,7 +2359,7 @@
                     <h3 className="font-black text-purple-300 uppercase tracking-widest text-xl">Level &amp; XP Info</h3>
                     <button onClick={() => setShowLevelHistory(false)} className="text-slate-400 hover:text-white"><X size={26} /></button>
                   </div>
-        
+     
                   <div className="flex justify-center items-center gap-6 mb-8">
                     <Trophy size={64} className="text-purple-400 drop-shadow-[0_0_20px_rgba(168,85,247,0.6)]" />
                     <div className="text-center">
@@ -2387,7 +2445,7 @@
                 </div>
               </div>
             )}
-            {/* HELP / TUTORIAL MODAL (FULL SYSTEM PROTOCOL – UPDATED WITH ALL QoL) --- */}
+            {/* HELP / TUTORIAL MODAL (FULL SYSTEM PROTOCOL – UPDATED WITH ALL QoL + NEW FEATURES) --- */}
             {showHelp && (
                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowHelp(false)}>
                  <div className="glass-panel animate-modal border-cyan-500/50 shadow-[0_0_30px_rgba(34,211,238,0.2)] rounded-3xl p-6 md:p-8 max-w-3xl w-full relative max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -2397,17 +2455,17 @@
                      <h2 className="text-2xl font-black uppercase text-white">System Protocol — Complete Feature Guide + All QoL</h2>
                    </div>
                    <div className="space-y-6 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
-                     {/* 1. Painting & Grid */}
+                     {/* 1. Painting & Grid – UPDATED WITH NEW CRYO + ANCHOR */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-cyan-300 uppercase mb-3 border-b border-cyan-500/30 pb-2 flex items-center gap-2"><span className="text-xl">🎨</span> GRID</h3>
                        <p className="mb-3">The heart of Trackerbox. Every day is a 24-hour grid divided into 30-minute blocks (or 15-minute when split). Click any triangle with a category selected to paint it. Right-click / long-press to split or merge segments. Blueprints (hatched) are future plans; real colors are logged history.</p>
-                       <p className="text-xs text-slate-400">• Lock mode prevents accidental painting<br/>• Drag to paint multiple blocks at once<br/>• TODAY button no longer collapses the grid window</p>
+                       <p className="text-xs text-slate-400">• Lock mode prevents accidental painting<br/>• Drag to paint multiple blocks at once<br/>• Cryo-Sleep (Rest Day): Mark any day → the ENTIRE day’s grid is tinted with the same ice-blue gradient + ALL input (painting, splitting, notes) is disabled for that day<br/>• Current Hour Visual Anchor: Subtle pulsing neon-cyan glow highlights the exact current real-world hour box on TODAY (visible even when epochs are collapsed)<br/>• TODAY button no longer collapses the grid window<br/>• NEW: “Make it Real” button now lives on every day header hover menu (commit all blueprints in one tap)</p>
                      </div>
                      {/* 2. Blueprint Mode + NEW Bulk Commit */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-sky-300 uppercase mb-3 border-b border-sky-500/30 pb-2 flex items-center gap-2"><span className="text-xl">📐</span> Blueprint Mode (BP) + Make it Real</h3>
                        <p>Toggle the <strong>BP</strong> button in the compact palette. Paint hatched previews for future planning. Click again in BP mode to erase a blueprint. Switch off BP to turn hatched cells into solid reality colors.</p>
-                       <p className="mt-3 text-emerald-300 font-bold">NEW QoL: “Make it Real” (Commit Blueprint) button in Captain’s Log top bar. Instantly converts all hatched BP cells (up to current hour on today) into solid logged reality. Old per-day “R” button removed.</p>
+                       <p className="mt-3 text-emerald-300 font-bold">NEW: “Make it Real” button moved to day header hover/hold menu (no more clutter in Captain’s Log).</p>
                      </div>
                      {/* 3. NEW: Collapsible Time Epochs */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
@@ -2432,10 +2490,10 @@
                          <li><strong>ToDo List</strong> (renamed from Mission Objectives)</li>
                          <li><strong>Habit Tracking</strong> – order is now global (reorder in System Modules only) + per-habit streak flames</li>
                          <li><strong>Journal</strong> (renamed from Captain's Notes)</li>
-                         <li>Sweep Completed + Migrate Yesterday buttons moved to top toolbar (work on ToDo List; both accessible together)</li>
-                         <li>“Make it Real” bulk blueprint button in top toolbar</li>
+                         <li>Sweep Completed + Migrate Yesterday buttons in top toolbar</li>
+                         <li>“Make it Real” moved to day header hover menu</li>
                          <li>Live progress bar + category breakdown</li>
-                         <li><strong>Cryo-Sleep</strong> – mark any day as rest day (protects streak, muted ice color)</li>
+                         <li><strong>Cryo-Sleep</strong> – mark any day as rest day (full grid tinted ice-blue + all input disabled; protects streak)</li>
                        </ul>
                      </div>
                      {/* 6. Habits – REORDER MOVED + NEW STREAKS */}
@@ -2457,7 +2515,7 @@
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-lime-400 uppercase mb-3 border-b border-lime-500/30 pb-2 flex items-center gap-2"><span className="text-xl">🏆</span> XP, Levels &amp; Streaks</h3>
                        <p>Earn XP from hours, points, todos, habits, streaks. Beautiful rank titles. Clickable PTS display with period selector (daily/weekly/monthly/yearly/all-time). <strong>Click the Streak counter in the header</strong> to open full streak history: current streak, longest streak with dates, and list of all streak periods.</p>
-                       <p className="text-xs text-emerald-300 mt-3">NEW: Cryo-Sleep (Rest Day) – one sick day no longer ruins your streak. Mark a day as Cryo-Sleep (muted ice color) to protect your multiplier.</p>
+                       <p className="text-xs text-emerald-300 mt-3">NEW: Cryo-Sleep (Rest Day) – one sick day no longer ruins your streak. Mark a day as Cryo-Sleep (muted ice color on header AND full grid disabled) to protect your multiplier.</p>
                      </div>
                      {/* 10. Data & Storage + QoL */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
@@ -2472,7 +2530,7 @@
                          <li><strong>Ctrl+Y</strong> — Redo</li>
                          <li><strong>L</strong> — Lock mode</li>
                          <li><strong>1–6</strong> — Quick category select</li>
-                         <li><strong>Shift + T</strong> — Quick-capture task to today</li>
+                         <li><strong>Shift + T</strong> — Quick-capture task</li>
                          <li><strong>Day header click</strong> — Open Captain's Log</li>
                          <li><strong>Epoch header click</strong> — Collapse / expand time block</li>
                          <li><strong>F (in palette)</strong> — Toggle Focus Mode (today-only grid)</li>
@@ -2609,8 +2667,107 @@
                 </div>
               </div>
             )}
-            {/* === QUICK-CAPTURE MOVED TO HEADER (LVL / PTS / STREAK SECTION) === */}
-            {/* NO MORE FLOATING BUTTON — now integrated in top stats bar to prevent any overlap on ALL devices */}
+            {/* === QUICK-CAPTURE REWORKED MODAL === */}
+            {showQuickCapture && (
+              <div className="fixed inset-0 z-[500] bg-black/70 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowQuickCapture(false)}>
+                <div className="glass-panel w-full max-w-md rounded-3xl p-6 border-cyan-400/50" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <Zap size={28} className="text-cyan-400" />
+                      <h3 className="font-black text-cyan-300 text-2xl tracking-widest uppercase">Quick Capture</h3>
+                    </div>
+                    <button onClick={() => setShowQuickCapture(false)} className="text-slate-400 hover:text-white"><X size={28} /></button>
+                  </div>
+
+                  {/* Bigger input with new placeholder */}
+                  <textarea
+                    autoFocus
+                    value={quickInput}
+                    onChange={e => setQuickInput(e.target.value)}
+                    placeholder="What's on your mind?"
+                    className="w-full h-32 bg-[#0b1120] border border-cyan-400/30 focus:border-cyan-400 rounded-3xl px-6 py-5 text-lg text-slate-200 font-medium outline-none resize-none placeholder:text-slate-400/70"
+                    rows="4"
+                  />
+
+                  {/* Save as ToDo or Journal */}
+                  <div className="mt-6 grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setQuickSaveType('todo')}
+                      className={`py-4 rounded-3xl font-bold flex items-center justify-center gap-2 text-base transition-all ${quickSaveType === 'todo' ? 'bg-emerald-400 text-black shadow-inner' : 'bg-white/10 text-slate-200 hover:bg-white/20'}`}
+                    >
+                      <span className="text-xl">📋</span> ToDo List
+                    </button>
+                    <button
+                      onClick={() => setQuickSaveType('journal')}
+                      className={`py-4 rounded-3xl font-bold flex items-center justify-center gap-2 text-base transition-all ${quickSaveType === 'journal' ? 'bg-purple-400 text-black shadow-inner' : 'bg-white/10 text-slate-200 hover:bg-white/20'}`}
+                    >
+                      <span className="text-xl">📖</span> Journal
+                    </button>
+                  </div>
+
+                  {/* Target Day Selector */}
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-3">
+                      <span>TARGET DAY</span>
+                    </div>
+                    <div className="flex bg-[#0b1120] rounded-3xl p-1 border border-white/10">
+                      <button 
+                        onClick={() => { 
+                          setQuickIsToday(true); 
+                          setQuickTargetDate(todayStr); 
+                        }}
+                        className={`flex-1 py-3 rounded-3xl font-bold transition-all ${quickIsToday ? 'bg-cyan-400 text-black' : 'text-slate-200'}`}
+                      >
+                        Today
+                      </button>
+                      <button 
+                        onClick={() => setQuickIsToday(false)}
+                        className={`flex-1 py-3 rounded-3xl font-bold transition-all ${!quickIsToday ? 'bg-cyan-400 text-black' : 'text-slate-200'}`}
+                      >
+                        Other day
+                      </button>
+                    </div>
+                    {!quickIsToday && (
+                      <input 
+                        type="date" 
+                        value={quickTargetDate}
+                        onChange={e => setQuickTargetDate(e.target.value)}
+                        className="mt-4 w-full bg-[#0b1120] border border-white/20 rounded-3xl px-6 py-4 text-slate-200 font-medium outline-none"
+                      />
+                    )}
+                  </div>
+
+                  <div className="mt-8 flex gap-3">
+                    <button
+                      onClick={() => { setShowQuickCapture(false); }}
+                      className="flex-1 py-5 text-slate-400 font-bold rounded-3xl border border-white/20 hover:bg-white/5"
+                    >
+                      CANCEL
+                    </button>
+                    <button
+                      onClick={handleQuickCaptureSave}
+                      className="flex-1 py-5 bg-gradient-to-r from-cyan-400 to-purple-500 text-white font-black rounded-3xl text-xl tracking-widest shadow-[0_0_20px_rgba(34,211,238,0.4)]"
+                    >
+                      SAVE
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Global Toast Notifications (non-blocking, auto-dismiss) */}
+            <div className="fixed bottom-8 right-8 z-[9999] flex flex-col-reverse gap-3 max-w-xs">
+              {toasts.map((toast) => (
+                <div 
+                  key={toast.id}
+                  className={`glass-panel px-5 py-4 rounded-3xl flex items-center gap-3 shadow-2xl border-l-4 text-sm font-medium transition-all animate-[toastPop_0.3s_ease-out] ${toast.type === 'success' ? 'border-green-400 bg-green-900/90 text-green-100' : 'border-red-400 bg-red-900/90 text-red-100'}`}
+                >
+                  {toast.type === 'success' ? <span className="text-2xl">✅</span> : <span className="text-2xl">❌</span>}
+                  <span>{toast.message}</span>
+                </div>
+              ))}
+            </div>
+
             {/* Header */}
             <header className="glass-panel sticky top-0 z-50 border-b border-white/10 rounded-none shadow-none">
               <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2690,11 +2847,11 @@
                       {currentStreak} <span className="hidden sm:inline">Streak</span>
                     </span>
                   </div>
-                  {/* === QUICK CAPTURE + BUTTON — MOVED HERE (inside LVL/PTS/STREAK section) === */}
+                  {/* QUICK CAPTURE BUTTON (Shift + T) */}
                   <button
                     onClick={() => { playSound('click'); setShowQuickCapture(true); }}
                     className="flex items-center justify-center bg-gradient-to-br from-cyan-400 to-purple-500 hover:from-cyan-300 hover:to-purple-400 text-white rounded-2xl w-11 h-[44px] shadow-[0_0_15px_rgba(34,211,238,0.5)] active:scale-95 transition-all text-3xl font-black flex-shrink-0"
-                    title="Quick-Capture Task (Shift + T) — instantly adds to Today's Mission Objectives"
+                    title="Quick-Capture Task (Shift + T)"
                   >
                     +
                   </button>
@@ -2774,20 +2931,20 @@
                             <tr>
                               <th className="w-[45px] md:w-[60px] sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
                               <th className="w-[50px] md:w-[65px] sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
-        
+     
                               {displayDates.map((dateStr) => {
                                 const isToday = dateStr === todayStr;
                                 const isCryo = frozenDays[dateStr]; // NEW: Cryo-Sleep flag
                                 const d = new Date(dateStr);
                                 const hasJournal = journalData[dateStr] && journalData[dateStr].trim().length > 0;
-          
+       
                                 const dayTodos = todosData[dateStr] || [];
                                 const dayHabits = (habitLogs[dateStr] || []).filter(h => !h.deleted);
-          
+       
                                 const totalTasks = dayTodos.length + dayHabits.length;
                                 const completedTasks = dayTodos.filter(t => t.status === 'green' || t.done).length + dayHabits.filter(h => h.status === 'green').length;
                                 const completionRate = totalTasks > 0 ? completedTasks / totalTasks : 0;
-          
+       
                                 const hasUncompletedTodos = dayTodos.length > dayTodos.filter(t => t.status === 'green' || t.done).length;
                                 const hasUncompletedHabits = dayHabits.length > dayHabits.filter(h => h.status === 'green').length;
                                 let headerBg = isToday ? 'bg-cyan-500/20' : 'bg-white/5';
@@ -2827,7 +2984,7 @@
                                       <span className={`text-xl md:text-2xl font-black leading-none mt-1 ${isToday ? 'text-cyan-100 neon-text' : 'text-slate-200 group-hover/th:text-white'}`}>
                                         {d.getDate()}
                                       </span>
-                
+             
                                       <div className="absolute -top-1 -right-1 flex gap-1">
                                         {hasUncompletedHabits && <div className="w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" title="Pending Routines"></div>}
                                         {hasUncompletedTodos && <div className="w-3 h-3 bg-cyan-400 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse" title="Pending Objectives"></div>}
@@ -2835,6 +2992,7 @@
                                         {isCryo && <div className="w-3 h-3 bg-sky-300 rounded-full shadow-[0_0_8px_rgba(103,232,249,0.8)] animate-pulse" title="Cryo-Sleep (Rest Day)"></div>}
                                       </div>
                                     </div>
+                                    {/* Day header hover menu – Make it Real button is now here */}
                                     <div className="absolute bottom-[100%] pb-2 left-1/2 -translate-x-1/2 flex gap-1.5 opacity-0 invisible group-hover/th:opacity-100 group-hover/th:visible transition-all z-[200] drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]">
                                       <div className="flex bg-[#0b1120]/95 backdrop-blur-md p-1.5 rounded-xl border border-white/20 gap-1.5 shadow-[0_8px_16px_rgba(0,0,0,0.5)]">
                                         <button onClick={(e) => { e.stopPropagation(); handleMagicFill(dateStr); }} className="p-1.5 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/40 hover:text-yellow-200 border border-yellow-500/30 transition-all" title="Magic Fill (Sleep)">
@@ -2848,13 +3006,24 @@
                                             <Clipboard size={14}/>
                                           </button>
                                         )}
-                                        {/* NEW: Cryo-Sleep toggle button */}
-                                        <button 
-                                          onClick={(e) => { e.stopPropagation(); toggleCryoDay(dateStr); }} 
-                                          className={`p-1.5 rounded-lg border transition-all ${frozenDays[dateStr] ? 'bg-sky-400 text-[#0b1120] border-sky-300' : 'bg-sky-500/20 text-sky-300 border-sky-500/30 hover:bg-sky-500/40 hover:text-sky-100'}`} 
+                                        {/* Cryo-Sleep toggle */}
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); toggleCryoDay(dateStr); }}
+                                          className={`p-1.5 rounded-lg border transition-all ${frozenDays[dateStr] ? 'bg-sky-400 text-[#0b1120] border-sky-300' : 'bg-sky-500/20 text-sky-300 border-sky-500/30 hover:bg-sky-500/40 hover:text-sky-100'}`}
                                           title={frozenDays[dateStr] ? "Remove Cryo-Sleep" : "Mark as Cryo-Sleep (Rest Day)"}
                                         >
                                           ❄️
+                                        </button>
+                                        {/* NEW: Make it Real button (moved here from Captain's Log) */}
+                                        <button
+                                          onClick={(e) => { 
+                                            e.stopPropagation(); 
+                                            handleCommitBlueprintForDay(dateStr); 
+                                          }}
+                                          className="p-1.5 bg-sky-500/20 text-sky-400 rounded-lg hover:bg-sky-500/40 hover:text-sky-200 border border-sky-500/30 transition-all"
+                                          title="Make it Real – Commit all blueprints"
+                                        >
+                                          <span className="text-xs font-black tracking-widest">REAL</span>
                                         </button>
                                         <button onClick={(e) => { e.stopPropagation(); playSound('click'); setPendingReset({type: 'day', payload: dateStr}); }} className="p-1.5 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/40 hover:text-red-200 border border-red-500/30 transition-all" title="Erase Day">
                                           <Trash2 size={14} />
@@ -2940,30 +3109,34 @@
                                       {displayDates.map(dateStr => {
                                         const dayData = allData[dateStr] || {};
                                         const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
-                
+                                        const isFrozenDay = !!frozenDays[dateStr];
+             
                                         const isSplit1 = cellData.split1;
                                         const isSplit2 = cellData.split2;
-                
+             
                                         const t1Fill = getSegmentFill(cellData.t1);
                                         const t2Fill = getSegmentFill(cellData.t2);
                                         const q1Fill = getSegmentFill(cellData.q1);
                                         const q2Fill = getSegmentFill(cellData.q2);
                                         const q3Fill = getSegmentFill(cellData.q3);
                                         const q4Fill = getSegmentFill(cellData.q4);
-                
+             
                                         const activeColorId = cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2;
                                         const baseActiveId = activeColorId && activeColorId.startsWith('bp_') ? activeColorId.slice(3) : activeColorId;
                                         const glowColorHex = baseActiveId ? categories.find(c => c.id === baseActiveId)?.color : 'transparent';
                                         const cellStyle = activeColorId ? { boxShadow: `0 0 15px ${glowColorHex}20, inset 0 0 10px ${glowColorHex}10` } : {};
-                        
+                     
                                         const dayDescs = descriptions?.[dateStr]?.[hour] || {};
                                         const hasUpperNote = ['t1', 'q1', 'q2'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
                                         const hasLowerNote = ['t2', 'q3', 'q4'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
-                
+             
                                         return (
                                           <td key={`${dateStr}-${hour}`} className="align-middle p-1 md:p-1.5 border-none">
-                                            <div className="square-cell-inner mx-auto relative rounded-xl md:rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm" style={cellStyle}>
-                                              <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={`w-full h-full block ${selectedColorId !== 'lock' && !isDescriptionMode ? 'paintable-svg' : ''}`}>
+                                            <div
+                                              className={`square-cell-inner mx-auto relative rounded-xl md:rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm ${isFrozenDay ? 'cryo-day' : ''} ${dateStr === todayStr && hour === currentHour ? 'current-hour-glow' : ''}`}
+                                              style={cellStyle}
+                                            >
+                                              <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={`w-full h-full block ${selectedColorId !== 'lock' && !isDescriptionMode && !isFrozenDay ? 'paintable-svg' : ''}`}>
                                                 <defs>
                                                   {categories.map(cat => (
                                                     <pattern
@@ -3064,7 +3237,7 @@
                             ))}
                           </select>
                         </div>
-    
+ 
                         {(() => {
                           const currentMode = sysConfig.heatmapMode;
                           const modeSettings = sysConfig.perModeSettings?.[currentMode] || {
@@ -3092,7 +3265,7 @@
                                   className="w-full bg-[#0b1120] border border-red-500/50 focus:border-red-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
                                 />
                               </div>
-          
+       
                               <div>
                                 <label className="block text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">
                                   {currentMode === 'points'
@@ -3111,7 +3284,7 @@
                                   className="w-full bg-[#0b1120] border border-emerald-500/50 focus:border-emerald-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
                                 />
                               </div>
-          
+       
                               <div>
                                 <label className="block text-[10px] font-bold text-lime-400 uppercase tracking-widest mb-2">XP Per Point Earned</label>
                                 <input
@@ -3325,7 +3498,7 @@
                             <input type="color" value={cat.color} onChange={e => updateCategory(cat.id, 'color', e.target.value)} className="absolute -top-4 -left-4 w-16 h-16 cursor-pointer border-0 p-0" />
                           </div>
                           <input type="text" value={cat.name} onChange={e => updateCategory(cat.id, 'name', e.target.value)} className="flex-1 w-full sm:w-auto bg-transparent text-slate-200 font-bold text-sm md:text-base border-b border-transparent focus:border-cyan-400 outline-none transition-all py-1 min-w-[80px]" placeholder="Name" />
-    
+ 
                           <div className="flex flex-col items-center w-12 shrink-0 border-l border-white/10 pl-2">
                             <span className="text-[8px] uppercase tracking-widest text-slate-400">Goal(h)</span>
                             <input type="number" min="0" max="24" value={cat.target !== undefined ? cat.target : ''} onChange={e => updateCategory(cat.id, 'target', e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-transparent text-center text-cyan-300 font-black text-sm md:text-base outline-none border-b border-transparent focus:border-cyan-400" />
@@ -3442,7 +3615,7 @@
                             onClick={() => {
                               playSound('click');
                               if (confirm('⚠️ FULL FACTORY RESET\n\nThis will permanently delete ALL your data and restore Trackerbox to its original default state.\n\nAre you sure you want to proceed?')) {
-                                alert('⚠️ Factory reset complete. Reloading with fresh defaults...');
+                                showToast('⚠️ Factory reset complete. Reloading with fresh defaults...');
                                 localStorage.clear();
                                 window.location.reload();
                               }
@@ -3485,44 +3658,6 @@
               </section>
             </main>
           </div>
-          {/* NEW: QUICK-CAPTURE MODAL (still used, just triggered from top toolbar now) */}
-          {showQuickCapture && (
-            <div className="fixed inset-0 z-[500] bg-black/70 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowQuickCapture(false)}>
-              <div className="glass-panel w-full max-w-sm rounded-3xl p-6 border-cyan-400/50" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between mb-5">
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl">⚡</span>
-                    <h3 className="font-black text-cyan-300 text-xl tracking-widest uppercase">Quick Capture</h3>
-                  </div>
-                  <button onClick={() => setShowQuickCapture(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
-                </div>
-                <p className="text-slate-400 text-sm mb-4">Anything typed here is instantly added to <strong>Today's Mission Objectives</strong>.</p>
-                <input
-                  autoFocus
-                  type="text"
-                  value={quickInput}
-                  onChange={e => setQuickInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleQuickCapture(); }}
-                  placeholder="Buy groceries • Call mom • etc."
-                  className="w-full bg-[#0b1120] border-2 border-cyan-400/50 focus:border-cyan-400 rounded-3xl px-6 py-5 text-lg text-white font-medium outline-none placeholder:text-slate-400"
-                />
-                <div className="mt-6 flex gap-3">
-                  <button
-                    onClick={() => setShowQuickCapture(false)}
-                    className="flex-1 py-4 text-slate-400 font-bold rounded-3xl border border-white/20"
-                  >
-                    CANCEL
-                  </button>
-                  <button
-                    onClick={handleQuickCapture}
-                    className="flex-1 py-4 bg-gradient-to-r from-cyan-400 to-purple-500 text-white font-black rounded-3xl text-lg tracking-widest"
-                  >
-                    ADD TO TODAY
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </Fragment>
       );
     }
