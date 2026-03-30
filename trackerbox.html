@@ -6,10 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>Trackerbox</title>
   <link rel="manifest" href="./manifest.json">
- 
   <meta name="theme-color" content="#05070e">
   <link rel="apple-touch-icon" href="./icon-192.png">
- 
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -109,6 +107,12 @@
     }
     /* Collapsed epoch thin row */
     .collapsed-row td { height: 34px; }
+    /* Cryo-Sleep muted ice styling */
+    .cryo-day {
+      background: linear-gradient(135deg, #67e8f9 0%, #22d3ee 100%) !important;
+      opacity: 0.25;
+      box-shadow: 0 0 12px rgba(103, 232, 249, 0.3) !important;
+    }
   </style>
 </head>
 <body class="selection:bg-cyan-500/30 selection:text-cyan-100">
@@ -118,7 +122,7 @@
     // --- Audio Engine ---
     let audioCtx = null;
     let lastSoundTime = 0;
-    let isMutedGlobal = false; // Global for playSound access
+    let isMutedGlobal = false;
     const playSound = (type) => {
       if (isMutedGlobal) return;
       try {
@@ -241,6 +245,9 @@
     const LOCAL_MUTE_KEY = 'trackerbox_mute_v1';
     const LOCAL_LAST_EXPORT_KEY = 'trackerbox_last_export';
     const LOCAL_TIMER_CAT_KEY = 'trackerbox_timer_category_v1';
+    // NEW KEYS FOR REQUESTED FEATURES
+    const LOCAL_POINTS_PERIOD_KEY = 'trackerbox_points_period_v1';
+    const LOCAL_FROZEN_DAYS_KEY = 'trackerbox_frozen_days_v1';
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
       { id: 'sleep', name: 'Sleep', color: '#86efac', target: '', pointsPerHour: 0 },
@@ -428,7 +435,16 @@
         return saved || 'cyber';
       });
       // === NEW STATES FOR USER REQUESTS ===
-      const [pointsPeriod, setPointsPeriod] = useState('alltime');
+      // PERSISTENT POINTS PERIOD
+      const [pointsPeriod, setPointsPeriod] = useState(() => {
+        const saved = localStorage.getItem(LOCAL_POINTS_PERIOD_KEY);
+        return saved || 'alltime';
+      });
+      // CRYO-SLEEP (STREAK FREEZE) — date string → boolean
+      const [frozenDays, setFrozenDays] = useState(() => {
+        const saved = localStorage.getItem(LOCAL_FROZEN_DAYS_KEY);
+        return saved ? JSON.parse(saved) : {};
+      });
       const [showPointsSelector, setShowPointsSelector] = useState(false);
       const [showLevelHistory, setShowLevelHistory] = useState(false);
       // NEW: Global mute
@@ -510,6 +526,14 @@
           return prev;
         });
       }, [categories]);
+      // NEW: Persist pointsPeriod
+      useEffect(() => {
+        localStorage.setItem(LOCAL_POINTS_PERIOD_KEY, pointsPeriod);
+      }, [pointsPeriod]);
+      // NEW: Persist frozen days (Cryo-Sleep)
+      useEffect(() => {
+        localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(frozenDays));
+      }, [frozenDays]);
       // --- History (Undo/Redo) Actions ---
       const saveHistoryState = useCallback(() => {
          const newState = JSON.stringify(allDataRef.current);
@@ -968,6 +992,7 @@
           return newData;
         });
       };
+      // UPDATED: SMART MAGIC FILL – NEVER replaces already coloured triangles
       const handleMagicFill = (dateStr) => {
         saveHistoryState();
         playSound('success');
@@ -975,13 +1000,48 @@
         setAllData(prev => {
           const dayData = { ...(prev[dateStr] || {}) };
           for (let i = 0; i <= 7; i++) {
-            dayData[i] = { split1: false, split2: false, t1: sleepCat.id, t2: sleepCat.id };
+            let hourData = dayData[i] || { split1: false, split2: false, t1: null, t2: null, q1: null, q2: null, q3: null, q4: null };
+            const newHour = { ...hourData };
+            // Fill only empty triangles (real colours or blueprints are respected)
+            const fillIfEmpty = (key) => {
+              if (!newHour[key] || newHour[key].startsWith('bp_')) {
+                newHour[key] = sleepCat.id;
+              }
+            };
+            // Top half
+            if (!newHour.split1) {
+              fillIfEmpty('t1');
+            } else {
+              fillIfEmpty('q1');
+              fillIfEmpty('q2');
+            }
+            // Bottom half
+            if (!newHour.split2) {
+              fillIfEmpty('t2');
+            } else {
+              fillIfEmpty('q3');
+              fillIfEmpty('q4');
+            }
+            dayData[i] = newHour;
           }
           const newData = { ...prev, [dateStr]: dayData };
           localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newData));
           return newData;
         });
       };
+      // NEW: Cryo-Sleep toggle (Rest Day / Streak Freeze)
+      const toggleCryoDay = useCallback((dateStr) => {
+        playSound('click');
+        setFrozenDays(prev => {
+          const copy = { ...prev };
+          if (copy[dateStr]) {
+            delete copy[dateStr];
+          } else {
+            copy[dateStr] = true;
+          }
+          return copy;
+        });
+      }, []);
       // NEW: Bulk Blueprint Commitment – "Make it Real" for current log day (only up to current hour on today)
       const handleCommitBlueprint = useCallback(() => {
         if (!activeJournalDate) return;
@@ -1270,18 +1330,17 @@
         });
         setEditingDescription(null);
       }, []);
-      // --- Gamification & Streak Logic ---
+      // --- Gamification & Streak Logic (UPDATED WITH CRYO-SLEEP) ---
       const currentStreak = useMemo(() => {
         let streak = 0;
         let checkDate = new Date();
-        let checkStr = formatDateString(checkDate);
-        if (!hasFullActivity(allData[checkStr])) {
-          checkDate.setDate(checkDate.getDate() - 1);
-          checkStr = formatDateString(checkDate);
-          if (!hasFullActivity(allData[checkStr])) return 0;
-        }
         while (true) {
-          let dStr = formatDateString(checkDate);
+          const dStr = formatDateString(checkDate);
+          if (frozenDays[dStr]) {
+            // Cryo-Sleep protects streak continuity but does NOT count as a streak day
+            checkDate.setDate(checkDate.getDate() - 1);
+            continue;
+          }
           if (hasFullActivity(allData[dStr])) {
             streak++;
             checkDate.setDate(checkDate.getDate() - 1);
@@ -1290,8 +1349,8 @@
           }
         }
         return streak;
-      }, [allData]);
-      // NEW: Full streak details for modal
+      }, [allData, frozenDays]);
+      // NEW: Full streak details for modal (also updated for Cryo)
       const streakDetails = useMemo(() => {
         const fullActivityDates = Object.keys(allData)
           .filter(date => hasFullActivity(allData[date]))
@@ -1452,6 +1511,7 @@
           habitLogs: habitLogs,
           sysConfig: sysConfig,
           descriptions: descriptions,
+          frozenDays, // NEW: include cryo data in backup
           version: 9
         };
         const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
@@ -1482,6 +1542,7 @@
               if (imported.habitLogs) setHabitLogs(imported.habitLogs);
               if (imported.sysConfig) setSysConfig(imported.sysConfig);
               if (imported.descriptions) setDescriptions(imported.descriptions);
+              if (imported.frozenDays) setFrozenDays(imported.frozenDays);
               localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(imported.data));
               localStorage.setItem(LOCAL_CATEGORIES_KEY, JSON.stringify(imported.categories));
               if (imported.journal) localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(imported.journal));
@@ -1490,6 +1551,7 @@
               if (imported.habitLogs) localStorage.setItem(LOCAL_HABIT_LOGS_KEY, JSON.stringify(imported.habitLogs));
               if (imported.sysConfig) localStorage.setItem(LOCAL_SYS_CONFIG_KEY, JSON.stringify(imported.sysConfig));
               if (imported.descriptions) localStorage.setItem(LOCAL_DESCRIPTIONS_KEY, JSON.stringify(imported.descriptions));
+              if (imported.frozenDays) localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(imported.frozenDays));
               playSound('success');
               // SUCCESS PROMPT FOR UPLOAD
               alert("✅ Successfully uploaded! All data has been synchronized.");
@@ -1745,6 +1807,7 @@
           delete currentTodos[resetPayload];
           delete currentHabits[resetPayload];
           delete currentDescriptions[resetPayload];
+          delete frozenDays[resetPayload]; // also remove cryo if any
         } else if (resetType === 'week') {
           resetPayload.forEach(d => {
             delete currentData[d];
@@ -1752,6 +1815,7 @@
             delete currentTodos[d];
             delete currentHabits[d];
             delete currentDescriptions[d];
+            delete frozenDays[d];
           });
         } else if (resetType === 'month') {
           Object.keys(currentData).forEach(d => { if (d.startsWith(resetPayload)) delete currentData[d]; });
@@ -1759,17 +1823,20 @@
           Object.keys(currentTodos).forEach(d => { if (d.startsWith(resetPayload)) delete currentTodos[d]; });
           Object.keys(currentHabits).forEach(d => { if (d.startsWith(resetPayload)) delete currentHabits[d]; });
           Object.keys(currentDescriptions).forEach(d => { if (d.startsWith(resetPayload)) delete currentDescriptions[d]; });
+          Object.keys(frozenDays).forEach(d => { if (d.startsWith(resetPayload)) delete frozenDays[d]; });
         }
         setAllData(currentData);
         setJournalData(currentJournal);
         setTodosData(currentTodos);
         setHabitLogs(currentHabits);
         setDescriptions(currentDescriptions);
+        setFrozenDays({ ...frozenDays });
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentData));
         localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(currentJournal));
         localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(currentTodos));
         localStorage.setItem(LOCAL_HABIT_LOGS_KEY, JSON.stringify(currentHabits));
         localStorage.setItem(LOCAL_DESCRIPTIONS_KEY, JSON.stringify(currentDescriptions));
+        localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(frozenDays));
         setPendingReset(null);
         // SUCCESS PROMPT FOR DELETION
         if (resetType === 'day') alert('✅ Day successfully erased.');
@@ -2015,7 +2082,7 @@
                        <div className="w-full h-1.5 bg-[#0b1120] rounded-full overflow-hidden border border-white/10 shadow-inner">
                           <div className="h-full bg-gradient-to-r from-cyan-500 to-green-400 transition-all duration-500" style={{width: `${activeCompletionRate}%`}}></div>
                        </div>
-   
+  
                        {Object.values(activeCategoryHours).some(h => h > 0) && (
                          <div className="mt-3 pt-3 border-t border-white/10">
                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Category Analysis</span>
@@ -2045,11 +2112,11 @@
                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                          {activeDayTodos.map(todo => {
                            const status = todo.status || (todo.done ? 'green' : 'red');
-      
+     
                            let Icon = Square;
                            let iconClass = 'text-red-500 hover:text-red-400';
                            let textClass = 'text-slate-200';
-      
+     
                            if (status === 'yellow') {
                              Icon = MinusSquare;
                              iconClass = 'text-yellow-400 hover:text-yellow-300';
@@ -2070,7 +2137,7 @@
                                    <Trash2 size={16}/>
                                  </button>
                                </div>
-          
+         
                                {status === 'yellow' && (
                                  <div className="pl-8 pr-6 w-full flex items-center gap-3">
                                    <div className="flex-1">
@@ -2121,11 +2188,11 @@
                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                          {activeDayHabits.map((habit) => {
                            const status = habit.status || 'red';
-      
+     
                            let Icon = Square;
                            let iconClass = 'text-red-500 hover:text-red-400';
                            let textClass = 'text-slate-200';
-      
+     
                            if (status === 'yellow') {
                              Icon = MinusSquare;
                              iconClass = 'text-yellow-400 hover:text-yellow-300';
@@ -2150,7 +2217,7 @@
                                    <Trash2 size={16}/>
                                  </button>
                                </div>
-          
+         
                                {status === 'yellow' && (
                                  <div className="pl-8 pr-6 w-full flex items-center gap-3">
                                    <div className="flex-1">
@@ -2234,7 +2301,7 @@
                     <h3 className="font-black text-purple-300 uppercase tracking-widest text-xl">Level &amp; XP Info</h3>
                     <button onClick={() => setShowLevelHistory(false)} className="text-slate-400 hover:text-white"><X size={26} /></button>
                   </div>
-         
+        
                   <div className="flex justify-center items-center gap-6 mb-8">
                     <Trophy size={64} className="text-purple-400 drop-shadow-[0_0_20px_rgba(168,85,247,0.6)]" />
                     <div className="text-center">
@@ -2368,6 +2435,7 @@
                          <li>Sweep Completed + Migrate Yesterday buttons moved to top toolbar (work on ToDo List; both accessible together)</li>
                          <li>“Make it Real” bulk blueprint button in top toolbar</li>
                          <li>Live progress bar + category breakdown</li>
+                         <li><strong>Cryo-Sleep</strong> – mark any day as rest day (protects streak, muted ice color)</li>
                        </ul>
                      </div>
                      {/* 6. Habits – REORDER MOVED + NEW STREAKS */}
@@ -2389,6 +2457,7 @@
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
                        <h3 className="font-bold text-lime-400 uppercase mb-3 border-b border-lime-500/30 pb-2 flex items-center gap-2"><span className="text-xl">🏆</span> XP, Levels &amp; Streaks</h3>
                        <p>Earn XP from hours, points, todos, habits, streaks. Beautiful rank titles. Clickable PTS display with period selector (daily/weekly/monthly/yearly/all-time). <strong>Click the Streak counter in the header</strong> to open full streak history: current streak, longest streak with dates, and list of all streak periods.</p>
+                       <p className="text-xs text-emerald-300 mt-3">NEW: Cryo-Sleep (Rest Day) – one sick day no longer ruins your streak. Mark a day as Cryo-Sleep (muted ice color) to protect your multiplier.</p>
                      </div>
                      {/* 10. Data & Storage + QoL */}
                      <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
@@ -2542,7 +2611,6 @@
             )}
             {/* === QUICK-CAPTURE MOVED TO HEADER (LVL / PTS / STREAK SECTION) === */}
             {/* NO MORE FLOATING BUTTON — now integrated in top stats bar to prevent any overlap on ALL devices */}
-
             {/* Header */}
             <header className="glass-panel sticky top-0 z-50 border-b border-white/10 rounded-none shadow-none">
               <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2622,7 +2690,6 @@
                       {currentStreak} <span className="hidden sm:inline">Streak</span>
                     </span>
                   </div>
-
                   {/* === QUICK CAPTURE + BUTTON — MOVED HERE (inside LVL/PTS/STREAK section) === */}
                   <button
                     onClick={() => { playSound('click'); setShowQuickCapture(true); }}
@@ -2631,7 +2698,6 @@
                   >
                     +
                   </button>
-
                   <div className="flex gap-2">
                     {/* NEW: Global Mute Icon */}
                     <button
@@ -2708,19 +2774,20 @@
                             <tr>
                               <th className="w-[45px] md:w-[60px] sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
                               <th className="w-[50px] md:w-[65px] sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
-         
+        
                               {displayDates.map((dateStr) => {
                                 const isToday = dateStr === todayStr;
+                                const isCryo = frozenDays[dateStr]; // NEW: Cryo-Sleep flag
                                 const d = new Date(dateStr);
                                 const hasJournal = journalData[dateStr] && journalData[dateStr].trim().length > 0;
-           
+          
                                 const dayTodos = todosData[dateStr] || [];
                                 const dayHabits = (habitLogs[dateStr] || []).filter(h => !h.deleted);
-           
+          
                                 const totalTasks = dayTodos.length + dayHabits.length;
                                 const completedTasks = dayTodos.filter(t => t.status === 'green' || t.done).length + dayHabits.filter(h => h.status === 'green').length;
                                 const completionRate = totalTasks > 0 ? completedTasks / totalTasks : 0;
-           
+          
                                 const hasUncompletedTodos = dayTodos.length > dayTodos.filter(t => t.status === 'green' || t.done).length;
                                 const hasUncompletedHabits = dayHabits.length > dayHabits.filter(h => h.status === 'green').length;
                                 let headerBg = isToday ? 'bg-cyan-500/20' : 'bg-white/5';
@@ -2745,6 +2812,12 @@
                                       headerShadow = 'shadow-[0_0_15px_rgba(248,113,113,0.4)]';
                                   }
                                 }
+                                // CRYO-SLEEP: muted ice styling (overrides other colors)
+                                if (isCryo) {
+                                  headerBg = 'cryo-day';
+                                  headerBorder = 'border-sky-300';
+                                  headerShadow = 'shadow-[0_0_12px_rgba(103,232,249,0.4)]';
+                                }
                                 return (
                                   <th key={dateStr} className="p-1 md:p-2 text-center relative z-20 align-bottom border-none group/th h-[80px]">
                                     <div onClick={() => { playSound('click'); setActiveJournalDate(dateStr); }} className={`cursor-pointer flex flex-col items-center justify-center py-2 px-1 md:p-3 rounded-2xl border ${headerBg} ${headerBorder} ${headerShadow} mx-auto w-[52px] md:w-[60px] h-[60px] md:h-[65px] transition-all relative`}>
@@ -2754,11 +2827,12 @@
                                       <span className={`text-xl md:text-2xl font-black leading-none mt-1 ${isToday ? 'text-cyan-100 neon-text' : 'text-slate-200 group-hover/th:text-white'}`}>
                                         {d.getDate()}
                                       </span>
-                 
+                
                                       <div className="absolute -top-1 -right-1 flex gap-1">
                                         {hasUncompletedHabits && <div className="w-3 h-3 bg-emerald-400 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" title="Pending Routines"></div>}
                                         {hasUncompletedTodos && <div className="w-3 h-3 bg-cyan-400 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse" title="Pending Objectives"></div>}
                                         {hasJournal && <div className="w-3 h-3 bg-purple-400 rounded-full shadow-[0_0_8px_rgba(192,132,252,0.8)] animate-pulse" title="Journal Entry"></div>}
+                                        {isCryo && <div className="w-3 h-3 bg-sky-300 rounded-full shadow-[0_0_8px_rgba(103,232,249,0.8)] animate-pulse" title="Cryo-Sleep (Rest Day)"></div>}
                                       </div>
                                     </div>
                                     <div className="absolute bottom-[100%] pb-2 left-1/2 -translate-x-1/2 flex gap-1.5 opacity-0 invisible group-hover/th:opacity-100 group-hover/th:visible transition-all z-[200] drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]">
@@ -2774,6 +2848,14 @@
                                             <Clipboard size={14}/>
                                           </button>
                                         )}
+                                        {/* NEW: Cryo-Sleep toggle button */}
+                                        <button 
+                                          onClick={(e) => { e.stopPropagation(); toggleCryoDay(dateStr); }} 
+                                          className={`p-1.5 rounded-lg border transition-all ${frozenDays[dateStr] ? 'bg-sky-400 text-[#0b1120] border-sky-300' : 'bg-sky-500/20 text-sky-300 border-sky-500/30 hover:bg-sky-500/40 hover:text-sky-100'}`} 
+                                          title={frozenDays[dateStr] ? "Remove Cryo-Sleep" : "Mark as Cryo-Sleep (Rest Day)"}
+                                        >
+                                          ❄️
+                                        </button>
                                         <button onClick={(e) => { e.stopPropagation(); playSound('click'); setPendingReset({type: 'day', payload: dateStr}); }} className="p-1.5 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/40 hover:text-red-200 border border-red-500/30 transition-all" title="Erase Day">
                                           <Trash2 size={14} />
                                         </button>
@@ -2858,26 +2940,26 @@
                                       {displayDates.map(dateStr => {
                                         const dayData = allData[dateStr] || {};
                                         const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
-                 
+                
                                         const isSplit1 = cellData.split1;
                                         const isSplit2 = cellData.split2;
-                 
+                
                                         const t1Fill = getSegmentFill(cellData.t1);
                                         const t2Fill = getSegmentFill(cellData.t2);
                                         const q1Fill = getSegmentFill(cellData.q1);
                                         const q2Fill = getSegmentFill(cellData.q2);
                                         const q3Fill = getSegmentFill(cellData.q3);
                                         const q4Fill = getSegmentFill(cellData.q4);
-                 
+                
                                         const activeColorId = cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2;
                                         const baseActiveId = activeColorId && activeColorId.startsWith('bp_') ? activeColorId.slice(3) : activeColorId;
                                         const glowColorHex = baseActiveId ? categories.find(c => c.id === baseActiveId)?.color : 'transparent';
                                         const cellStyle = activeColorId ? { boxShadow: `0 0 15px ${glowColorHex}20, inset 0 0 10px ${glowColorHex}10` } : {};
-                         
+                        
                                         const dayDescs = descriptions?.[dateStr]?.[hour] || {};
                                         const hasUpperNote = ['t1', 'q1', 'q2'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
                                         const hasLowerNote = ['t2', 'q3', 'q4'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
-                 
+                
                                         return (
                                           <td key={`${dateStr}-${hour}`} className="align-middle p-1 md:p-1.5 border-none">
                                             <div className="square-cell-inner mx-auto relative rounded-xl md:rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm" style={cellStyle}>
@@ -2960,7 +3042,6 @@
                 </button>
                 {sectionsOpen.analytics && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
- 
                     <div className="mb-8 bg-white/5 border border-white/10 rounded-3xl p-6">
                       <h3 className="font-bold text-pink-400 uppercase tracking-widest text-xs mb-5 border-b border-pink-500/30 pb-3">HEATMAP VISUALIZATION CONTROLS</h3>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -2983,7 +3064,7 @@
                             ))}
                           </select>
                         </div>
-     
+    
                         {(() => {
                           const currentMode = sysConfig.heatmapMode;
                           const modeSettings = sysConfig.perModeSettings?.[currentMode] || {
@@ -3011,7 +3092,7 @@
                                   className="w-full bg-[#0b1120] border border-red-500/50 focus:border-red-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
                                 />
                               </div>
-           
+          
                               <div>
                                 <label className="block text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-2">
                                   {currentMode === 'points'
@@ -3030,7 +3111,7 @@
                                   className="w-full bg-[#0b1120] border border-emerald-500/50 focus:border-emerald-400 text-slate-200 font-bold rounded-2xl px-4 py-3 outline-none text-base"
                                 />
                               </div>
-           
+          
                               <div>
                                 <label className="block text-[10px] font-bold text-lime-400 uppercase tracking-widest mb-2">XP Per Point Earned</label>
                                 <input
@@ -3050,7 +3131,6 @@
                         })()}
                       </div>
                     </div>
- 
                     <ChronoSpectralHeatmap
                       statYear={statYear}
                       allData={allData}
@@ -3245,7 +3325,7 @@
                             <input type="color" value={cat.color} onChange={e => updateCategory(cat.id, 'color', e.target.value)} className="absolute -top-4 -left-4 w-16 h-16 cursor-pointer border-0 p-0" />
                           </div>
                           <input type="text" value={cat.name} onChange={e => updateCategory(cat.id, 'name', e.target.value)} className="flex-1 w-full sm:w-auto bg-transparent text-slate-200 font-bold text-sm md:text-base border-b border-transparent focus:border-cyan-400 outline-none transition-all py-1 min-w-[80px]" placeholder="Name" />
-     
+    
                           <div className="flex flex-col items-center w-12 shrink-0 border-l border-white/10 pl-2">
                             <span className="text-[8px] uppercase tracking-widest text-slate-400">Goal(h)</span>
                             <input type="number" min="0" max="24" value={cat.target !== undefined ? cat.target : ''} onChange={e => updateCategory(cat.id, 'target', e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-transparent text-center text-cyan-300 font-black text-sm md:text-base outline-none border-b border-transparent focus:border-cyan-400" />
