@@ -23,6 +23,59 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
+    /* Fluid Loading Screen */
+    #loading-screen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: #05070e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+    #loading-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+    .loader-logo {
+      font-size: 2.5rem;
+      font-weight: 900;
+      color: #22d3ee;
+      text-transform: uppercase;
+      letter-spacing: 0.2em;
+      margin-bottom: 2rem;
+      text-shadow: 0 0 20px rgba(34, 211, 238, 0.5);
+      animation: pulse 2s infinite ease-in-out;
+    }
+    .loader-bar-container {
+      width: 200px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+    .loader-bar {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, #22d3ee, #a855f7);
+      position: absolute;
+      left: -100%;
+      animation: loading 1.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @keyframes loading {
+      0% { left: -100%; }
+      50% { left: 0; }
+      100% { left: 100%; }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(0.98); }
+    }
+
     /* Futuristic Base & Variables */
     :root {
       --bg-color: #05070e;
@@ -162,6 +215,12 @@
   </style>
 </head>
 <body class="selection:bg-cyan-500/30 selection:text-cyan-100">
+  <div id="loading-screen">
+    <div class="loader-logo">Trackerbox</div>
+    <div class="loader-bar-container">
+      <div class="loader-bar"></div>
+    </div>
+  </div>
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useLayoutEffect, useMemo, useCallback, Fragment, useRef } = React;
@@ -529,6 +588,7 @@
         } catch (e) {}
         return settingsDraft.defaultFocusMode;
       });
+      const [focusModeDate, setFocusModeDate] = useState(() => formatDateString(new Date()));
       const toggleSection = (sec) => {
          playSound('click');
          setSectionsOpen(prev => ({ ...prev, [sec]: !prev[sec] }));
@@ -1706,6 +1766,20 @@
           }
           if (key === ' ') {
             e.preventDefault();
+            // NEW: If any modal/window is open, close it on spacebar (if typing is not selected)
+            if (activeJournalDate || showSettingsModal || showHelp || showSearchModal || showQuickCapture || showBlueprintManagerModal || showStreakModal || showPointsSelector || showLevelHistory) {
+              playSound('click');
+              setActiveJournalDate(null);
+              setShowSettingsModal(false);
+              setShowHelp(false);
+              setShowSearchModal(false);
+              setShowQuickCapture(false);
+              setShowBlueprintManagerModal(false);
+              setShowStreakModal(false);
+              setShowPointsSelector(false);
+              setShowLevelHistory(false);
+              return;
+            }
             if (selectedColorId === 'lock') {
               playSound('click');
               setActiveJournalDate(todayStr);
@@ -1738,7 +1812,7 @@
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-      }, [categories, handleUndo, handleRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour]);
+      }, [categories, handleUndo, handleRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showStreakModal, showPointsSelector, showLevelHistory]);
 
       // NEW: Global Search modal focus + Escape to close
       useEffect(() => {
@@ -1821,7 +1895,7 @@
       }, [activeJournalDate, getAdjacentDateInCurrentWeek]);
       const habitZoneAvailableWeeks = useMemo(() => getWeeksInMonth(habitZoneWeekMonth), [habitZoneWeekMonth]);
       // === NEW: Compute display dates for FOCUS MODE ===
-      const displayDates = isFocusMode ? [todayStr] : currentWeekDates;
+      const displayDates = isFocusMode ? [focusModeDate] : currentWeekDates;
       const habitZoneDates = useMemo(() => {
         if (habitZoneMode === 'week') return habitZoneAvailableWeeks[habitZoneWeekIndex]?.dates || [];
         if (habitZoneMode === 'month') {
@@ -1887,6 +1961,11 @@
       }, [habitZoneWeekMonth, habitZoneAvailableWeeks, todayStr]);
       useEffect(() => {
         // Faster startup: paint UI immediately, then hydrate large JSON in a queued task.
+        const timer = setTimeout(() => {
+          const loader = document.getElementById('loading-screen');
+          if (loader) loader.classList.add('hidden');
+        }, 800);
+
         setIsLoaded(true);
         setTimeout(() => {
           try {
@@ -2908,36 +2987,6 @@
         });
       };
       // --- NEW: Sweep Completed (now works on BOTH todos AND habits) ---
-      const handleSweepCompleted = () => {
-        if (!activeJournalDate) return;
-        playSound('click');
-        // Sweep ToDo List (existing logic)
-        setTodosData(prev => {
-          const dayTodos = prev[activeJournalDate] || [];
-          const incomplete = dayTodos.filter(t => !(t.status === 'green' || t.done));
-          const completed = dayTodos.filter(t => t.status === 'green' || t.done);
-          const newDay = [...incomplete, ...completed];
-          const updated = { ...prev, [activeJournalDate]: newDay };
-          localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
-          return updated;
-        });
-        // NEW: Sweep Habit Logs too (reorder completed to bottom, keep deleted at top)
-        setHabitLogs(prev => {
-          const currentHabits = prev[activeJournalDate] || [];
-          const nonDeleted = currentHabits.filter(h => !h.deleted);
-          const incomplete = nonDeleted.filter(h => h.status !== 'green');
-          const completed = nonDeleted.filter(h => h.status === 'green');
-          const reordered = [...incomplete, ...completed];
-          const updatedHabits = [
-            ...currentHabits.filter(h => h.deleted),
-            ...reordered
-          ];
-          const updated = { ...prev, [activeJournalDate]: updatedHabits };
-          localStorage.setItem(LOCAL_HABIT_LOGS_KEY, JSON.stringify(updated));
-          return updated;
-        });
-        showToast('✅ Completed items swept to bottom');
-      };
       // --- NEW: Migrate Unfinished Tasks from yesterday (now from top of Captain's Log – affects ToDo List) ---
       const handleMigrateUnfinishedTasks = () => {
         if (!activeJournalDate) return;
@@ -3276,6 +3325,7 @@
       const handleDownloadWeekJournalPdf = async () => {
         try {
           playSound('click');
+          alert("Generating PDF, please wait...");
           const weekDates = (availableWeeks[selectedWeekIndex]?.dates || []);
           if (!weekDates.length) {
             showToast('❌ No week selected to export', 'error');
@@ -3981,8 +4031,26 @@
       }
       const activeTimerCategory = categories.find(c => c.id === timer.categoryId) || categories[0];
       // --- Compute Active Day Progress Header ---
-      const activeDayTodos = todosData[activeJournalDate] || [];
-      const activeDayHabits = (habitLogs[activeJournalDate] || []).filter(h => !h.deleted);
+      const activeDayTodosRaw = todosData[activeJournalDate] || [];
+      const activeDayHabitsRaw = (habitLogs[activeJournalDate] || []).filter(h => !h.deleted);
+
+      // NEW: Green ticked habits/todos go to the very bottom automatically.
+      const activeDayTodos = [...activeDayTodosRaw].sort((a, b) => {
+        const statusA = a.status || (a.done ? 'green' : 'red');
+        const statusB = b.status || (b.done ? 'green' : 'red');
+        if (statusA === 'green' && statusB !== 'green') return 1;
+        if (statusA !== 'green' && statusB === 'green') return -1;
+        return 0; // maintain original relative order for others
+      });
+
+      const activeDayHabits = [...activeDayHabitsRaw].sort((a, b) => {
+        const statusA = a.status || 'red';
+        const statusB = b.status || 'red';
+        if (statusA === 'green' && statusB !== 'green') return 1;
+        if (statusA !== 'green' && statusB === 'green') return -1;
+        return 0; // maintain original relative order for others
+      });
+
       const activeTotalTasks = activeDayTodos.length + activeDayHabits.length;
       const activeCompletedTasks = activeDayTodos.filter(t => t.status === 'green' || t.done).length + activeDayHabits.filter(h => h.status === 'green').length;
       const activeCompletionRate = activeTotalTasks > 0 ? (activeCompletedTasks / activeTotalTasks) * 100 : 0;
@@ -4270,14 +4338,8 @@
                         </div>
                        </div>
                      </div>
-                     {/* QoL Toolbar – Sweep + Migrate */}
+                     {/* QoL Toolbar – Migrate */}
                      <div className="flex items-center gap-2 flex-wrap">
-                       <button
-                         onClick={handleSweepCompleted}
-                         className="text-xs px-4 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-2xl font-bold uppercase tracking-widest transition-all flex items-center gap-1"
-                       >
-                         <span>Sweep Completed</span>
-                       </button>
                        <button
                          onClick={handleMigrateUnfinishedTasks}
                          className="text-xs px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-2xl font-bold uppercase tracking-widest transition-all flex items-center gap-1"
@@ -4530,8 +4592,9 @@
                      {/* JOURNAL REWORKED: SINGLE FULL JOURNAL SCREEN – NO PREVIEW, NO TWO SCREENS */}
                     <div className={`order-2 flex flex-col flex-1 border border-purple-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink ${journalSavePulseTick ? 'journal-save-pulse' : ''}`}>
                        <div className="bg-purple-500/10 p-3 border-b border-purple-500/30 flex items-center justify-between">
-                        <span className="font-bold text-purple-400 uppercase tracking-widest text-xs">Captain's Journal</span>
+                        <span className="font-bold text-purple-400 uppercase tracking-widest text-xs">Journal</span>
                         <div className="flex items-center gap-3">
+                          <div className="mr-4"></div> {/* Extra space after journal text */}
                           <button
                             onClick={() => insertTimestampIntoTextarea(activeJournalDate, journalTextareaRef.current)}
                             className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap"
@@ -5532,9 +5595,24 @@
                         {/* Focus Mode: show 4 epochs side-by-side (if space), each with hour labels */}
                         {isFocusMode ? (
                           <div className="w-full min-w-0">
-                            <div className="mb-4 md:mb-5 flex justify-center">
+                            <div className="mb-4 md:mb-5 flex flex-col items-center gap-4">
+                              <div className="flex items-center gap-3">
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Select Day:</span>
+                                <input
+                                  type="date"
+                                  value={focusModeDate}
+                                  onChange={(e) => { playSound('click'); setFocusModeDate(e.target.value); }}
+                                  className="bg-[#0b1120] text-slate-200 rounded-xl border border-lime-500/30 px-3 py-1.5 font-bold text-sm outline-none focus:border-lime-400"
+                                />
+                                <button
+                                  onClick={() => { playSound('click'); setFocusModeDate(todayStr); }}
+                                  className="px-3 py-1.5 bg-lime-500/20 hover:bg-lime-500/30 text-lime-300 rounded-xl border border-lime-500/30 text-xs font-bold transition-all"
+                                >
+                                  TODAY
+                                </button>
+                              </div>
                               {(() => {
-                                const dateStr = todayStr;
+                                const dateStr = focusModeDate;
                                 const isCryo = frozenDays[dateStr];
                                 const d = new Date(dateStr);
                                 const hasJournal = journalData[dateStr] && journalData[dateStr].trim().length > 0;
@@ -5610,12 +5688,14 @@
                                   </button>
 
                                   {!collapsedEpochs[section.id] ? (
-                                    <div className="p-3 md:p-4">
+                                    <div className="p-3 md:p-4 bg-[#05070e]/40">
                                       <div className="flex items-start gap-2">
-                                        <div className="shrink-0 w-8 md:w-10">
-                                          <div className="sticky top-20 flex flex-col items-center gap-1 bg-white/5 border border-white/10 rounded-2xl p-1">
-                                            <button onClick={handleUndo} disabled={past.length === 0} className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${past.length > 0 ? 'border-white/20 text-slate-200 bg-white/5 hover:bg-white/10' : 'border-white/10 text-slate-600 bg-white/5 opacity-50 cursor-not-allowed'}`} title="Undo">↩</button>
-                                            <button onClick={handleRedo} disabled={future.length === 0} className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${future.length > 0 ? 'border-white/20 text-slate-200 bg-white/5 hover:bg-white/10' : 'border-white/10 text-slate-600 bg-white/5 opacity-50 cursor-not-allowed'}`} title="Redo">↪</button>
+                                        <div className="shrink-0 w-10 md:w-12">
+                                          <div className="sticky top-20 flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
+                                            <button onClick={handleUndo} disabled={past.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${past.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
+                                            <button onClick={handleRedo} disabled={future.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${future.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
+                                            <div className="w-full h-px bg-white/10 my-1"></div>
+                                            {/* Compact Plan Toggle (P) */}
                                             <button
                                               onClick={() => {
                                                 playSound('click');
@@ -5623,11 +5703,12 @@
                                                 setIsBlueprintMode(newMode);
                                                 showToast(newMode ? '📐 Plan Mode ON (hatched future planning)' : '📐 Plan Mode OFF');
                                               }}
-                                              className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`}
-                                              title="Plan Mode"
+                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full text-xs font-black tracking-widest ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                              title={isBlueprintMode ? "Plan Mode ON — hatched future planning" : "Toggle Plan Mode"}
                                             >
-                                              P
+                                              <Sparkles size={16} />
                                             </button>
+                                            {/* Compact Notes Toggle – N */}
                                             <button
                                               onClick={() => {
                                                 playSound('click');
@@ -5635,11 +5716,12 @@
                                                 setIsDescriptionMode(newMode);
                                                 showToast(newMode ? '📝 Notes Mode ON' : '📝 Notes Mode OFF');
                                               }}
-                                              className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`}
-                                              title="Notes Mode"
+                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                              title={isDescriptionMode ? "Notes Mode ON — click triangles to edit notes" : "Toggle Notes Mode"}
                                             >
-                                              N
+                                              <FileText size={16} />
                                             </button>
+                                            {/* FOCUS MODE TOGGLE (F button in palette) */}
                                             <button
                                               onClick={() => {
                                                 playSound('click');
@@ -5647,30 +5729,25 @@
                                                 setIsFocusMode(newMode);
                                                 showToast(newMode ? '🔍 Focus Mode ON (today only)' : '🔍 Focus Mode OFF');
                                               }}
-                                              className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`}
-                                              title="Focus Mode"
+                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                              title={isFocusMode ? "Focus Mode ON — only today visible" : "Toggle Focus Mode (today only)"}
                                             >
-                                              <Activity size={14} />
+                                              <Activity size={16} />
                                             </button>
+                                            <div className="w-full h-px bg-white/10 my-1"></div>
                                             <button
-                                              onClick={() => {
-                                                playSound('click');
-                                                const next = !isScissorMode;
-                                                setIsScissorMode(next);
-                                                showToast(next ? '✂️ Scissor Mode ON (splits enabled)' : '✂️ Scissor Mode OFF');
-                                              }}
-                                              className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${isScissorMode ? 'border-rose-400 bg-rose-500/20 text-rose-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`}
-                                              title="Scissor Mode"
+                                              onClick={() => handleColorSelect('lock')}
+                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100 shadow-[0_0_18px_rgba(239,68,68,0.45)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                              title="Lock"
                                             >
-                                              ✂️
+                                              <Lock size={14} />
                                             </button>
-                                            <button onClick={() => handleColorSelect('lock')} className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Lock">L</button>
-                                            <div className="w-full h-px bg-white/10 my-0.5"></div>
+                                            <div className="w-full h-px bg-white/10 my-1"></div>
                                             {categories.map(cat => (
                                               <button
-                                                key={`focus-rail-${section.id}-${cat.id}`}
+                                                key={cat.id}
                                                 onClick={() => handleColorSelect(cat.id)}
-                                                className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border transition-all ${selectedColorId === cat.id ? 'border-white/70 scale-105' : 'border-white/20'}`}
+                                                className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110 border-white/60' : 'border-white/20'}`}
                                                 style={getPaletteButtonStyle(cat, selectedColorId === cat.id)}
                                                 title={cat.name}
                                               />
@@ -5679,7 +5756,7 @@
                                         </div>
                                         <div className="flex-1 space-y-2">
                                       {section.hours.map((hour) => {
-                                        const dateStr = todayStr;
+                                        const dateStr = focusModeDate;
                                         const dayData = allData[dateStr] || {};
                                         const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
                                         const isFrozenDay = !!frozenDays[dateStr];
@@ -5713,7 +5790,7 @@
                                             <div className="flex-1 flex justify-center min-w-0">
                                               <div
                                                 id={`kbdcell-${dateStr}-${hour}`}
-                                                className={`square-cell-inner relative rounded-xl md:rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm ${isFrozenDay ? 'cryo-day' : ''} ${dateStr === todayStr && hour === currentHour ? 'current-hour-glow' : ''}`}
+                                                className={`square-cell-inner relative rounded-xl md:rounded-2xl overflow-hidden bg-[#0b1120]/50 border border-white/10 transition-transform duration-100 hover:scale-105 z-10 hover:z-20 backdrop-blur-sm ${isFrozenDay ? 'cryo-day' : ''} ${dateStr === focusModeDate && hour === currentHour ? 'current-hour-glow' : ''}`}
                                                 style={cellStyle}
                                               >
                                                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={`w-full h-full block ${selectedColorId !== 'lock' && !isDescriptionMode && !isFrozenDay ? 'paintable-svg' : ''}`}>
@@ -6602,20 +6679,21 @@
                             <div className="min-w-max grid grid-rows-7 grid-flow-col gap-1">
                               {habitZoneYearCells.map((dateStr, idx) => {
                                 if (!dateStr) return <div key={`hz-empty-${idx}`} className="w-4 h-4 rounded-sm bg-white/10"></div>;
+                                const isFuture = dateStr > todayStr;
                                 const statuses = (habitLogs[dateStr] || []).filter(h => !h.deleted).map(h => h.status || 'red');
-                                const color = statuses.length === 0
+                                const color = (statuses.length === 0 || isFuture)
                                   ? 'rgba(148,163,184,0.2)'
                                   : statuses.every(s => s === 'green')
                                   ? '#4ade80'
                                   : statuses.some(s => s === 'yellow')
                                   ? '#fbbf24'
                                   : '#fb7185';
-                                const title = `${getDisplayDate(dateStr)} • ${statuses.length === 0 ? 'No habit logs' : statuses.join(', ').toUpperCase()}`;
+                                const title = isFuture ? `${getDisplayDate(dateStr)} (Future)` : `${getDisplayDate(dateStr)} • ${statuses.length === 0 ? 'No habit logs' : statuses.join(', ').toUpperCase()}`;
                                 return (
                                   <button
                                     key={dateStr}
-                                    onClick={() => setActiveJournalDate(dateStr)}
-                                    className="w-4 h-4 rounded-sm border border-white/10 transition-transform hover:scale-110"
+                                    onClick={() => { if (!isFuture) setActiveJournalDate(dateStr); }}
+                                    className={`w-4 h-4 rounded-sm border border-white/10 transition-transform ${isFuture ? 'cursor-not-allowed opacity-50' : 'hover:scale-110'}`}
                                     style={{ backgroundColor: color }}
                                     title={title}
                                   />
