@@ -614,6 +614,8 @@
       const [isBlueprintMode, setIsBlueprintMode] = useState(false);
       // NEW: Description Mode + Descriptions storage
       const [isDescriptionMode, setIsDescriptionMode] = useState(false);
+      // NEW: Scissor mode (splits only when enabled)
+      const [isScissorMode, setIsScissorMode] = useState(false);
       const [descriptions, setDescriptions] = useState(() => {
         const saved = localStorage.getItem(LOCAL_DESCRIPTIONS_KEY);
         return saved ? JSON.parse(saved) : {};
@@ -1707,6 +1709,17 @@
         setResetWeekIdx(weekIdx !== -1 ? weekIdx : 0);
       }, [resetWeekMonth, resetAvailableWeeks, todayStr]);
       const currentWeekDates = availableWeeks[selectedWeekIndex]?.dates || [];
+
+      // Captain's Log navigation helpers (prev/next day within current week)
+      const getAdjacentDateInCurrentWeek = useCallback((dir) => {
+        if (!activeJournalDate) return null;
+        const week = availableWeeks.find(w => w.dates.includes(activeJournalDate)) || availableWeeks[selectedWeekIndex];
+        const dates = week?.dates || [];
+        const idx = dates.indexOf(activeJournalDate);
+        if (idx === -1) return null;
+        const next = dates[idx + (dir === 'next' ? 1 : -1)];
+        return next || null;
+      }, [activeJournalDate, availableWeeks, selectedWeekIndex]);
       const habitZoneAvailableWeeks = useMemo(() => getWeeksInMonth(habitZoneWeekMonth), [habitZoneWeekMonth]);
       // === NEW: Compute display dates for FOCUS MODE ===
       const displayDates = isFocusMode ? [todayStr] : currentWeekDates;
@@ -3444,6 +3457,7 @@
       }, [isDragging, selectedColorId, isDescriptionMode, isBlueprintMode, getTargetValue, handleUpdateSegment, allData, frozenDays]);
       const handleSplitToggle = (dateStr, hour, half, e) => {
         if (isDescriptionMode) return;
+        if (!isScissorMode) return;
         // NEW: Cryo-Sleep disables ALL input
         if (frozenDays[dateStr]) return;
         e.preventDefault();
@@ -4051,7 +4065,33 @@
                        <FileText size={28} className="text-purple-400" />
                        <div>
                          <h2 className="text-xl md:text-2xl font-black uppercase text-white leading-none">Captain's Log</h2>
-                         <span className="text-purple-400 text-xs md:text-sm font-bold tracking-widest">{getDisplayDate(activeJournalDate)}</span>
+                        <div className="flex items-center gap-2 mt-1">
+                          <button
+                            onClick={() => {
+                              const prev = getAdjacentDateInCurrentWeek('prev');
+                              if (!prev) return;
+                              playSound('click');
+                              setActiveJournalDate(prev);
+                            }}
+                            className="px-2 py-1 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-black transition-all"
+                            title="Previous day"
+                          >
+                            &lt;
+                          </button>
+                          <span className="text-purple-400 text-xs md:text-sm font-bold tracking-widest">{getDisplayDate(activeJournalDate)}</span>
+                          <button
+                            onClick={() => {
+                              const next = getAdjacentDateInCurrentWeek('next');
+                              if (!next) return;
+                              playSound('click');
+                              setActiveJournalDate(next);
+                            }}
+                            className="px-2 py-1 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-black transition-all"
+                            title="Next day"
+                          >
+                            &gt;
+                          </button>
+                        </div>
                        </div>
                      </div>
                      {/* QoL Toolbar – Sweep + Migrate */}
@@ -4542,78 +4582,85 @@
                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowHelp(false)}>
                  <div className="glass-panel animate-modal border-cyan-500/50 shadow-[0_0_30px_rgba(34,211,238,0.2)] rounded-3xl p-6 md:p-8 max-w-3xl w-full relative max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                    <button onClick={() => { playSound('click'); setShowHelp(false); }} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
-                   <div className="flex items-center gap-3 mb-6 shrink-0">
-                     <Info size={32} className="text-cyan-400" />
-                     <h2 className="text-2xl font-black uppercase text-white">System Protocol — Every Single Feature + What’s New</h2>
-                   </div>
-                  <div className="space-y-6 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
+                  <div className="flex items-center gap-3 mb-6 shrink-0">
+                    <Info size={32} className="text-cyan-400" />
+                    <h2 className="text-2xl font-black uppercase text-white">System Protocol — Trackerbox A→Z</h2>
+                  </div>
+                 <div className="space-y-6 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
                     <div className="bg-emerald-900/30 p-5 rounded-2xl border border-emerald-400/30">
-                      <h3 className="font-bold text-emerald-300 uppercase mb-3">Quick Start</h3>
+                      <h3 className="font-bold text-emerald-300 uppercase mb-3">A) The Big Idea</h3>
                       <ul className="text-xs space-y-2 list-disc pl-5">
-                        <li>Pick a category color, then click triangles in the 24-hour grid to log your time.</li>
-                        <li>Use day header tools (copy/paste, cryo, presets, erase) from hover menu.</li>
-                        <li>Open Captain&apos;s Log by clicking any day header for ToDo, habits, and journal.</li>
+                        <li><strong>Grid</strong> = your day in time triangles (log what you did).</li>
+                        <li><strong>Categories</strong> = your “why” (work, study, fitness…) with colors + points per hour.</li>
+                        <li><strong>Captain&apos;s Log</strong> = your day report (Tasks + Habits + Journal).</li>
+                        <li><strong>Notes</strong> = text tied to a specific triangle (time slot).</li>
                       </ul>
                     </div>
+
                     <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-cyan-300 uppercase mb-3 border-b border-cyan-500/30 pb-2">Grid + Planning</h3>
+                      <h3 className="font-bold text-cyan-300 uppercase mb-3 border-b border-cyan-500/30 pb-2">B) Grid (Time Logging)</h3>
                       <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>24 hours/day, split into 30m (or 15m when split mode is enabled on halves).</li>
-                        <li>Plan Mode (<strong>P</strong>) paints blueprint triangles (`bp_` values).</li>
-                        <li>Make it Real converts planned blocks to real values.</li>
-                        <li>Focus Mode (<strong>F</strong>) shows day in 4 six-hour blocks with side toolbar.</li>
-                        <li>Keyboard cursor supports arrows + space paint toggle.</li>
+                        <li>Each hour is split into <strong>2 triangles (30m)</strong> by default.</li>
+                        <li>You can split halves into <strong>quarters (15m)</strong> (Scissor Mode enables splitting).</li>
+                        <li><strong>Lock</strong> prevents painting; select a color to paint.</li>
+                        <li><strong>Drag paint</strong>: press and move across triangles to fill multiple.</li>
                       </ul>
                     </div>
+
                     <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-indigo-300 uppercase mb-3 border-b border-indigo-500/30 pb-2">Blueprint Presets</h3>
+                      <h3 className="font-bold text-sky-300 uppercase mb-3 border-b border-sky-500/30 pb-2">C) Modes</h3>
                       <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>Save Day / Save Week from Blueprint Manager.</li>
-                        <li>Load fully replaces target day/week and restores split states.</li>
-                        <li>Presets persist in local storage and export files.</li>
+                        <li><strong>Plan Mode</strong>: paints blueprint (future) triangles.</li>
+                        <li><strong>Notes Mode</strong>: edit triangle notes (descriptions).</li>
+                        <li><strong>Focus Mode</strong>: shows only today as 4 six‑hour blocks.</li>
+                        <li><strong>Scissor Mode</strong>: splitting is enabled only when this is ON.</li>
                       </ul>
                     </div>
+
                     <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-emerald-300 uppercase mb-3 border-b border-emerald-500/30 pb-2">Habits + Habit Zone</h3>
+                      <h3 className="font-bold text-purple-300 uppercase mb-3 border-b border-purple-500/30 pb-2">D) Captain&apos;s Log (Daily Report)</h3>
                       <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>Habits auto-populate by weekday and support red/yellow/green states.</li>
-                        <li>Partial habits use yellow slider + progress percentage.</li>
-                        <li>Habit Zone supports week/month view, date grid, and per-habit status summary.</li>
-                        <li>Click a Habit Zone cell to jump directly to that date in Captain&apos;s Log.</li>
-                        <li>Habit cards in System Modules support drag-and-drop reorder.</li>
+                        <li><strong>Tasks</strong>: red/yellow/green + progress % + remark + snooze + migrate + sweep.</li>
+                        <li><strong>Habits</strong>: scheduled by weekday; red/yellow/green + optional % + remark.</li>
+                        <li><strong>Journal</strong>: instant-save long-form text. Buttons: ◈ bullet, numbering, boxing, timestamp, week PDF.</li>
+                        <li><strong>Date arrows</strong>: browse days inside the week without closing the modal.</li>
                       </ul>
                     </div>
+
                     <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-purple-300 uppercase mb-3 border-b border-purple-500/30 pb-2">Captain&apos;s Log</h3>
+                      <h3 className="font-bold text-amber-300 uppercase mb-3 border-b border-amber-500/30 pb-2">E) Triangle Notes (Auto + Manual)</h3>
                       <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>ToDo list supports red/yellow/green, partial %, remarks, snooze, migrate, and sweep.</li>
-                        <li>ToDo rows support drag-and-drop reorder with handle.</li>
-                        <li>Journal is instant-save text editor for each date.</li>
+                        <li>Write: <strong>7am (did dishes)</strong> or <strong>[07:42am] (note)</strong> → it auto-fills that time’s triangle note.</li>
+                        <li>Notes are stored with <strong>serial numbering</strong> inside each triangle.</li>
+                        <li>Global Search can search notes and jump + highlight the triangle.</li>
                       </ul>
                     </div>
+
                     <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-amber-300 uppercase mb-3 border-b border-amber-500/30 pb-2">Analytics + Progression</h3>
+                      <h3 className="font-bold text-amber-200 uppercase mb-3 border-b border-amber-500/30 pb-2">F) Analytics</h3>
                       <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>Chrono-Spectral heatmap, weekly chart, and bar graph modules.</li>
-                        <li>XP/Level uses tracked hours, points, completed tasks, habits, and streak bonuses.</li>
-                        <li>Per-habit streaks and global streak history are included.</li>
+                        <li>Heatmap + Weekly chart + Bar graph to review trends.</li>
+                        <li>Points / XP / streaks reflect consistency over time.</li>
                       </ul>
                     </div>
+
                     <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-blue-300 uppercase mb-3 border-b border-blue-500/30 pb-2">Data + Safety</h3>
+                      <h3 className="font-bold text-blue-300 uppercase mb-3 border-b border-blue-500/30 pb-2">G) Data & Storage</h3>
                       <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>Download/upload full JSON backup.</li>
-                        <li>Optional folder auto-backup after each completed 6-hour block or full 24-hour day.</li>
-                        <li>PWA update controls: check update + apply update now.</li>
-                        <li>Reset tools: day/week/month/factory reset.</li>
+                        <li>Download/upload full JSON backup (everything).</li>
+                        <li>Optional folder auto-backups (rolling).</li>
+                        <li>PWA update tools: check + apply update.</li>
+                        <li>Reset tools: day/week/month/system.</li>
                       </ul>
                     </div>
+
                     <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-slate-200 uppercase mb-3 border-b border-white/20 pb-2">Shortcuts</h3>
+                      <h3 className="font-bold text-slate-200 uppercase mb-3 border-b border-white/20 pb-2">H) Shortcuts</h3>
                       <ul className="grid grid-cols-2 gap-x-8 text-xs">
                         <li><strong>Ctrl+Z</strong> Undo</li>
                         <li><strong>Ctrl+Y</strong> Redo</li>
                         <li><strong>Ctrl+K</strong> Global Search</li>
+                        <li><strong>Ctrl+T</strong> Insert timestamp in journal</li>
                         <li><strong>L</strong> Lock tool</li>
                         <li><strong>1–8</strong> Select category</li>
                         <li><strong>Space</strong> Paint/remove selected triangle</li>
@@ -4986,22 +5033,6 @@
                 >
                   {toast.type === 'success' ? <span className="text-2xl">✅</span> : <span className="text-2xl">❌</span>}
                   <span className="flex-1 min-w-0">{toast.message}</span>
-                  <button
-                    onClick={() => {
-                      if (past.length === 0) return;
-                      handleUndo();
-                      setToasts(prev => prev.filter(t => t.id !== toast.id));
-                    }}
-                    disabled={past.length === 0}
-                    className={`shrink-0 px-3 py-1.5 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${
-                      past.length > 0
-                        ? 'border-white/20 bg-white/10 hover:bg-white/20 text-white'
-                        : 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed'
-                    }`}
-                    title="Undo last grid change (Ctrl+Z)"
-                  >
-                    Undo
-                  </button>
                 </div>
               ))}
             </div>
@@ -5133,8 +5164,46 @@
               </div>
             </header>
             <main className="max-w-[1400px] w-full mx-auto px-4 py-8 flex-1 min-w-0">
+              {/* Mobile quick tabs (reduce scroll fatigue) */}
+              <div className="md:hidden sticky top-[76px] z-40 mb-4">
+                <div className="glass-panel border border-white/10 rounded-2xl p-2 flex gap-2 overflow-x-auto custom-scrollbar">
+                  {[
+                    { id: 'tracker', label: 'Grid' },
+                    { id: 'analytics', label: 'Analytics' },
+                    { id: 'modules', label: 'System' },
+                    { id: 'storage', label: 'Storage' },
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        playSound('click');
+                        setSectionsOpen(prev => ({
+                          ...prev,
+                          tracker: false,
+                          analytics: false,
+                          modules: false,
+                          storage: false,
+                          graph: prev.graph,
+                          journal: prev.journal,
+                          [t.id]: true
+                        }));
+                        setTimeout(() => {
+                          try { document.getElementById(`section-${t.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+                        }, 0);
+                      }}
+                      className={`px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                        sectionsOpen[t.id]
+                          ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.18)]'
+                          : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {/* ---------------- SECTION 1: GRID ---------------- */}
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6">
+              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6" id="section-tracker">
                 {/* Accordion Header */}
                 <button onClick={() => toggleSection('tracker')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive rounded-t-3xl">
                     <div className="flex items-center gap-3 flex-shrink-0">
@@ -5289,6 +5358,18 @@
                                   >
                                     <Activity size={16} />
                                   </button>
+                                  <button
+                                    onClick={() => {
+                                      playSound('click');
+                                      const next = !isScissorMode;
+                                      setIsScissorMode(next);
+                                      showToast(next ? '✂️ Scissor Mode ON (splits enabled)' : '✂️ Scissor Mode OFF');
+                                    }}
+                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isScissorMode ? 'border-rose-400 bg-rose-500/20 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.35)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                    title={isScissorMode ? "Scissor Mode ON — right click to split" : "Toggle Scissor Mode (enables splitting)"}
+                                  >
+                                    ✂️
+                                  </button>
                                   <div className="w-full h-px bg-white/10 my-1"></div>
                                   <button
                                     onClick={() => handleColorSelect('lock')}
@@ -5319,6 +5400,34 @@
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-5">
                               {SECTIONS.map((section) => (
                                 <div key={section.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm">
+                                  {/* Mobile per-block toolbar (keeps controls reachable when blocks stack vertically) */}
+                                  <div className="md:hidden border-b border-white/10 bg-[#0b1120]/60 backdrop-blur-md px-3 py-2">
+                                    <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar">
+                                      <button onClick={handleUndo} disabled={past.length === 0} className={`px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${past.length > 0 ? 'border-white/20 text-slate-200 bg-white/5 hover:bg-white/10' : 'border-white/10 text-slate-600 bg-white/5 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)">Undo</button>
+                                      <button onClick={handleRedo} disabled={future.length === 0} className={`px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${future.length > 0 ? 'border-white/20 text-slate-200 bg-white/5 hover:bg-white/10' : 'border-white/10 text-slate-600 bg-white/5 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)">Redo</button>
+                                      <div className="w-px h-8 bg-white/10 mx-1"></div>
+                                      <button onClick={() => { playSound('click'); const newMode = !isBlueprintMode; setIsBlueprintMode(newMode); showToast(newMode ? '📐 Plan Mode ON (hatched future planning)' : '📐 Plan Mode OFF'); }} className={`px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Plan Mode">Plan</button>
+                                      <button onClick={() => { playSound('click'); const newMode = !isDescriptionMode; setIsDescriptionMode(newMode); showToast(newMode ? '📝 Notes Mode ON' : '📝 Notes Mode OFF'); }} className={`px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Notes Mode">Notes</button>
+                                      <button onClick={() => { playSound('click'); const next = !isScissorMode; setIsScissorMode(next); showToast(next ? '✂️ Scissor Mode ON (splits enabled)' : '✂️ Scissor Mode OFF'); }} className={`px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${isScissorMode ? 'border-rose-400 bg-rose-500/20 text-rose-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Scissor Mode">✂️</button>
+                                      <button onClick={() => handleColorSelect('lock')} className={`px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Lock">Lock</button>
+                                      <div className="w-px h-8 bg-white/10 mx-1"></div>
+                                      {categories.map(cat => (
+                                        <button
+                                          key={`focusmob-${section.id}-${cat.id}`}
+                                          onClick={() => handleColorSelect(cat.id)}
+                                          className={`w-7 h-7 rounded-lg border transition-all ${selectedColorId === cat.id ? 'border-white/70 scale-110' : 'border-white/20'}`}
+                                          style={{
+                                            backgroundColor: selectedColorId === cat.id ? cat.color : 'transparent',
+                                            backgroundImage: selectedColorId === cat.id
+                                              ? 'none'
+                                              : `repeating-linear-gradient(45deg, ${cat.color}55 0, ${cat.color}55 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 7px)`,
+                                            boxShadow: selectedColorId === cat.id ? `0 0 12px ${cat.color}` : `0 0 4px ${cat.color}80`,
+                                          }}
+                                          title={cat.name}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
                                   <button
                                     onClick={() => toggleEpoch(section.id)}
                                     className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 transition-colors"
@@ -5762,7 +5871,7 @@
                 )}
               </section>
               {/* ---------------- SECTION 2: ANALYTICS CORE ---------------- */}
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6">
+              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6" id="section-analytics">
                 <button onClick={() => toggleSection('analytics')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
                         <Activity size={24} className="text-purple-400 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
@@ -6128,7 +6237,7 @@
                 )}
               </section>
               {/* ---------------- SECTION 3: SYSTEM MODULES ---------------- */}
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6">
+              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6" id="section-modules">
                 <button onClick={() => toggleSection('modules')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
                         <Settings2 size={24} className="text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
@@ -6329,7 +6438,7 @@
                 )}
               </section>
               {/* ---------------- SECTION 4: DATA & STORAGE CORE ---------------- */}
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 relative">
+              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 relative" id="section-storage">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-red-500 opacity-50"></div>
                 <button onClick={() => toggleSection('storage')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive relative">
                     <div className="flex items-center gap-3">
