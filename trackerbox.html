@@ -335,6 +335,12 @@
     const Sparkles = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/></svg>;
     const ChevronDown = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="6 9 12 15 18 9"></polyline></svg>;
     const BookOpen = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>;
+    const Wallet = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-1"/><path d="M16 12h5"/><circle cx="16" cy="12" r="1"/></svg>;
+    const TrendingUp = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
+    const TrendingDown = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>;
+    const PieChart = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>;
+    const BarChart3 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>;
+    const DollarSign = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
     // --- Volume icons for global mute ---
     const Volume2 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>;
     const VolumeX2 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>;
@@ -357,6 +363,7 @@
     const LOCAL_FROZEN_DAYS_KEY = 'trackerbox_frozen_days_v1';
     const LOCAL_SETTINGS_KEY = 'trackerbox_settings_v1';
     const LOCAL_BLUEPRINT_PRESETS_KEY = 'trackerbox_blueprint_presets_v3'; // v3 = real colors + blueprints + fixed load
+    const LOCAL_WALLET_KEY = 'trackerbox_wallet_v1';
     const DEFAULT_SETTINGS = {
       defaultFocusMode: false,
       defaultCollapsedEpochs: { night: true, morning: false, afternoon: false, evening: false },
@@ -372,6 +379,17 @@
       { id: 'work', name: 'Job', color: '#1e3a8a', target: '', pointsPerHour: 10 },
       { id: 'fun', name: 'Fun', color: '#fb923c', target: '', pointsPerHour: 0 },
       { id: 'waste', name: 'Waste', color: '#ef4444', target: '', pointsPerHour: -2.5 }
+    ];
+    const DEFAULT_WALLET_CATEGORIES = [
+      { id: 'food', name: 'Food', color: '#f87171', type: 'expense' },
+      { id: 'transport', name: 'Transport', color: '#60a5fa', type: 'expense' },
+      { id: 'rent', name: 'Rent', color: '#facc15', type: 'expense' },
+      { id: 'entertainment', name: 'Fun', color: '#c084fc', type: 'expense' },
+      { id: 'health', name: 'Health', color: '#4ade80', type: 'expense' },
+      { id: 'shopping', name: 'Shopping', color: '#fb923c', type: 'expense' },
+      { id: 'salary', name: 'Salary', color: '#22d3ee', type: 'income' },
+      { id: 'business', name: 'Business', color: '#818cf8', type: 'income' },
+      { id: 'others', name: 'Others', color: '#94a3b8', type: 'expense' }
     ];
     const SECTIONS = [
       { id: 'night', label: 'Night (12am - 6am)', icon: Moon, hours: [0, 1, 2, 3, 4, 5] },
@@ -569,7 +587,8 @@
          analytics: false,
          modules: false,
          storage: false,
-         graph: false
+         graph: false,
+         wallet: false
       });
       // NEW: Collapsible Time Epochs (default Night collapsed for sleep QoL)
       const [collapsedEpochs, setCollapsedEpochs] = useState(() => {
@@ -589,6 +608,30 @@
         return settingsDraft.defaultFocusMode;
       });
       const [focusModeDate, setFocusModeDate] = useState(() => formatDateString(new Date()));
+
+      // === WALLET TRACKER HELPERS ===
+      const addWalletTransaction = (type, categoryId, amount, remark, dateStr) => {
+        if (!amount || isNaN(amount)) return;
+        const newTx = {
+          id: 'tx_' + Date.now() + Math.random().toString(36).substr(2, 9),
+          type, // 'income' | 'expense'
+          categoryId,
+          amount: parseFloat(amount),
+          remark: remark || '',
+          date: dateStr || todayStr,
+          createdAt: new Date().toISOString()
+        };
+        setWalletTransactions(prev => [newTx, ...prev]);
+        playSound('success');
+        showToast(`✅ Added ${type === 'income' ? 'Income' : 'Expense'}: ${walletCurrency}${amount}`);
+      };
+
+      const deleteWalletTransaction = (id) => {
+        setWalletTransactions(prev => prev.filter(tx => tx.id !== id));
+        playSound('trash');
+        showToast('🗑️ Transaction deleted');
+      };
+
       const toggleSection = (sec) => {
          playSound('click');
          setSectionsOpen(prev => ({ ...prev, [sec]: !prev[sec] }));
@@ -610,6 +653,10 @@
       useEffect(() => {
         try { localStorage.setItem(LOCAL_FOCUS_MODE_KEY, String(isFocusMode)); } catch (e) {}
       }, [isFocusMode]);
+
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(walletTransactions)); } catch (e) {}
+      }, [walletTransactions]);
       // Core States
       const [allData, setAllData] = useState({});
       const [journalData, setJournalData] = useState({});
@@ -617,6 +664,17 @@
       // History States for Undo/Redo
       const [past, setPast] = useState([]);
       const [future, setFuture] = useState([]);
+
+      // === WALLET TRACKER STATE ===
+      const [walletTransactions, setWalletTransactions] = useState(() => {
+        try {
+          const saved = localStorage.getItem(LOCAL_WALLET_KEY);
+          return saved ? JSON.parse(saved) : [];
+        } catch (e) { return []; }
+      });
+      const [walletCategories, setWalletCategories] = useState(DEFAULT_WALLET_CATEGORIES);
+      const [walletCurrency, setWalletCurrency] = useState('$');
+
       const allDataRef = useRef(allData);
       const backupDirHandleRef = useRef(null);
       const autoBackupTimerRef = useRef(null);
@@ -6179,6 +6237,106 @@
                   </div>
                 )}
               </section>
+              {/* ---------------- SECTION: WALLET TRACKER ---------------- */}
+              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-2" id="section-wallet">
+                <button onClick={() => toggleSection('wallet')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
+                    <div className="flex items-center gap-3">
+                        <Wallet size={24} className="text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
+                        <h2 className="text-lg md:text-xl font-black uppercase tracking-wider text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Wallet Tracker</h2>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {(() => {
+                        const totalIncome = walletTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+                        const totalExpense = walletTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                        const balance = totalIncome - totalExpense;
+                        return (
+                          <div className="hidden md:flex items-center gap-4 text-xs font-black uppercase tracking-widest">
+                            <span className="text-emerald-400">Bal: {walletCurrency}{balance.toLocaleString()}</span>
+                          </div>
+                        );
+                      })()}
+                      <ChevronDown size={24} className={`text-slate-400 transform transition-transform ${sectionsOpen.wallet ? 'rotate-180' : ''}`} />
+                    </div>
+                </button>
+                {sectionsOpen.wallet && (
+                  <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
+                    {/* Wallet Top Stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                      {(() => {
+                        const totalIncome = walletTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+                        const totalExpense = walletTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+                        const balance = totalIncome - totalExpense;
+                        return (
+                          <>
+                            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-3xl p-5 flex flex-col items-center justify-center">
+                              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-1">Total Balance</span>
+                              <span className="text-3xl font-black text-white neon-text">{walletCurrency}{balance.toLocaleString()}</span>
+                            </div>
+                            <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-3xl p-5 flex flex-col items-center justify-center">
+                              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest mb-1">Total Income</span>
+                              <span className="text-3xl font-black text-white">{walletCurrency}{totalIncome.toLocaleString()}</span>
+                            </div>
+                            <div className="bg-rose-500/10 border border-rose-500/30 rounded-3xl p-5 flex flex-col items-center justify-center">
+                              <span className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1">Total Expenses</span>
+                              <span className="text-3xl font-black text-white">{walletCurrency}{totalExpense.toLocaleString()}</span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                      {/* Left: Input Form & Quick Analysis */}
+                      <div className="lg:col-span-4 space-y-6">
+                        <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
+                          <h3 className="font-bold text-cyan-400 uppercase tracking-widest text-xs mb-5 border-b border-cyan-500/30 pb-3">Add Transaction</h3>
+                          <WalletForm addTransaction={addWalletTransaction} categories={walletCategories} currency={walletCurrency} todayStr={todayStr} />
+                        </div>
+
+                        <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
+                          <h3 className="font-bold text-purple-400 uppercase tracking-widest text-xs mb-5 border-b border-purple-500/30 pb-3">Monthly Breakdown</h3>
+                          <WalletMonthlyStats transactions={walletTransactions} categories={walletCategories} currency={walletCurrency} />
+                        </div>
+                      </div>
+
+                      {/* Right: Logs & Charts */}
+                      <div className="lg:col-span-8 space-y-6">
+                        <div className="bg-white/5 border border-white/10 rounded-3xl p-6 h-full flex flex-col">
+                          <div className="flex justify-between items-center mb-5 border-b border-white/10 pb-3">
+                            <h3 className="font-bold text-emerald-400 uppercase tracking-widest text-xs">Transaction Logs</h3>
+                            <div className="flex items-center gap-2">
+                              {/* Search or filter could go here */}
+                            </div>
+                          </div>
+                          <div className="flex-1 overflow-y-auto custom-scrollbar max-h-[600px] pr-2">
+                            <WalletLogs 
+                              transactions={walletTransactions} 
+                              categories={walletCategories} 
+                              currency={walletCurrency} 
+                              deleteTransaction={deleteWalletTransaction} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Charts Section */}
+                    <div className="mt-8 bg-white/5 border border-white/10 rounded-3xl p-6">
+                      <h3 className="font-bold text-amber-400 uppercase tracking-widest text-xs mb-5 border-b border-amber-500/30 pb-3">Financial Analytics</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 block">Expense by Category</span>
+                          <WalletCategoryChart transactions={walletTransactions} categories={walletCategories} type="expense" />
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 block">Daily Spending Trend (Last 14 Days)</span>
+                          <WalletDailyTrend transactions={walletTransactions} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
               {/* ---------------- SECTION 2: ANALYTICS CORE ---------------- */}
               <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-3" id="section-analytics">
                 <button onClick={() => toggleSection('analytics')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
@@ -7177,6 +7335,283 @@
         </div>
       );
     }
+    // --- WALLET TRACKER COMPONENTS ---
+    function WalletForm({ addTransaction, categories, currency, todayStr }) {
+      const [type, setType] = useState('expense');
+      const [categoryId, setCategoryId] = useState(categories.find(c => c.type === 'expense')?.id || '');
+      const [amount, setAmount] = useState('');
+      const [remark, setRemark] = useState('');
+      const [date, setDate] = useState(todayStr);
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!amount) return;
+        addTransaction(type, categoryId, amount, remark, date);
+        setAmount('');
+        setRemark('');
+      };
+
+      const filteredCategories = categories.filter(c => c.type === type);
+
+      return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="flex bg-[#0b1120] p-1 rounded-2xl border border-white/10">
+            <button
+              type="button"
+              onClick={() => { setType('expense'); setCategoryId(categories.find(c => c.type === 'expense')?.id || ''); }}
+              className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${type === 'expense' ? 'bg-rose-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.4)]' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              Expense
+            </button>
+            <button
+              type="button"
+              onClick={() => { setType('income'); setCategoryId(categories.find(c => c.type === 'income')?.id || ''); }}
+              className={`flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${type === 'income' ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              Income
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Amount</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">{currency}</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-[#0b1120] border border-white/10 focus:border-cyan-500/50 text-white font-bold rounded-xl pl-8 pr-4 py-2.5 outline-none transition-all"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="w-full bg-[#0b1120] border border-white/10 focus:border-cyan-500/50 text-white font-bold rounded-xl px-3 py-2.5 outline-none transition-all text-xs"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Category</label>
+            <select
+              value={categoryId}
+              onChange={e => setCategoryId(e.target.value)}
+              className="w-full bg-[#0b1120] border border-white/10 focus:border-cyan-500/50 text-white font-bold rounded-xl px-4 py-2.5 outline-none transition-all"
+            >
+              {filteredCategories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1">Remark (Optional)</label>
+            <input
+              type="text"
+              value={remark}
+              onChange={e => setRemark(e.target.value)}
+              placeholder="What was this for?"
+              className="w-full bg-[#0b1120] border border-white/10 focus:border-cyan-500/50 text-white font-medium rounded-xl px-4 py-2.5 outline-none transition-all placeholder:text-slate-600"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-cyan-600/20 hover:bg-cyan-500 text-cyan-400 hover:text-white border border-cyan-500/50 font-black uppercase tracking-widest py-3 rounded-2xl transition-all flex items-center justify-center gap-2 mt-2"
+          >
+            <DollarSign size={18} /> Add Transaction
+          </button>
+        </form>
+      );
+    }
+
+    function WalletMonthlyStats({ transactions, categories, currency }) {
+      const now = new Date();
+      const currentMonth = now.toISOString().substring(0, 7); // YYYY-MM
+      
+      const monthlyTxs = transactions.filter(t => t.date.startsWith(currentMonth));
+      const income = monthlyTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+      const expense = monthlyTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+      const savings = income - expense;
+
+      return (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center text-xs">
+            <span className="text-slate-400 font-bold uppercase tracking-widest">This Month</span>
+            <span className="text-white font-black">{now.toLocaleString('default', { month: 'long', year: 'numeric' })}</span>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="flex justify-between items-end">
+              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest">Income</span>
+              <span className="text-sm font-black text-white">{currency}{income.toLocaleString()}</span>
+            </div>
+            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.6)]" style={{ width: '100%' }}></div>
+            </div>
+
+            <div className="flex justify-between items-end">
+              <span className="text-[10px] font-bold text-rose-400 uppercase tracking-widest">Expense</span>
+              <span className="text-sm font-black text-white">{currency}{expense.toLocaleString()}</span>
+            </div>
+            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]" style={{ width: income > 0 ? `${Math.min(100, (expense / income) * 100)}%` : '0%' }}></div>
+            </div>
+
+            <div className="pt-2 flex justify-between items-center border-t border-white/10 mt-2">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Net Savings</span>
+              <span className={`text-base font-black ${savings >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {savings < 0 ? '-' : ''}{currency}{Math.abs(savings).toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function WalletLogs({ transactions, categories, currency, deleteTransaction }) {
+      if (transactions.length === 0) {
+        return (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-600">
+            <Wallet size={48} className="mb-4 opacity-20" />
+            <p className="font-black uppercase tracking-[0.2em] text-sm">No transactions yet</p>
+          </div>
+        );
+      }
+
+      // Group by date
+      const grouped = transactions.reduce((acc, tx) => {
+        if (!acc[tx.date]) acc[tx.date] = [];
+        acc[tx.date].push(tx);
+        return acc;
+      }, {});
+
+      const sortedDates = Object.keys(grouped).sort().reverse();
+
+      return (
+        <div className="space-y-8">
+          {sortedDates.map(date => (
+            <div key={date} className="space-y-3">
+              <div className="sticky top-0 z-10 bg-[#05070e] py-1 flex items-center gap-3">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{date === new Date().toISOString().split('T')[0] ? 'TODAY' : date}</span>
+                <div className="h-px bg-white/5 flex-1"></div>
+              </div>
+              <div className="space-y-2">
+                {grouped[date].map(tx => {
+                  const cat = categories.find(c => c.id === tx.categoryId) || { name: 'Unknown', color: '#64748b' };
+                  return (
+                    <div key={tx.id} className="group flex items-center gap-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl p-3 transition-all">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${cat.color}20`, border: `1px solid ${cat.color}40` }}>
+                        {tx.type === 'income' ? <TrendingUp size={18} className="text-emerald-400" /> : <TrendingDown size={18} className="text-rose-400" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start mb-0.5">
+                          <span className="font-bold text-white text-sm truncate">{cat.name}</span>
+                          <span className={`font-black text-sm ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {tx.type === 'income' ? '+' : '-'}{currency}{tx.amount.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-slate-500 truncate italic">{tx.remark || 'No remark'}</span>
+                          <button
+                            onClick={() => { if(confirm('Delete this transaction?')) deleteTransaction(tx.id); }}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-rose-400 transition-all"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function WalletCategoryChart({ transactions, categories, type }) {
+      const filtered = transactions.filter(t => t.type === type);
+      if (filtered.length === 0) return <div className="h-40 flex items-center justify-center text-[10px] text-slate-600 uppercase font-bold">No {type} data</div>;
+
+      const totals = filtered.reduce((acc, t) => {
+        acc[t.categoryId] = (acc[t.categoryId] || 0) + t.amount;
+        return acc;
+      }, {});
+
+      const totalAmount = Object.values(totals).reduce((sum, a) => sum + a, 0);
+      const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+
+      return (
+        <div className="space-y-4">
+          {sorted.map(([catId, amount]) => {
+            const cat = categories.find(c => c.id === catId) || { name: 'Unknown', color: '#64748b' };
+            const percentage = Math.round((amount / totalAmount) * 100);
+            return (
+              <div key={catId} className="space-y-1.5">
+                <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
+                  <span className="text-slate-300">{cat.name}</span>
+                  <span className="text-slate-400">{percentage}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full transition-all duration-700" style={{ width: `${percentage}%`, backgroundColor: cat.color, boxShadow: `0 0 8px ${cat.color}60` }}></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function WalletDailyTrend({ transactions }) {
+      const last14Days = [];
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        last14Days.push(d.toISOString().split('T')[0]);
+      }
+
+      const dailyTotals = transactions.reduce((acc, t) => {
+        if (t.type === 'expense') {
+          acc[t.date] = (acc[t.date] || 0) + t.amount;
+        }
+        return acc;
+      }, {});
+
+      const maxVal = Math.max(...last14Days.map(d => dailyTotals[d] || 0), 1);
+
+      return (
+        <div className="h-40 flex items-end gap-1.5 px-2">
+          {last14Days.map(date => {
+            const val = dailyTotals[date] || 0;
+            const height = (val / maxVal) * 100;
+            const isToday = date === new Date().toISOString().split('T')[0];
+            return (
+              <div key={date} className="flex-1 flex flex-col items-center group relative h-full justify-end">
+                <div 
+                  className={`w-full rounded-t-lg transition-all duration-500 ${isToday ? 'bg-amber-400' : 'bg-white/10 group-hover:bg-white/30'}`} 
+                  style={{ height: `${Math.max(5, height)}%`, boxShadow: isToday ? '0 0 15px rgba(251,191,36,0.4)' : 'none' }}
+                ></div>
+                <div className="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 bg-slate-900 border border-white/20 text-white text-[9px] font-bold py-1 px-2 rounded-md whitespace-nowrap z-20 pointer-events-none">
+                  {date.substring(5)}: {val.toLocaleString()}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
