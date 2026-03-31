@@ -2307,6 +2307,78 @@
         return insertJournalListMarkerAt(activeJournalDate, journalTextareaRef, kind);
       };
 
+      const autoFormatJournalLineOnSpace = (textareaRef, dateStr, e) => {
+        if ((e.key !== ' ' && e.key !== 'Enter') || !dateStr) return false;
+        const el = textareaRef?.current;
+        if (!el) return false;
+
+        const currentText = String(el.value || '');
+        const selStart = el.selectionStart ?? currentText.length;
+        const selEnd = el.selectionEnd ?? selStart;
+        if (selStart !== selEnd) return false;
+
+        const lineStart = currentText.lastIndexOf('\n', selStart - 1) + 1;
+        const beforeLine = currentText.slice(lineStart, selStart);
+        const indentationMatch = beforeLine.match(/^(\s*)/);
+        const indentation = indentationMatch ? indentationMatch[1] : '';
+        const content = beforeLine.slice(indentation.length);
+
+        if (/^--$/.test(content)) {
+          e.preventDefault();
+          const replacement = `${indentation}◈ `;
+          const nextCursor = lineStart + replacement.length;
+          const nextValue = currentText.slice(0, lineStart) + replacement + currentText.slice(selStart);
+          handleJournalSave(dateStr, nextValue);
+          setTimeout(() => {
+            try {
+              el.focus();
+              el.setSelectionRange(nextCursor, nextCursor);
+              autoResizeJournalTextarea(el);
+            } catch (err) {}
+          }, 0);
+          return true;
+        }
+
+        const numberMatch = content.match(/^(\d+)\.$/);
+        if (numberMatch) {
+          e.preventDefault();
+          const replacement = `${indentation}${numberMatch[1]}. `;
+          const nextCursor = lineStart + replacement.length;
+          const nextValue = currentText.slice(0, lineStart) + replacement + currentText.slice(selStart);
+          handleJournalSave(dateStr, nextValue);
+          setTimeout(() => {
+            try {
+              el.focus();
+              el.setSelectionRange(nextCursor, nextCursor);
+              autoResizeJournalTextarea(el);
+            } catch (err) {}
+          }, 0);
+          return true;
+        }
+
+        if (e.key === 'Enter') {
+          const numberedLineMatch = content.match(/^(\d+)\.\s*/);
+          if (numberedLineMatch) {
+            e.preventDefault();
+            const nextNumber = Number(numberedLineMatch[1]) + 1;
+            const insertText = `\n${indentation}${nextNumber}. `;
+            const nextCursor = selStart + insertText.length;
+            const nextValue = currentText.slice(0, selStart) + insertText + currentText.slice(selEnd);
+            handleJournalSave(dateStr, nextValue);
+            setTimeout(() => {
+              try {
+                el.focus();
+                el.setSelectionRange(nextCursor, nextCursor);
+                autoResizeJournalTextarea(el);
+              } catch (err) {}
+            }, 0);
+            return true;
+          }
+        }
+
+        return false;
+      };
+
       // Box feature removed from Journal; manual boxing is no longer available.
 
       // --- NEW: Auto-resize + keep N lines below cursor ---
@@ -4421,26 +4493,6 @@
                           <span className="text-[10px] text-purple-300 font-medium">Saved instantly</span>
                         </div>
                        </div>
-                      {/* NEW: List helpers */}
-                      <div className="flex items-center gap-2 p-3 border-b border-purple-500/20 bg-purple-500/5">
-                        <button
-                          onClick={() => { playSound('click'); insertJournalListMarker('bullet'); }}
-                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all"
-                          title="Insert bullet '◈ ' at cursor"
-                        >
-                          ◈ Bullet
-                        </button>
-                        <button
-                          onClick={() => { playSound('click'); insertJournalListMarker('number'); }}
-                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all"
-                          title="Insert numbered list 'N. ' at cursor"
-                        >
-                          Bullet {getNextJournalNumberAtCursor()}
-                        </button>
-                        <span className="ml-auto text-[10px] text-purple-300/70 font-bold uppercase tracking-widest">
-                          Inserts at cursor
-                        </span>
-                      </div>
                        <textarea
                         ref={journalTextareaRef}
                          className="flex-1 bg-transparent p-4 text-slate-200 font-mono text-sm focus:outline-none resize-none overflow-y-auto"
@@ -4450,6 +4502,7 @@
                            handleJournalSave(activeJournalDate, e.target.value);
                            requestAnimationFrame(() => autoResizeJournalTextarea(journalTextareaRef.current));
                          }}
+                         onKeyDown={(e) => autoFormatJournalLineOnSpace(journalTextareaRef, activeJournalDate, e)}
                          onKeyUp={() => autoResizeJournalTextarea(journalTextareaRef.current)}
                          onMouseUp={() => autoResizeJournalTextarea(journalTextareaRef.current)}
                          onSelect={() => autoResizeJournalTextarea(journalTextareaRef.current)}
@@ -6312,26 +6365,6 @@
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 mb-3">
-                      <button
-                        onClick={() => { playSound('click'); insertJournalListMarkerAt(journalModuleDate, journalOnlyTextareaRef, 'bullet'); }}
-                        className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all"
-                        title="Insert bullet '◈ ' at cursor"
-                      >
-                        ◈ Bullet
-                      </button>
-                      <button
-                        onClick={() => { playSound('click'); insertJournalListMarkerAt(journalModuleDate, journalOnlyTextareaRef, 'number'); }}
-                        className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all"
-                        title="Insert numbered list 'N. ' at cursor"
-                      >
-                        Bullet {getNextJournalNumberAtCursorFor(journalModuleDate, journalOnlyTextareaRef)}
-                      </button>
-                      <span className="ml-auto text-[10px] text-amber-300/70 font-bold uppercase tracking-widest">
-                        Inserts at cursor
-                      </span>
-                    </div>
-
                     <textarea
                       ref={journalOnlyTextareaRef}
                       className="w-full bg-transparent p-4 text-slate-200 font-mono text-sm focus:outline-none resize-none overflow-y-auto"
@@ -6341,6 +6374,7 @@
                         handleJournalSave(journalModuleDate, e.target.value);
                         requestAnimationFrame(() => autoResizeJournalTextarea(journalOnlyTextareaRef.current));
                       }}
+                      onKeyDown={(e) => autoFormatJournalLineOnSpace(journalOnlyTextareaRef, journalModuleDate, e)}
                       onKeyUp={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
                       onMouseUp={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
                       onSelect={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
