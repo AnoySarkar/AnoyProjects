@@ -293,8 +293,18 @@
     const LOCAL_LAST_EXPORT_KEY = 'trackerbox_last_export';
     const LOCAL_TIMER_CAT_KEY = 'trackerbox_timer_category_v1';
     const LOCAL_POINTS_PERIOD_KEY = 'trackerbox_points_period_v1';
+    const LOCAL_COLLAPSED_EPOCHS_KEY = 'trackerbox_collapsed_epochs_v1';
+    const LOCAL_FOCUS_MODE_KEY = 'trackerbox_focus_mode_v1';
     const LOCAL_FROZEN_DAYS_KEY = 'trackerbox_frozen_days_v1';
+    const LOCAL_SETTINGS_KEY = 'trackerbox_settings_v1';
     const LOCAL_BLUEPRINT_PRESETS_KEY = 'trackerbox_blueprint_presets_v3'; // v3 = real colors + blueprints + fixed load
+    const DEFAULT_SETTINGS = {
+      defaultFocusMode: false,
+      defaultCollapsedEpochs: { night: true, morning: false, afternoon: false, evening: false },
+      defaultSelectedColorId: 'lock',
+      defaultTimerMinutes: 25,
+      defaultBreakMinutes: 5
+    };
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
       { id: 'sleep', name: 'Sleep', color: '#86efac', target: '', pointsPerHour: 0 },
@@ -355,6 +365,29 @@
         currentDate.setDate(currentDate.getDate() + 7);
       }
       return weeks;
+    };
+    const getPaletteButtonStyle = (cat, isSelected) => {
+      if (!cat || !cat.color) return {};
+      const toRgb = (hex) => {
+        const cleaned = hex.replace('#', '');
+        const full = cleaned.length === 3 ? cleaned.split('').map(c => c + c).join('') : cleaned;
+        return [
+          parseInt(full.slice(0, 2), 16),
+          parseInt(full.slice(2, 4), 16),
+          parseInt(full.slice(4, 6), 16)
+        ];
+      };
+      const dimColor = (hex, factor) => {
+        const [r, g, b] = toRgb(hex);
+        return `rgb(${Math.round(r * factor)}, ${Math.round(g * factor)}, ${Math.round(b * factor)})`;
+      };
+      const unselectedColor = dimColor(cat.color, 0.7);
+      return {
+        backgroundColor: isSelected ? cat.color : unselectedColor,
+        backgroundImage: isSelected ? 'none' : `linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.05) 100%)`,
+        border: isSelected ? '1px solid rgba(255,255,255,0.85)' : '1px solid rgba(255,255,255,0.35)',
+        boxShadow: isSelected ? `0 0 16px ${cat.color}40` : `0 0 6px ${unselectedColor}22`
+      };
     };
     // --- Blueprint-aware activity checks (ignores bp_ prefix) ---
     const hasActivity = (dayData) => {
@@ -422,6 +455,30 @@
     function App() {
       const [isLoaded, setIsLoaded] = useState(false);
       const [showHelp, setShowHelp] = useState(false);
+      const [showSettingsModal, setShowSettingsModal] = useState(false);
+      const [settingsDraft, setSettingsDraft] = useState(() => {
+        const defaultSettings = {
+          defaultFocusMode: false,
+          defaultCollapsedEpochs: { night: true, morning: false, afternoon: false, evening: false },
+          defaultSelectedColorId: 'lock',
+          defaultTimerMinutes: 25,
+          defaultBreakMinutes: 5
+        };
+        try {
+          const saved = JSON.parse(localStorage.getItem(LOCAL_SETTINGS_KEY));
+          if (saved && typeof saved === 'object') {
+            return {
+              ...defaultSettings,
+              ...saved,
+              defaultCollapsedEpochs: {
+                ...defaultSettings.defaultCollapsedEpochs,
+                ...(saved.defaultCollapsedEpochs || {})
+              }
+            };
+          }
+        } catch (e) {}
+        return defaultSettings;
+      });
       // Collapsible Section States
       const [sectionsOpen, setSectionsOpen] = useState({
          tracker: true,
@@ -432,22 +489,43 @@
          graph: false
       });
       // NEW: Collapsible Time Epochs (default Night collapsed for sleep QoL)
-      const [collapsedEpochs, setCollapsedEpochs] = useState({
-        night: true,
-        morning: false,
-        afternoon: false,
-        evening: false
+      const [collapsedEpochs, setCollapsedEpochs] = useState(() => {
+        try {
+          const saved = JSON.parse(localStorage.getItem(LOCAL_COLLAPSED_EPOCHS_KEY));
+          if (saved && typeof saved === 'object') return saved;
+        } catch (e) {}
+        return settingsDraft.defaultCollapsedEpochs;
       });
       // === NEW: FOCUS MODE STATE (requested feature) ===
-      const [isFocusMode, setIsFocusMode] = useState(false);
+      const [isFocusMode, setIsFocusMode] = useState(() => {
+        try {
+          const saved = localStorage.getItem(LOCAL_FOCUS_MODE_KEY);
+          if (saved === 'true') return true;
+          if (saved === 'false') return false;
+        } catch (e) {}
+        return settingsDraft.defaultFocusMode;
+      });
       const toggleSection = (sec) => {
          playSound('click');
          setSectionsOpen(prev => ({ ...prev, [sec]: !prev[sec] }));
       };
       const toggleEpoch = (id) => {
         playSound('click');
-        setCollapsedEpochs(prev => ({ ...prev, [id]: !prev[id] }));
+        setCollapsedEpochs(prev => {
+          const next = { ...prev, [id]: !prev[id] };
+          try { localStorage.setItem(LOCAL_COLLAPSED_EPOCHS_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
       };
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_COLLAPSED_EPOCHS_KEY, JSON.stringify(collapsedEpochs)); } catch (e) {}
+      }, [collapsedEpochs]);
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settingsDraft)); } catch (e) {}
+      }, [settingsDraft]);
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_FOCUS_MODE_KEY, String(isFocusMode)); } catch (e) {}
+      }, [isFocusMode]);
       // Core States
       const [allData, setAllData] = useState({});
       const [journalData, setJournalData] = useState({});
@@ -593,7 +671,16 @@
         const saved = localStorage.getItem(LOCAL_CATEGORIES_KEY);
         return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
       });
-      const [selectedColorId, setSelectedColorId] = useState('lock'); // Default lock on load
+      const [selectedColorId, setSelectedColorId] = useState(() => {
+        const savedSettings = localStorage.getItem(LOCAL_SETTINGS_KEY);
+        if (savedSettings) {
+          try {
+            const parsed = JSON.parse(savedSettings);
+            if (parsed?.defaultSelectedColorId) return parsed.defaultSelectedColorId;
+          } catch (e) {}
+        }
+        return 'lock';
+      }); // Default lock on load
       const [keyboardCursor, setKeyboardCursor] = useState(null); // { dateStr, hour, triangleId }
       const [isDragging, setIsDragging] = useState(false);
 
@@ -624,6 +711,20 @@
       const descriptionTextareaRef = useRef(null);
       const journalTextareaRef = useRef(null);
       const journalOnlyTextareaRef = useRef(null);
+      useEffect(() => {
+        if (!activeJournalDate) return;
+        const t = window.setTimeout(() => {
+          try {
+            const el = journalTextareaRef.current;
+            if (!el) return;
+            el.focus();
+            const end = (el.value || '').length;
+            el.setSelectionRange(end, end);
+            autoResizeJournalTextarea(el);
+          } catch (e) {}
+        }, 120);
+        return () => window.clearTimeout(t);
+      }, [activeJournalDate]);
       const [descClipboard, setDescClipboard] = useState('');
       const [contextMenu, setContextMenu] = useState(null);
       // NEW: Tooltip for note preview on triangle hover (NOW WORKS EVEN WHEN MODE IS OFF)
@@ -766,12 +867,12 @@
         return () => clearInterval(interval);
       }, []);
       // --- NEW: Toast helper (non-blocking, auto-dismiss) ---
-      const showToast = useCallback((message, type = 'success') => {
+      const showToast = useCallback((message, type = 'success', duration = 3000) => {
         const id = Date.now().toString();
         setToasts(prev => [...prev, { id, message, type }]);
         setTimeout(() => {
           setToasts(prev => prev.filter(t => t.id !== id));
-        }, 3000);
+        }, duration);
       }, []);
       // --- Lightweight Markdown (safe subset) ---
       const escapeHtml = (s) => String(s)
@@ -1091,74 +1192,6 @@
         showToast('✅ Week snapshot downloaded', 'success');
       };
 
-      // --- PWA update watcher + actions ---
-      useEffect(() => {
-        if (!('serviceWorker' in navigator)) return;
-        let unmounted = false;
-        const wireRegistration = (reg) => {
-          if (!reg || unmounted) return;
-          if (reg.waiting) {
-            waitingWorkerRef.current = reg.waiting;
-            setAppUpdateState(prev => ({ ...prev, available: true, message: 'Update ready to install' }));
-          }
-          reg.addEventListener('updatefound', () => {
-            const newWorker = reg.installing;
-            if (!newWorker) return;
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                waitingWorkerRef.current = reg.waiting || newWorker;
-                setAppUpdateState(prev => ({ ...prev, available: true, message: 'New version downloaded' }));
-                showToast('⬆️ New app version downloaded. Tap "Update Now".');
-              }
-            });
-          });
-        };
-        navigator.serviceWorker.getRegistration().then(wireRegistration).catch(() => {});
-        return () => {
-          unmounted = true;
-        };
-      }, [showToast]);
-      const checkForAppUpdate = useCallback(async () => {
-        if (!('serviceWorker' in navigator)) {
-          showToast('❌ App update is not supported in this browser', 'error');
-          return;
-        }
-        setAppUpdateState(prev => ({ ...prev, checking: true, message: 'Checking for updates...' }));
-        try {
-          const reg = await navigator.serviceWorker.getRegistration() || await navigator.serviceWorker.register('./sw.js');
-          await reg.update();
-          const waiting = reg.waiting || waitingWorkerRef.current;
-          if (waiting) {
-            waitingWorkerRef.current = waiting;
-            setAppUpdateState(prev => ({ ...prev, checking: false, available: true, message: 'Update ready to install' }));
-            showToast('⬆️ Update available. Tap "Update Now".');
-          } else {
-            setAppUpdateState(prev => ({ ...prev, checking: false, available: false, message: 'You are already on latest version' }));
-            showToast('✅ You are already on the latest version');
-          }
-        } catch (e) {
-          setAppUpdateState(prev => ({ ...prev, checking: false, message: 'Update check failed' }));
-          showToast('❌ Could not check for app updates', 'error');
-        }
-      }, [showToast]);
-      const applyAppUpdate = useCallback(async () => {
-        if (!('serviceWorker' in navigator)) {
-          showToast('❌ App update is not supported in this browser', 'error');
-          return;
-        }
-        const reg = await navigator.serviceWorker.getRegistration();
-        const waiting = (reg && reg.waiting) || waitingWorkerRef.current;
-        if (!waiting) {
-          showToast('No downloaded update yet. Use "Check Updates".', 'error');
-          return;
-        }
-        const onControllerChange = () => {
-          navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
-          window.location.reload();
-        };
-        navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
-        waiting.postMessage({ type: 'SKIP_WAITING' });
-      }, [showToast]);
       // --- History (Undo/Redo) Actions ---
       const saveHistoryState = useCallback(() => {
          const newState = JSON.stringify(allDataRef.current);
@@ -1317,14 +1350,16 @@
         const defaultCatId =
           (studyLearnCat ? studyLearnCat.id : null) ||
           (categories.find(c => c.id === 'work') ? 'work' : (categories[0] ? categories[0].id : null));
+        const initialMinutes = Number(settingsDraft.defaultTimerMinutes) || 25;
+        const breakDuration = Number(settingsDraft.defaultBreakMinutes) || 5;
         return {
           isOpen: false,
           isRunning: false,
           hasStarted: false,
           mode: 'focus',
-          initialMinutes: 25,
-          breakDuration: 5,
-          minutes: 25,
+          initialMinutes,
+          breakDuration,
+          minutes: initialMinutes,
           seconds: 0,
           categoryId: savedCat && categories.some(c => c.id === savedCat) ? savedCat : defaultCatId
         };
@@ -1623,6 +1658,12 @@
             setShowSearchModal(true);
             return;
           }
+          if (key === 't' && e.shiftKey) {
+            e.preventDefault();
+            playSound('click');
+            setShowQuickCapture(true);
+            return;
+          }
           if (key === 'l') {
             playSound('click');
             setSelectedColorId('lock');
@@ -1721,6 +1762,23 @@
         const next = dates[idx + (dir === 'next' ? 1 : -1)];
         return next || null;
       }, [activeJournalDate, availableWeeks, selectedWeekIndex]);
+      useEffect(() => {
+        if (!activeJournalDate) return;
+        const onKeyDown = (e) => {
+          const activeTag = document.activeElement?.tagName;
+          if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const direction = e.key === 'ArrowRight' ? 'next' : 'prev';
+            const adjacent = getAdjacentDateInCurrentWeek(direction);
+            if (!adjacent) return;
+            e.preventDefault();
+            playSound('click');
+            setActiveJournalDate(adjacent);
+          }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, [activeJournalDate, getAdjacentDateInCurrentWeek]);
       const habitZoneAvailableWeeks = useMemo(() => getWeeksInMonth(habitZoneWeekMonth), [habitZoneWeekMonth]);
       // === NEW: Compute display dates for FOCUS MODE ===
       const displayDates = isFocusMode ? [todayStr] : currentWeekDates;
@@ -2249,110 +2307,7 @@
         return insertJournalListMarkerAt(activeJournalDate, journalTextareaRef, kind);
       };
 
-      // NEW: Box the "unboxed" block immediately above the cursor in a ---- frame
-      const boxJournalAboveCursorAt = (dateStr, textareaRef) => {
-        if (!dateStr) return;
-        const el = textareaRef?.current;
-        if (!el) return;
-
-        const currentText = String(el.value || '');
-        const selStart = el.selectionStart ?? currentText.length;
-        const rawLines = currentText.split('\n');
-        const cursorLineIdx = currentText.slice(0, selStart).split('\n').length - 1;
-
-        if (cursorLineIdx <= 0) return;
-
-        // Find the nearest non-empty block right above the cursor.
-        let endLine = cursorLineIdx - 1;
-        while (endLine >= 0 && rawLines[endLine].trim() === '') endLine--;
-        if (endLine < 0) return;
-
-        let startLine = endLine;
-        while (startLine >= 0 && rawLines[startLine].trim() !== '') startLine--;
-        startLine = startLine + 1;
-        if (startLine > endLine) return;
-
-        const blockStartChar = (() => {
-          let idx = 0;
-          for (let i = 0; i < startLine; i++) idx += rawLines[i].length + 1; // + '\n'
-          return idx;
-        })();
-        const blockEndChar = selStart; // assumes cursor is at/near the start of the cursor line
-
-        // Avoid double-boxing:
-        // If the block we detected begins with a `----` delimiter, it is already a boxed region.
-        // Move the cursor to two lines below that region's closing `----`.
-        const blockStartsWithDelim = rawLines[startLine]?.trim() === '----';
-        if (blockStartsWithDelim) {
-          const blockEndsWithDelim = rawLines[endLine]?.trim() === '----';
-          let closeLineIdx = blockEndsWithDelim ? endLine : -1;
-          if (closeLineIdx === -1) {
-            // Look forward (within the contiguous non-empty area) for the closing delimiter.
-            for (let i = endLine + 1; i < rawLines.length; i++) {
-              const t = rawLines[i].trim();
-              if (t === '') break; // box ended by empty line
-              if (t === '----') {
-                closeLineIdx = i;
-                break;
-              }
-            }
-          }
-
-          if (closeLineIdx !== -1) {
-            const targetLineIdx = closeLineIdx + 2;
-            let targetChar = currentText.length;
-            if (targetLineIdx < rawLines.length) {
-              targetChar = rawLines.slice(0, targetLineIdx).reduce((acc, ln) => acc + ln.length + 1, 0);
-            }
-            setTimeout(() => {
-              try {
-                el.focus();
-                el.setSelectionRange(targetChar, targetChar);
-              } catch (e) {}
-            }, 0);
-            return;
-          }
-        }
-
-        // Back-compat fallback: if the detected block is sandwiched by delimiters, just move cursor down.
-        const alreadyBoxed =
-          startLine > 0 &&
-          endLine + 1 < rawLines.length &&
-          rawLines[startLine - 1].trim() === '----' &&
-          rawLines[endLine + 1].trim() === '----';
-
-        if (alreadyBoxed) {
-          const closeLineIdx = endLine + 1;
-          const targetLineIdx = closeLineIdx + 2;
-          let targetChar = currentText.length;
-          if (targetLineIdx < rawLines.length) {
-            targetChar = rawLines.slice(0, targetLineIdx).reduce((acc, ln) => acc + ln.length + 1, 0);
-          }
-          setTimeout(() => {
-            try {
-              el.focus();
-              el.setSelectionRange(targetChar, targetChar);
-            } catch (e) {}
-          }, 0);
-          return;
-        }
-
-        const boxContentLines = rawLines.slice(startLine, endLine + 1);
-        const boxBlock = ['----', ...boxContentLines, '----'].join('\n') + '\n\n';
-
-        const nextValue = currentText.slice(0, blockStartChar) + boxBlock + currentText.slice(blockEndChar);
-        const nextCursor = blockStartChar + boxBlock.length;
-
-        handleJournalSave(dateStr, nextValue);
-        setTimeout(() => {
-          try {
-            el.focus();
-            el.setSelectionRange(nextCursor, nextCursor);
-            autoResizeJournalTextarea(el);
-          } catch (e) {}
-        }, 0);
-      };
-      const boxJournalAboveCursor = () => boxJournalAboveCursorAt(activeJournalDate, journalTextareaRef);
+      // Box feature removed from Journal; manual boxing is no longer available.
 
       // --- NEW: Auto-resize + keep N lines below cursor ---
       const JOURNAL_MIN_LINES_BELOW_CURSOR = 3;
@@ -3198,6 +3153,7 @@
             showToast('❌ No week selected to export', 'error');
             return;
           }
+          showToast('⏳ Generating PDF, please wait...', 'info', 6000);
 
           const escapeHtml = (val) => {
             const s = String(val ?? '');
@@ -3298,7 +3254,7 @@
               : '<li>(none)</li>';
 
             return `
-              <div style="border:1px solid #e5e7eb; border-radius:10px; padding:16px; margin-bottom:16px;">
+              <div class="trackerbox-day-section" style="border:1px solid #e5e7eb; border-radius:10px; padding:16px; margin-bottom:16px;">
                 <h2 style="margin:0 0 8px; font-size:16px;">${escapeHtml(getDisplayDate(dStr))}</h2>
                 <div style="margin-bottom:12px; color:#374151;">
                   Todos: ${todosGreen} completed, ${todosYellow} partial, ${todosRed} not completed${todosSnoozed ? `, ${todosSnoozed} snoozed` : ''}.<br/>
@@ -3307,7 +3263,7 @@
 
                 <div style="margin-bottom:12px;">
                   <div style="font-weight:700; margin-bottom:6px;">Journal</div>
-                  <pre style="white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px;">${escapeHtml(journalText)}</pre>
+                  <pre class="trackerbox-journal-text" style="white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px;">${escapeHtml(journalText)}</pre>
                 </div>
 
                 <div style="margin-bottom:12px;">
@@ -3329,6 +3285,11 @@
           }).join('');
 
           container.innerHTML = `
+            <style>
+              .trackerbox-day-section { page-break-inside: avoid; break-inside: avoid; }
+              .trackerbox-day-section + .trackerbox-day-section { page-break-before: always; }
+              .trackerbox-journal-text { font-weight: 700; color: #111827; }
+            </style>
             <div style="margin-bottom:18px;">
               <h1 style="margin:0; font-size:20px;">Trackerbox Week Journal</h1>
               <div style="color:#374151; margin-top:6px;">
@@ -3347,7 +3308,7 @@
               image: { type: 'jpeg', quality: 0.98 },
               html2canvas: { scale: 2, useCORS: true },
               jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-              pagebreak: { mode: ['css', 'legacy'], avoid: ['.avoid-break'] }
+              pagebreak: { mode: ['css', 'legacy'], avoid: ['.trackerbox-day-section'] }
             })
             .save();
           showToast('✅ Week journal PDF downloaded');
@@ -3953,7 +3914,8 @@
                      <span className="flex items-center gap-2"><Clock size={14}/> Focus Chronos</span>
                      <span>{timer.isOpen ? '▼' : '▲'}</span>
                    </button>
-                   <div className="p-4 flex flex-col gap-4">
+                   {timer.isOpen && (
+                     <div className="p-4 flex flex-col gap-4">
                      <select value={timer.categoryId || ''} onChange={e => { playSound('click'); setTimer(p => ({...p, categoryId: e.target.value})); }} className="w-full bg-[#0b1120] text-slate-200 rounded-lg border border-cyan-500/30 px-3 py-2 font-bold text-sm outline-none focus:border-cyan-400">
                        {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
                      </select>
@@ -4137,6 +4099,7 @@
                       Switch Mode
                     </button>
                    </div>
+                   )}
                  </div>
                </div>
             )}
@@ -4474,13 +4437,6 @@
                         >
                           Bullet {getNextJournalNumberAtCursor()}
                         </button>
-                        <button
-                          onClick={() => { playSound('click'); boxJournalAboveCursor(); }}
-                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all whitespace-nowrap"
-                          title="Box the block above cursor in a ---- frame"
-                        >
-                          Box (----)
-                        </button>
                         <span className="ml-auto text-[10px] text-purple-300/70 font-bold uppercase tracking-widest">
                           Inserts at cursor
                         </span>
@@ -4752,7 +4708,7 @@
                       <ul className="text-xs space-y-1 list-disc pl-5">
                         <li><strong>Tasks</strong>: red/yellow/green + progress % + remark + snooze + migrate + sweep.</li>
                         <li><strong>Habits</strong>: scheduled by weekday; red/yellow/green + optional % + remark.</li>
-                        <li><strong>Journal</strong>: instant-save long-form text. Buttons: ◈ bullet, numbering, boxing, timestamp, week PDF.</li>
+                        <li><strong>Journal</strong>: instant-save long-form text. Buttons: ◈ bullet, numbering, timestamp, week PDF.</li>
                         <li><strong>Date arrows</strong>: browse days inside the week without closing the modal.</li>
                       </ul>
                     </div>
@@ -5159,13 +5115,116 @@
               {toasts.map((toast) => (
                 <div
                   key={toast.id}
-                  className={`glass-panel px-5 py-4 rounded-3xl flex items-center gap-3 shadow-2xl border-l-4 text-sm font-medium transition-all animate-[toastPop_0.3s_ease-out] ${toast.type === 'success' ? 'border-green-400 bg-green-900/90 text-green-100' : 'border-red-400 bg-red-900/90 text-red-100'}`}
+                  className={`glass-panel px-5 py-4 rounded-3xl flex items-center gap-3 shadow-2xl border-l-4 text-sm font-medium transition-all animate-[toastPop_0.3s_ease-out] ${toast.type === 'success' ? 'border-green-400 bg-green-900/90 text-green-100' : toast.type === 'info' ? 'border-sky-400 bg-sky-900/90 text-sky-100' : 'border-red-400 bg-red-900/90 text-red-100'}`}
                 >
-                  {toast.type === 'success' ? <span className="text-2xl">✅</span> : <span className="text-2xl">❌</span>}
+                  {toast.type === 'success' ? <span className="text-2xl">✅</span> : toast.type === 'info' ? <span className="text-2xl">⏳</span> : <span className="text-2xl">❌</span>}
                   <span className="flex-1 min-w-0">{toast.message}</span>
                 </div>
               ))}
             </div>
+            {showSettingsModal && (
+              <div className="fixed inset-0 z-[9998] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowSettingsModal(false)}>
+                <div className="glass-panel w-full max-w-2xl rounded-3xl p-6 border-cyan-400/40" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h2 className="text-xl font-black uppercase tracking-widest text-white">Settings</h2>
+                      <p className="text-sm text-slate-400">Edit saved defaults and app preferences.</p>
+                    </div>
+                    <button onClick={() => setShowSettingsModal(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                  </div>
+                  <div className="grid gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settingsDraft.defaultFocusMode}
+                          onChange={() => setSettingsDraft(prev => ({ ...prev, defaultFocusMode: !prev.defaultFocusMode }))}
+                          className="h-4 w-4 accent-cyan-400"
+                        />
+                        <span className="text-sm font-bold text-slate-200">Start in Focus Mode by default</span>
+                      </label>
+                      <label className="flex flex-col gap-2 bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <span className="text-sm font-bold text-slate-200">Default selected colour</span>
+                        <select
+                          value={settingsDraft.defaultSelectedColorId}
+                          onChange={(e) => setSettingsDraft(prev => ({ ...prev, defaultSelectedColorId: e.target.value }))}
+                          className="bg-[#0b1120] text-slate-200 rounded-xl border border-white/10 px-3 py-2"
+                        >
+                          <option value="lock">Lock</option>
+                          {categories.map(cat => (
+                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
+                      <div className="font-bold uppercase tracking-widest text-xs text-cyan-300 mb-3">Collapsed Epoch Defaults</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {SECTIONS.map(section => (
+                          <label key={section.id} className="flex items-center gap-3 bg-[#0b1120] rounded-2xl px-3 py-3 border border-white/10 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settingsDraft.defaultCollapsedEpochs[section.id]}
+                              onChange={() => setSettingsDraft(prev => ({
+                                ...prev,
+                                defaultCollapsedEpochs: {
+                                  ...prev.defaultCollapsedEpochs,
+                                  [section.id]: !prev.defaultCollapsedEpochs[section.id]
+                                }
+                              }))}
+                              className="h-4 w-4 accent-cyan-400"
+                            />
+                            <span className="text-sm text-slate-200">{section.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="flex flex-col gap-2 bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <span className="text-sm font-bold text-slate-200">Default Pomodoro minutes</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={settingsDraft.defaultTimerMinutes}
+                          onChange={(e) => setSettingsDraft(prev => ({ ...prev, defaultTimerMinutes: Number(e.target.value) || 1 }))}
+                          className="bg-[#0b1120] text-slate-200 rounded-xl border border-white/10 px-3 py-2"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-2 bg-white/5 border border-white/10 rounded-2xl p-4">
+                        <span className="text-sm font-bold text-slate-200">Default Break minutes</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={settingsDraft.defaultBreakMinutes}
+                          onChange={(e) => setSettingsDraft(prev => ({ ...prev, defaultBreakMinutes: Number(e.target.value) || 1 }))}
+                          className="bg-[#0b1120] text-slate-200 rounded-xl border border-white/10 px-3 py-2"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-3 justify-end">
+                      <button
+                        onClick={() => {
+                          setSettingsDraft(DEFAULT_SETTINGS);
+                          showToast('Defaults restored', 'success');
+                        }}
+                        className="px-4 py-3 bg-white/5 border border-white/10 text-slate-200 rounded-2xl hover:bg-white/10 transition-all"
+                      >
+                        Restore Base Defaults
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowSettingsModal(false);
+                          showToast('Settings saved', 'success');
+                        }}
+                        className="px-4 py-3 bg-cyan-500 text-black font-bold rounded-2xl hover:bg-cyan-400 transition-all"
+                      >
+                        Save & Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Header */}
             <header className="glass-panel sticky top-0 z-50 border-b border-white/10 rounded-none shadow-none">
               <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -5302,6 +5361,9 @@
                     <button onClick={() => { playSound('click'); setShowHelp(true); }} className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all" title="System Protocol">
                       <Info size={20} />
                     </button>
+                    <button onClick={() => { playSound('click'); setShowSettingsModal(true); }} className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all" title="Open Settings">
+                      <Settings2 size={20} />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -5422,85 +5484,6 @@
                               })()}
                             </div>
                             <div className="flex items-start gap-3 md:gap-4">
-                              <div className="sticky left-0 top-24 z-20 w-[38px] md:w-[50px] shrink-0">
-                                <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
-                                  <button onClick={handleUndo} disabled={past.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${past.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
-                                  <button onClick={handleRedo} disabled={future.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${future.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
-                                  <div className="w-full h-px bg-white/10 my-1"></div>
-                                  <button
-                                    onClick={() => {
-                                      playSound('click');
-                                      const newMode = !isBlueprintMode;
-                                      setIsBlueprintMode(newMode);
-                                      showToast(newMode ? '📐 Plan Mode ON (hatched future planning)' : '📐 Plan Mode OFF');
-                                    }}
-                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full text-xs font-black tracking-widest ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                    title={isBlueprintMode ? "Plan Mode ON — hatched future planning" : "Toggle Plan Mode"}
-                                  >
-                                    <Sparkles size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      playSound('click');
-                                      const newMode = !isDescriptionMode;
-                                      setIsDescriptionMode(newMode);
-                                      showToast(newMode ? '📝 Notes Mode ON' : '📝 Notes Mode OFF');
-                                    }}
-                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                    title={isDescriptionMode ? "Notes Mode ON — click triangles to edit notes" : "Toggle Notes Mode"}
-                                  >
-                                    <FileText size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      playSound('click');
-                                      const newMode = !isFocusMode;
-                                      setIsFocusMode(newMode);
-                                      showToast(newMode ? '🔍 Focus Mode ON (today only)' : '🔍 Focus Mode OFF');
-                                    }}
-                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                    title={isFocusMode ? "Focus Mode ON — only today visible" : "Toggle Focus Mode (today only)"}
-                                  >
-                                    <Activity size={16} />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      playSound('click');
-                                      const next = !isScissorMode;
-                                      setIsScissorMode(next);
-                                      showToast(next ? '✂️ Scissor Mode ON (splits enabled)' : '✂️ Scissor Mode OFF');
-                                    }}
-                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isScissorMode ? 'border-rose-400 bg-rose-500/20 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.35)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                    title={isScissorMode ? "Scissor Mode ON — right click to split" : "Toggle Scissor Mode (enables splitting)"}
-                                  >
-                                    ✂️
-                                  </button>
-                                  <div className="w-full h-px bg-white/10 my-1"></div>
-                                  <button
-                                    onClick={() => handleColorSelect('lock')}
-                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100 shadow-[0_0_18px_rgba(239,68,68,0.45)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                    title="Lock"
-                                  >
-                                    <Lock size={14} />
-                                  </button>
-                                  <div className="w-full h-px bg-white/10 my-1"></div>
-                                  {categories.map(cat => (
-                                    <button
-                                      key={cat.id}
-                                      onClick={() => handleColorSelect(cat.id)}
-                                      className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110 border-white/60' : 'border-white/20'}`}
-                                      style={{
-                                        backgroundColor: selectedColorId === cat.id ? cat.color : 'transparent',
-                                        backgroundImage: selectedColorId === cat.id
-                                          ? 'none'
-                                          : `repeating-linear-gradient(45deg, ${cat.color}55 0, ${cat.color}55 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 7px)`,
-                                        boxShadow: selectedColorId === cat.id ? `0 0 16px ${cat.color}` : `0 0 4px ${cat.color}80`,
-                                      }}
-                                      title={cat.name}
-                                    />
-                                  ))}
-                                </div>
-                              </div>
                               <div className="flex-1 min-w-0">
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-5">
                               {SECTIONS.map((section) => (
@@ -5548,6 +5531,30 @@
                                             >
                                               N
                                             </button>
+                                            <button
+                                              onClick={() => {
+                                                playSound('click');
+                                                const newMode = !isFocusMode;
+                                                setIsFocusMode(newMode);
+                                                showToast(newMode ? '🔍 Focus Mode ON (today only)' : '🔍 Focus Mode OFF');
+                                              }}
+                                              className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`}
+                                              title="Focus Mode"
+                                            >
+                                              <Activity size={14} />
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                playSound('click');
+                                                const next = !isScissorMode;
+                                                setIsScissorMode(next);
+                                                showToast(next ? '✂️ Scissor Mode ON (splits enabled)' : '✂️ Scissor Mode OFF');
+                                              }}
+                                              className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${isScissorMode ? 'border-rose-400 bg-rose-500/20 text-rose-200' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`}
+                                              title="Scissor Mode"
+                                            >
+                                              ✂️
+                                            </button>
                                             <button onClick={() => handleColorSelect('lock')} className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border text-[10px] font-black ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`} title="Lock">L</button>
                                             <div className="w-full h-px bg-white/10 my-0.5"></div>
                                             {categories.map(cat => (
@@ -5555,13 +5562,7 @@
                                                 key={`focus-rail-${section.id}-${cat.id}`}
                                                 onClick={() => handleColorSelect(cat.id)}
                                                 className={`w-6 h-6 md:w-7 md:h-7 rounded-lg border transition-all ${selectedColorId === cat.id ? 'border-white/70 scale-105' : 'border-white/20'}`}
-                                                style={{
-                                                  backgroundColor: selectedColorId === cat.id ? cat.color : 'transparent',
-                                                  backgroundImage: selectedColorId === cat.id
-                                                    ? 'none'
-                                                    : `repeating-linear-gradient(45deg, ${cat.color}55 0, ${cat.color}55 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 7px)`,
-                                                  boxShadow: selectedColorId === cat.id ? `0 0 12px ${cat.color}` : `0 0 4px ${cat.color}80`,
-                                                }}
+                                                style={getPaletteButtonStyle(cat, selectedColorId === cat.id)}
                                                 title={cat.name}
                                               />
                                             ))}
@@ -5867,13 +5868,7 @@
                                                 key={cat.id}
                                                 onClick={() => handleColorSelect(cat.id)}
                                                 className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110 border-white/60' : 'border-white/20'}`}
-                                                style={{
-                                                  backgroundColor: selectedColorId === cat.id ? cat.color : 'transparent',
-                                                  backgroundImage: selectedColorId === cat.id
-                                                    ? 'none'
-                                                    : `repeating-linear-gradient(45deg, ${cat.color}55 0, ${cat.color}55 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 7px)`,
-                                                  boxShadow: selectedColorId === cat.id ? `0 0 16px ${cat.color}` : `0 0 4px ${cat.color}80`,
-                                                }}
+                                                style={getPaletteButtonStyle(cat, selectedColorId === cat.id)}
                                                 title={cat.name}
                                               />
                                             ))}
@@ -6332,13 +6327,6 @@
                       >
                         Bullet {getNextJournalNumberAtCursorFor(journalModuleDate, journalOnlyTextareaRef)}
                       </button>
-                      <button
-                        onClick={() => { playSound('click'); boxJournalAboveCursorAt(journalModuleDate, journalOnlyTextareaRef); }}
-                        className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all whitespace-nowrap"
-                        title="Box the block above cursor in a ---- frame"
-                      >
-                        Box (----)
-                      </button>
                       <span className="ml-auto text-[10px] text-amber-300/70 font-bold uppercase tracking-widest">
                         Inserts at cursor
                       </span>
@@ -6572,12 +6560,6 @@
                     <div className="flex items-center gap-3">
                         <Database size={24} className="text-slate-300 drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
                         <h2 className="text-lg md:text-xl font-black uppercase tracking-wider text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">Data & Storage Core</h2>
-                        {daysSinceLastExport > 2 && (
-                          <div className="absolute -top-1 -right-1 flex items-center justify-center">
-                            <div className="w-4 h-4 bg-red-500 rounded-full animate-ping absolute"></div>
-                            <div className="w-3 h-3 bg-red-500 rounded-full shadow-[0_0_12px_#ef4444]"></div>
-                          </div>
-                        )}
                     </div>
                     <ChevronDown size={24} className={`text-slate-400 transform transition-transform ${sectionsOpen.storage ? 'rotate-180' : ''}`} />
                 </button>
@@ -6594,23 +6576,6 @@
                           <button onClick={() => { playSound('click'); fileInputRef.current.click(); }} className="w-full tb-interactive bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 hover:text-purple-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-purple-500/50 flex items-center justify-center gap-2">
                             <UploadCloud size={16}/> Upload Data
                           </button>
-                          <button
-                            onClick={checkForAppUpdate}
-                            disabled={!appUpdateState.supported || appUpdateState.checking}
-                            className={`w-full font-bold uppercase tracking-wider py-2 rounded-xl border transition-all flex items-center justify-center gap-2 ${!appUpdateState.supported || appUpdateState.checking ? 'bg-white/5 text-slate-500 border-white/10 cursor-not-allowed' : 'bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40 hover:text-cyan-100 border-cyan-500/50'}`}
-                          >
-                            {appUpdateState.checking ? 'Checking...' : 'Check App Update'}
-                          </button>
-                          <button
-                            onClick={applyAppUpdate}
-                            disabled={!appUpdateState.available}
-                            className={`w-full font-bold uppercase tracking-wider py-2 rounded-xl border transition-all ${appUpdateState.available ? 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 hover:text-emerald-100 border-emerald-500/50' : 'bg-white/5 text-slate-500 border-white/10 cursor-not-allowed'}`}
-                          >
-                            Update Now
-                          </button>
-                          {appUpdateState.message && (
-                            <div className="text-[10px] text-slate-400 px-1">{appUpdateState.message}</div>
-                          )}
                           <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportData} className="hidden" />
                         </div>
                       </div>
