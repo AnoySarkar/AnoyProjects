@@ -1,17 +1,17 @@
 {
   "name": "Trackerbox",
   "short_name": "Trackerbox",
+  "description": "A futuristic productivity and time tracking tool.",
   "start_url": "./trackerbox.html",
-  "scope": "./",
   "display": "standalone",
   "background_color": "#05070e",
   "theme_color": "#05070e",
-  "description": "Daily 24-hour tracker with focus, habits, and analytics.",
   "icons": [
     {
       "src": "./icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "./icon-512.png",

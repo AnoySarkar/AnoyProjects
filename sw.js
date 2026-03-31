@@ -1,7 +1,7 @@
 const CACHE_NAME = 'trackerbox-v1';
 const ASSETS_TO_CACHE = [
   './',
-  './trackerboxB.html',
+  './trackerbox.html',
   './manifest.json',
   './icon-192.png',
   'https://cdn.tailwindcss.com',
