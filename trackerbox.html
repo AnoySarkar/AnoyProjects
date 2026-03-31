@@ -140,6 +140,15 @@
       0% { opacity: 0; transform: translateY(20px) scale(0.95); }
       100% { opacity: 1; transform: translateY(0) scale(1); }
     }
+    /* Journal save pulse (psychological assurance) */
+    @keyframes journalSavePulse {
+      0% { box-shadow: 0 0 0 rgba(34,197,94,0); border-color: rgba(34,197,94,0.0); }
+      40% { box-shadow: 0 0 18px rgba(34,197,94,0.35), 0 0 40px rgba(34,197,94,0.16); border-color: rgba(34,197,94,0.55); }
+      100% { box-shadow: 0 0 0 rgba(34,197,94,0); border-color: rgba(34,197,94,0.0); }
+    }
+    .journal-save-pulse {
+      animation: journalSavePulse 500ms ease-out 0s 4;
+    }
     /* Markdown prose styles */
     .prose {
       font-size: 0.875rem;
@@ -416,6 +425,7 @@
       // Collapsible Section States
       const [sectionsOpen, setSectionsOpen] = useState({
          tracker: true,
+         journal: false,
          analytics: false,
          modules: false,
          storage: false,
@@ -611,6 +621,7 @@
       const [editingDescription, setEditingDescription] = useState(null);
       const descriptionTextareaRef = useRef(null);
       const journalTextareaRef = useRef(null);
+      const journalOnlyTextareaRef = useRef(null);
       const [descClipboard, setDescClipboard] = useState('');
       const [contextMenu, setContextMenu] = useState(null);
       // NEW: Tooltip for note preview on triangle hover (NOW WORKS EVEN WHEN MODE IS OFF)
@@ -648,9 +659,10 @@
       // === NEW FOR QUICK-CAPTURE GLOBAL TASK INPUT (REWORKED) ===
       const [showQuickCapture, setShowQuickCapture] = useState(false);
       const [quickInput, setQuickInput] = useState('');
-      const [quickSaveType, setQuickSaveType] = useState('todo'); // 'todo' or 'journal'
+      const [quickSaveType, setQuickSaveType] = useState('todo'); // 'todo' | 'journal' | 'notes'
       const [quickIsToday, setQuickIsToday] = useState(true);
       const [quickTargetDate, setQuickTargetDate] = useState(() => formatDateString(new Date()));
+      const [quickNotesStartMinutes, setQuickNotesStartMinutes] = useState(6 * 60); // default: 6:00 AM
       // NEW: Toast notifications (non-blocking success messages)
       const [toasts, setToasts] = useState([]);
       // === NEW: Current Hour Visual Anchor (live) ===
@@ -1271,6 +1283,10 @@
       const [pendingReset, setPendingReset] = useState(null);
       // Feature States: Journal & Timer
       const [activeJournalDate, setActiveJournalDate] = useState(null);
+      // Journal-only module state (separate from Captain's Log selection)
+      const [journalModuleDate, setJournalModuleDate] = useState(todayStr);
+      const [journalFocusTick, setJournalFocusTick] = useState(0);
+      const [journalSavePulseTick, setJournalSavePulseTick] = useState(0);
       const [todoInput, setTodoInput] = useState('');
       const [dragTodoId, setDragTodoId] = useState(null);
       const [dragHabitId, setDragHabitId] = useState(null);
@@ -1576,8 +1592,16 @@
       // --- Hotkey Listeners ---
       useEffect(() => {
         const handleKeyDown = (e) => {
-          if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
           const key = e.key.toLowerCase();
+          const isTypingField = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+          if (isTypingField) {
+            // Allow timestamp insertion while typing (Ctrl/Cmd + T)
+            if ((e.ctrlKey || e.metaKey) && key === 't') {
+              e.preventDefault();
+              insertTimestampIntoFocusedJournal();
+            }
+            return;
+          }
           if ((e.ctrlKey || e.metaKey) && key === 'z') {
              if (e.shiftKey) handleRedo();
              else handleUndo();
@@ -1647,6 +1671,29 @@
           window.removeEventListener('keydown', onKey);
         };
       }, [showSearchModal]);
+
+      // NEW: When opening the Journal-only module, focus the textarea for instant writing.
+      useEffect(() => {
+        if (!sectionsOpen.journal) return;
+        const t = setTimeout(() => {
+          try {
+            const el = journalOnlyTextareaRef.current;
+            if (!el) return;
+            el.focus();
+            const end = (el.value || '').length;
+            el.setSelectionRange(end, end);
+            autoResizeJournalTextarea(el);
+          } catch (e) {}
+        }, 80);
+        return () => window.clearTimeout(t);
+      }, [sectionsOpen.journal, journalModuleDate, journalFocusTick]);
+
+      // NEW: Clear journal save pulse after 2 seconds
+      useEffect(() => {
+        if (!journalSavePulseTick) return;
+        const t = setTimeout(() => setJournalSavePulseTick(0), 2000);
+        return () => clearTimeout(t);
+      }, [journalSavePulseTick]);
       useEffect(() => {
         const weekIdx = availableWeeks.findIndex(w => w.dates.includes(todayStr));
         setSelectedWeekIndex(weekIdx !== -1 ? weekIdx : 0);
@@ -1711,27 +1758,32 @@
         setHabitZoneWeekIndex(idx !== -1 ? idx : 0);
       }, [habitZoneWeekMonth, habitZoneAvailableWeeks, todayStr]);
       useEffect(() => {
-        const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-        const savedJournal = localStorage.getItem(LOCAL_JOURNAL_KEY);
-        const savedTodos = localStorage.getItem(LOCAL_TODOS_KEY);
-        const savedDescriptions = localStorage.getItem(LOCAL_DESCRIPTIONS_KEY);
-        if (savedData) {
-          try { setAllData(JSON.parse(savedData)); }
-          catch (e) { console.error("Error loading local data", e); }
-        }
-        if (savedJournal) {
-          try { setJournalData(JSON.parse(savedJournal)); }
-          catch (e) { console.error("Error loading journal data", e); }
-        }
-        if (savedTodos) {
-          try { setTodosData(JSON.parse(savedTodos)); }
-          catch (e) { console.error("Error loading todos data", e); }
-        }
-        if (savedDescriptions) {
-          try { setDescriptions(JSON.parse(savedDescriptions)); }
-          catch (e) { console.error("Error loading descriptions", e); }
-        }
+        // Faster startup: paint UI immediately, then hydrate large JSON in a queued task.
         setIsLoaded(true);
+        setTimeout(() => {
+          try {
+            const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
+            const savedJournal = localStorage.getItem(LOCAL_JOURNAL_KEY);
+            const savedTodos = localStorage.getItem(LOCAL_TODOS_KEY);
+            const savedDescriptions = localStorage.getItem(LOCAL_DESCRIPTIONS_KEY);
+            if (savedData) {
+              try { setAllData(JSON.parse(savedData)); }
+              catch (e) { console.error("Error loading local data", e); }
+            }
+            if (savedJournal) {
+              try { setJournalData(JSON.parse(savedJournal)); }
+              catch (e) { console.error("Error loading journal data", e); }
+            }
+            if (savedTodos) {
+              try { setTodosData(JSON.parse(savedTodos)); }
+              catch (e) { console.error("Error loading todos data", e); }
+            }
+            if (savedDescriptions) {
+              try { setDescriptions(JSON.parse(savedDescriptions)); }
+              catch (e) { console.error("Error loading descriptions", e); }
+            }
+          } catch (e) {}
+        }, 0);
         // NEW: Lock feature on every page refresh
         setSelectedColorId('lock');
       }, []);
@@ -1817,7 +1869,7 @@
             return updated;
           });
           showToast(`✅ Added to ToDo on ${getDisplayDate(targetDate)}`);
-        } else {
+        } else if (quickSaveType === 'journal') {
           setJournalData(prev => {
             const current = prev[targetDate] || '';
             const bullet = `• ${quickInput.trim()}`;
@@ -1827,10 +1879,25 @@
             return updated;
           });
           showToast(`✅ Added to Journal on ${getDisplayDate(targetDate)}`);
+        } else if (quickSaveType === 'notes') {
+          const noteText = quickInput.trim();
+          const tri = getTriangleForMinutes(targetDate, quickNotesStartMinutes);
+          if (tri && tri.triangleId) {
+            const inserted = appendTriangleNoteIfMissing(targetDate, tri.hour, tri.triangleId, noteText);
+            if (inserted) {
+              expandSectionForHour(inserted.hour);
+              setKeyboardCursor(inserted);
+              showToast(`✅ Note saved for ${getDisplayDate(targetDate)}`);
+            } else {
+              showToast(`✅ Note already exists for ${getDisplayDate(targetDate)}`);
+            }
+          } else {
+            showToast('❌ Could not map note time to a triangle', 'error');
+          }
         }
         setShowQuickCapture(false);
         setQuickInput('');
-      }, [quickInput, quickSaveType, quickTargetDate, showToast]);
+      }, [quickInput, quickSaveType, quickTargetDate, quickNotesStartMinutes, showToast]);
       // --- Chrono-Clone Handlers ---
       const handleCopyDay = (dateStr) => {
         playSound('click');
@@ -2109,17 +2176,23 @@
       }, [saveHistoryState, todayStr, showToast]);
       // --- Journal & Todo & Habit Handlers ---
       const handleJournalSave = (dateStr, text) => {
+        // NEW: Auto-extract time + parenthetical notes from journal.
+        // Example: `7am (did dishes)` or `7.50pm (watched)`
+        autoInsertTriangleNotesFromJournal(dateStr, text);
+
         setJournalData(prev => {
           const newData = { ...prev, [dateStr]: text };
           localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(newData));
+          // Visual save pulse (2s window) for psychological assurance
+          setJournalSavePulseTick(Date.now());
           return newData;
         });
       };
 
-      // NEW: Insert bullet/numbered list at cursor (Captain's Journal)
-      const insertJournalListMarker = (kind) => {
-        if (!activeJournalDate) return;
-        const el = journalTextareaRef.current;
+      // NEW: Insert bullet/numbered list at cursor (works for any journal textarea/date)
+      const insertJournalListMarkerAt = (dateStr, textareaRef, kind) => {
+        if (!dateStr) return;
+        const el = textareaRef?.current;
         if (!el) return;
 
         const currentText = String(el.value || '');
@@ -2131,15 +2204,14 @@
         const atLineStart = lineStartIndex === selStart;
         const newlinePrefix = atLineStart ? '' : '\n';
 
-        let marker = '- ';
+        // Bullet marker style (requested ◈ instead of "-")
+        let marker = '◈ ';
         if (kind === 'number') {
           // Find the last "N. " above the cursor and increment.
           const re = /(^|\n)\s*(\d+)\.\s+/g;
           let m;
           let lastNum = null;
-          while ((m = re.exec(before)) !== null) {
-            lastNum = parseInt(m[2], 10);
-          }
+          while ((m = re.exec(before)) !== null) lastNum = parseInt(m[2], 10);
           const nextNum = Number.isFinite(lastNum) ? (lastNum + 1) : 1;
           marker = `${nextNum}. `;
         }
@@ -2147,14 +2219,420 @@
         const nextCursor = selStart + newlinePrefix.length + marker.length;
         const nextValue = currentText.slice(0, selStart) + newlinePrefix + marker + currentText.slice(selEnd);
 
-        handleJournalSave(activeJournalDate, nextValue);
+        handleJournalSave(dateStr, nextValue);
         // Restore focus + cursor after React updates textarea value.
         setTimeout(() => {
           try {
             el.focus();
             el.setSelectionRange(nextCursor, nextCursor);
+            autoResizeJournalTextarea(el);
           } catch (e) {}
         }, 0);
+      };
+
+      const insertJournalListMarker = (kind) => {
+        return insertJournalListMarkerAt(activeJournalDate, journalTextareaRef, kind);
+      };
+
+      // NEW: Box the "unboxed" block immediately above the cursor in a ---- frame
+      const boxJournalAboveCursorAt = (dateStr, textareaRef) => {
+        if (!dateStr) return;
+        const el = textareaRef?.current;
+        if (!el) return;
+
+        const currentText = String(el.value || '');
+        const selStart = el.selectionStart ?? currentText.length;
+        const rawLines = currentText.split('\n');
+        const cursorLineIdx = currentText.slice(0, selStart).split('\n').length - 1;
+
+        if (cursorLineIdx <= 0) return;
+
+        // Find the nearest non-empty block right above the cursor.
+        let endLine = cursorLineIdx - 1;
+        while (endLine >= 0 && rawLines[endLine].trim() === '') endLine--;
+        if (endLine < 0) return;
+
+        let startLine = endLine;
+        while (startLine >= 0 && rawLines[startLine].trim() !== '') startLine--;
+        startLine = startLine + 1;
+        if (startLine > endLine) return;
+
+        const blockStartChar = (() => {
+          let idx = 0;
+          for (let i = 0; i < startLine; i++) idx += rawLines[i].length + 1; // + '\n'
+          return idx;
+        })();
+        const blockEndChar = selStart; // assumes cursor is at/near the start of the cursor line
+
+        // Avoid double-boxing:
+        // If the block we detected begins with a `----` delimiter, it is already a boxed region.
+        // Move the cursor to two lines below that region's closing `----`.
+        const blockStartsWithDelim = rawLines[startLine]?.trim() === '----';
+        if (blockStartsWithDelim) {
+          const blockEndsWithDelim = rawLines[endLine]?.trim() === '----';
+          let closeLineIdx = blockEndsWithDelim ? endLine : -1;
+          if (closeLineIdx === -1) {
+            // Look forward (within the contiguous non-empty area) for the closing delimiter.
+            for (let i = endLine + 1; i < rawLines.length; i++) {
+              const t = rawLines[i].trim();
+              if (t === '') break; // box ended by empty line
+              if (t === '----') {
+                closeLineIdx = i;
+                break;
+              }
+            }
+          }
+
+          if (closeLineIdx !== -1) {
+            const targetLineIdx = closeLineIdx + 2;
+            let targetChar = currentText.length;
+            if (targetLineIdx < rawLines.length) {
+              targetChar = rawLines.slice(0, targetLineIdx).reduce((acc, ln) => acc + ln.length + 1, 0);
+            }
+            setTimeout(() => {
+              try {
+                el.focus();
+                el.setSelectionRange(targetChar, targetChar);
+              } catch (e) {}
+            }, 0);
+            return;
+          }
+        }
+
+        // Back-compat fallback: if the detected block is sandwiched by delimiters, just move cursor down.
+        const alreadyBoxed =
+          startLine > 0 &&
+          endLine + 1 < rawLines.length &&
+          rawLines[startLine - 1].trim() === '----' &&
+          rawLines[endLine + 1].trim() === '----';
+
+        if (alreadyBoxed) {
+          const closeLineIdx = endLine + 1;
+          const targetLineIdx = closeLineIdx + 2;
+          let targetChar = currentText.length;
+          if (targetLineIdx < rawLines.length) {
+            targetChar = rawLines.slice(0, targetLineIdx).reduce((acc, ln) => acc + ln.length + 1, 0);
+          }
+          setTimeout(() => {
+            try {
+              el.focus();
+              el.setSelectionRange(targetChar, targetChar);
+            } catch (e) {}
+          }, 0);
+          return;
+        }
+
+        const boxContentLines = rawLines.slice(startLine, endLine + 1);
+        const boxBlock = ['----', ...boxContentLines, '----'].join('\n') + '\n\n';
+
+        const nextValue = currentText.slice(0, blockStartChar) + boxBlock + currentText.slice(blockEndChar);
+        const nextCursor = blockStartChar + boxBlock.length;
+
+        handleJournalSave(dateStr, nextValue);
+        setTimeout(() => {
+          try {
+            el.focus();
+            el.setSelectionRange(nextCursor, nextCursor);
+            autoResizeJournalTextarea(el);
+          } catch (e) {}
+        }, 0);
+      };
+      const boxJournalAboveCursor = () => boxJournalAboveCursorAt(activeJournalDate, journalTextareaRef);
+
+      // --- NEW: Auto-resize + keep N lines below cursor ---
+      const JOURNAL_MIN_LINES_BELOW_CURSOR = 3;
+      const JOURNAL_MAX_LINES = 22;
+
+      const autoResizeJournalTextarea = (el) => {
+        if (!el) return;
+        try {
+          const style = window.getComputedStyle(el);
+          const lineHeight = parseFloat(style.lineHeight) || 20;
+          const paddingTop = parseFloat(style.paddingTop) || 0;
+          const paddingBottom = parseFloat(style.paddingBottom) || 0;
+          const minHeight = (JOURNAL_MIN_LINES_BELOW_CURSOR + 1) * lineHeight + paddingTop + paddingBottom;
+          const maxHeight = JOURNAL_MAX_LINES * lineHeight + paddingTop + paddingBottom;
+
+          // Grow to fit, then clamp.
+          el.style.height = 'auto';
+          const clampedHeight = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight));
+          el.style.height = `${clampedHeight}px`;
+
+          // Ensure there are always N lines visible below the cursor line.
+          const caretIndex = el.selectionStart ?? 0;
+          const before = el.value.slice(0, caretIndex);
+          const caretLine = before.split('\n').length - 1;
+
+          const innerHeight = clampedHeight - paddingTop - paddingBottom;
+          const visibleLines = Math.max(1, Math.floor(innerHeight / lineHeight));
+          const topLine = Math.floor((el.scrollTop || 0) / lineHeight);
+          const bottomVisibleLine = topLine + visibleLines - 1;
+
+          const neededBottomLine = caretLine + JOURNAL_MIN_LINES_BELOW_CURSOR;
+          if (neededBottomLine > bottomVisibleLine) {
+            const newTopLine = neededBottomLine - (visibleLines - 1);
+            el.scrollTop = Math.max(0, newTopLine * lineHeight);
+          }
+        } catch (e) {
+          // Don't hard-fail journaling if the resize heuristic breaks.
+        }
+      };
+
+      // --- NEW: Quick-insert timestamp into the focused journal textarea ---
+      const formatLocalTimeBracket = () => {
+        const d = new Date();
+        let h = d.getHours();
+        const ampm = h >= 12 ? 'pm' : 'am';
+        h = h % 12;
+        if (h === 0) h = 12;
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        return `[${String(h).padStart(2, '0')}:${mm}${ampm}] `;
+      };
+
+      const insertTimestampIntoTextarea = (dateStr, el) => {
+        if (!dateStr || !el) return;
+        const currentText = String(journalData?.[dateStr] || '');
+        const selStart = el.selectionStart ?? currentText.length;
+        const selEnd = el.selectionEnd ?? selStart;
+        const marker = formatLocalTimeBracket();
+        const nextValue = currentText.slice(0, selStart) + marker + currentText.slice(selEnd);
+        const nextCursor = selStart + marker.length;
+
+        handleJournalSave(dateStr, nextValue);
+        setTimeout(() => {
+          try {
+            el.focus();
+            el.setSelectionRange(nextCursor, nextCursor);
+            autoResizeJournalTextarea(el);
+          } catch (e) {}
+        }, 0);
+      };
+
+      const insertTimestampIntoFocusedJournal = () => {
+        const elCap = journalTextareaRef.current;
+        const elOnly = journalOnlyTextareaRef.current;
+        const active = document.activeElement;
+
+        if (active && elCap && active === elCap) {
+          insertTimestampIntoTextarea(activeJournalDate, elCap);
+          return;
+        }
+        if (active && elOnly && active === elOnly) {
+          insertTimestampIntoTextarea(journalModuleDate, elOnly);
+          return;
+        }
+      };
+
+      const getNextJournalNumberAtCursorFor = (dateStr, textareaRef) => {
+        if (!dateStr) return 1;
+        const el = textareaRef?.current;
+        const currentText = String(journalData?.[dateStr] || '');
+        const selStart = el?.selectionStart ?? currentText.length;
+        const before = currentText.slice(0, selStart);
+        const re = /(^|\n)\s*(\d+)\.\s+/g;
+        let m;
+        let lastNum = null;
+        while ((m = re.exec(before)) !== null) lastNum = parseInt(m[2], 10);
+        const nextNum = Number.isFinite(lastNum) ? (lastNum + 1) : 1;
+        return nextNum;
+      };
+
+      const getNextJournalNumberAtCursor = () => getNextJournalNumberAtCursorFor(activeJournalDate, journalTextareaRef);
+
+      // NEW: Parse flexible times and auto-insert into the correct triangle notes.
+      // Supported inputs (examples): `6am`, `6:30am`, `6.40pm`, `7.50pm`, `22.3 (note)`
+      const parseFlexibleTimeTokenToMinutes = (token) => {
+        if (!token) return null;
+        const cleaned = String(token).trim().toLowerCase();
+        if (!cleaned) return null;
+
+        // Split: numeric time part + optional am/pm
+        const m = cleaned.match(/^(\d{1,2}(?:[:.]\d{1,2})?)(?:\s*(a\.?m\.?|p\.?m\.?|am|pm))?$/i);
+        if (!m) return null;
+        const numericPart = m[1];
+        const suffix = m[2]; // am/pm or undefined
+
+        let hour = 0;
+        let minute = 0;
+        const mm = numericPart.match(/^(\d{1,2})(?:[:.](\d{1,2}))?$/);
+        if (!mm) return null;
+        hour = parseInt(mm[1], 10);
+        const minutePart = mm[2];
+        if (minutePart === undefined) {
+          minute = 0;
+        } else {
+          // If user typed `22.3` interpret as 22:30.
+          minute = minutePart.length === 1 ? parseInt(minutePart, 10) * 10 : parseInt(minutePart, 10);
+        }
+        if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
+        minute = Math.max(0, Math.min(59, minute));
+
+        if (suffix) {
+          const s = suffix.replace(/\s+/g, '').replace(/\./g, '');
+          const isPM = /^pm$/i.test(s);
+          const isAM = /^am$/i.test(s);
+          if (isPM) {
+            if (hour < 12) hour += 12;
+          } else if (isAM) {
+            if (hour === 12) hour = 0;
+          }
+        }
+
+        // No suffix means 24-hour input.
+        if (suffix) {
+          if (hour < 0 || hour > 23) return null;
+        } else {
+          if (hour < 0 || hour > 23) return null;
+        }
+
+        return hour * 60 + minute;
+      };
+
+      const getTriangleForMinutes = (dateStr, totalMinutes) => {
+        const hour = Math.floor(totalMinutes / 60);
+        const minInHour = totalMinutes % 60;
+        const cellData = allDataRef.current?.[dateStr]?.[hour] || { split1: false, split2: false };
+        const split1 = !!cellData.split1;
+        const split2 = !!cellData.split2;
+
+        if (minInHour < 30) {
+          // Upper half: 00-30
+          if (split1) {
+            // q1: 00-15, q2: 15-30
+            return { hour, triangleId: minInHour < 15 ? 'q1' : 'q2' };
+          }
+          return { hour, triangleId: 't1' };
+        }
+
+        // Lower half: 30-60
+        if (split2) {
+          // q3: 30-45, q4: 45-60
+          const lower = minInHour - 30;
+          return { hour, triangleId: lower < 15 ? 'q3' : 'q4' };
+        }
+        return { hour, triangleId: 't2' };
+      };
+
+      const getMinutesForTriangleId = (hour, triangleId) => {
+        // Map each triangle to its start minute offset in the hour.
+        const offsetMap = { t1: 0, q1: 0, q2: 15, t2: 30, q3: 30, q4: 45 };
+        const offset = offsetMap[triangleId] ?? 0;
+        return (hour * 60) + offset;
+      };
+
+      const formatTimeLabelFromMinutes = (minutes) => {
+        if (!Number.isFinite(minutes)) return '';
+        let m = Math.floor(minutes) % 1440;
+        if (m < 0) m += 1440;
+        const h24 = Math.floor(m / 60);
+        const mm = m % 60;
+        const ampm = h24 < 12 ? 'AM' : 'PM';
+        let h12 = h24 % 12;
+        if (h12 === 0) h12 = 12;
+        return `${h12}:${String(mm).padStart(2, '0')} ${ampm}`;
+      };
+
+      const appendTriangleNoteIfMissing = (dateStr, hour, triangleId, noteText) => {
+        const noteTrim = String(noteText || '').trim();
+        if (!noteTrim) return null;
+
+        const normalizeNoteLine = (line) => String(line || '').trim().replace(/^\s*\d+\)\s*/g, '');
+
+        // Use current closure `descriptions` for synchronous "did we insert?" detection,
+        // but still re-check inside the updater for idempotency.
+        const existingNow = String(descriptions?.[dateStr]?.[hour]?.[triangleId] || '');
+        const existingLinesNow = existingNow
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean);
+        const existingNormalizedNow = new Set(existingLinesNow.map(normalizeNoteLine).filter(Boolean));
+        if (existingNormalizedNow.has(noteTrim)) return null;
+
+        setDescriptions(prev => {
+          const newD = { ...prev };
+          if (!newD[dateStr]) newD[dateStr] = {};
+          if (!newD[dateStr][hour]) newD[dateStr][hour] = {};
+
+          const existing = String(newD[dateStr][hour][triangleId] || '');
+          const existingLines = existing
+            .split('\n')
+            .map(l => l.trim())
+            .filter(Boolean);
+
+          const existingNormalized = new Set(existingLines.map(normalizeNoteLine).filter(Boolean));
+          if (existingNormalized.has(noteTrim)) {
+            return prev; // already present -> idempotent
+          }
+
+          // Auto-serial numbering for every note line in a triangle.
+          let maxNum = 0;
+          existingLines.forEach((l) => {
+            const m = String(l).match(/^\s*(\d+)\)\s+/);
+            if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10) || 0);
+          });
+          const nextNum = maxNum + 1;
+          const numbered = `${nextNum}) ${noteTrim}`;
+
+          const next = existing.trim() ? `${existing.trim()}\n${numbered}` : numbered;
+          newD[dateStr][hour][triangleId] = next;
+          return newD;
+        });
+
+        return { dateStr, hour, triangleId };
+      };
+
+      const autoInsertTriangleNotesFromJournal = (dateStr, journalText) => {
+        if (!dateStr || !journalText) return;
+        const t = String(journalText);
+        if (!t.trim()) return;
+
+        // Match: `time (note)` where time is flexible and note is inside parentheses.
+        // Also supports bracketed timestamps like `[07:42am] (note)`.
+        // Examples: `7am (did)`, `7.50pm (did)`, `6:30 am (did)`, `22.3 (did)`, `[07:42am] (did)`
+        const timeParenRe = /(?:\[\s*)?\b(\d{1,2}(?:[:.]\d{1,2})?)\s*(a\.?m\.?|p\.?m\.?|am|pm)?(?:\s*\])?\s*\(([^)]*)\)/gi;
+
+        const matches = [];
+        let m;
+        while ((m = timeParenRe.exec(t)) !== null) {
+          const timeToken = `${m[1]}${m[2] ? m[2] : ''}`;
+          const noteText = m[3];
+          matches.push({ timeToken, noteText });
+        }
+
+        if (matches.length === 0) return;
+
+        // Insert in order; highlight the last one we actually changed.
+        let lastInserted = null;
+        const insertedNotes = [];
+        matches.forEach(({ timeToken, noteText }) => {
+          const totalMinutes = parseFlexibleTimeTokenToMinutes(timeToken);
+          if (totalMinutes === null || totalMinutes === undefined) return;
+          const tri = getTriangleForMinutes(dateStr, totalMinutes);
+          if (!tri || !tri.triangleId) return;
+          const inserted = appendTriangleNoteIfMissing(dateStr, tri.hour, tri.triangleId, noteText);
+          if (inserted) {
+            insertedNotes.push(inserted);
+            lastInserted = inserted;
+          }
+        });
+
+        if (insertedNotes.length > 0) {
+          // Expand + highlight like Note Mode behavior (at least for the last inserted).
+          const uniqueHours = Array.from(new Set(insertedNotes.map(x => x.hour)));
+          uniqueHours.forEach(h => expandSectionForHour(h));
+          if (lastInserted) setKeyboardCursor(lastInserted);
+
+          // Notification: confirm note updates for the specific times.
+          const uniqueTimes = new Set();
+          insertedNotes.forEach(({ hour, triangleId }) => {
+            const minutes = getMinutesForTriangleId(hour, triangleId);
+            const timeLabel = formatTimeLabelFromMinutes(minutes);
+            const key = `${hour}:${triangleId}`;
+            if (uniqueTimes.has(key)) return;
+            uniqueTimes.add(key);
+            showToast(`📝 Notes updated for ${timeLabel} (${getDisplayDate(dateStr)})`, 'success');
+          });
+        }
       };
       const handleAddTodo = (dateStr, text) => {
         if (!text.trim()) return;
@@ -2658,6 +3136,173 @@
         setLastExportTime(now);
         showToast('✅ Backup downloaded successfully');
       };
+      // --- NEW: Weekly journal PDF export ---
+      const handleDownloadWeekJournalPdf = async () => {
+        try {
+          playSound('click');
+          const weekDates = (availableWeeks[selectedWeekIndex]?.dates || []);
+          if (!weekDates.length) {
+            showToast('❌ No week selected to export', 'error');
+            return;
+          }
+
+          const escapeHtml = (val) => {
+            const s = String(val ?? '');
+            return s
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+          };
+
+          const formatTodoLine = (t) => {
+            const text = String(t.text ?? '').trim();
+            const status = t.status || (t.done ? 'green' : 'red');
+            const progress = t.progress !== undefined && t.progress !== null && t.progress !== '' ? Math.round(Number(t.progress)) : null;
+            const doneLabel = status === 'green' ? 'Completed' : status === 'yellow' ? 'Partially completed' : 'Not completed';
+            const snoozed = String(t.id || '').startsWith('snooze_') ? ' (Snoozed)' : '';
+            const progPart = progress !== null && Number.isFinite(progress) ? ` - ${progress}%` : '';
+            const remark = String(t.remark ?? '').trim();
+            const remarkPart = remark ? ` - ${remark}` : '';
+            return `${doneLabel}${snoozed}${progPart}${remarkPart}: ${text}`;
+          };
+
+          const formatHabitLine = (h, hLog) => {
+            const status = hLog?.status || 'red';
+            const progress = hLog?.progress !== undefined && hLog?.progress !== null && hLog?.progress !== '' ? Math.round(Number(hLog.progress)) : null;
+            const doneLabel = status === 'green' ? 'Completed' : status === 'yellow' ? 'Partially completed' : 'Not completed';
+            const remark = String(hLog?.remark ?? '').trim();
+            const remarkPart = remark ? ` - ${remark}` : '';
+            const progPart = progress !== null && Number.isFinite(progress) ? ` - ${progress}%` : '';
+            return `${h.name}${remarkPart}${progPart}: ${doneLabel}`;
+          };
+
+          const weekStart = weekDates[0];
+          const weekEnd = weekDates[weekDates.length - 1];
+          const displayWeekStart = getDisplayDate(weekStart);
+          const displayWeekEnd = getDisplayDate(weekEnd);
+
+          const container = document.createElement('div');
+          container.style.background = '#ffffff';
+          container.style.color = '#111827';
+          container.style.padding = '24px';
+          container.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+          container.style.fontSize = '12px';
+          container.style.lineHeight = '1.35';
+
+          const daySections = weekDates.map((dStr) => {
+            const dateObj = new Date(dStr);
+            const journalText = String(journalData?.[dStr] ?? '');
+            const dayTodos = todosData?.[dStr] || [];
+            const dayHabitLogs = habitLogs?.[dStr] || [];
+            const dow = dateObj.getDay();
+
+            const todosGreen = dayTodos.filter(t => (t.status === 'green') || !!t.done).length;
+            const todosYellow = dayTodos.filter(t => t.status === 'yellow').length;
+            const todosRed = dayTodos.filter(t => !(t.status === 'green' || t.done) && t.status !== 'yellow').length;
+            const todosSnoozed = dayTodos.filter(t => String(t.id || '').startsWith('snooze_')).length;
+
+            const scheduledHabits = (habitsConfig || []).filter(h => Array.isArray(h.days) && h.days.includes(dow));
+            const habitGreen = scheduledHabits.filter(h => {
+              const log = dayHabitLogs.find(l => l.id === h.id && !l.deleted);
+              return (log?.status === 'green') || false;
+            }).length;
+            const habitYellow = scheduledHabits.filter(h => {
+              const log = dayHabitLogs.find(l => l.id === h.id && !l.deleted);
+              return (log?.status === 'yellow') || false;
+            }).length;
+            const habitRed = scheduledHabits.length - habitGreen - habitYellow;
+
+            const todoItemsHtml = dayTodos.length ? dayTodos.map(t => `<li>${escapeHtml(formatTodoLine(t))}</li>`).join('') : '<li>(none)</li>';
+
+            const habitItemsHtml = scheduledHabits.length
+              ? scheduledHabits.map(h => {
+                const hLog = dayHabitLogs.find(l => l.id === h.id && !l.deleted);
+                return `<li>${escapeHtml(formatHabitLine(h, hLog))}</li>`;
+              }).join('')
+              : '<li>(none scheduled)</li>';
+
+            const noteEntries = [];
+            const dayDescs = descriptions?.[dStr] || {};
+            for (const hourKey of Object.keys(dayDescs)) {
+              const hour = parseInt(hourKey, 10);
+              if (!Number.isFinite(hour)) continue;
+              const triById = dayDescs[hourKey] || {};
+              for (const triId of Object.keys(triById)) {
+                const raw = String(triById[triId] ?? '');
+                const lines = raw.split('\n').map(s => s.trim()).filter(Boolean);
+                const minutes = getMinutesForTriangleId(hour, triId);
+                const timeLabel = formatTimeLabelFromMinutes(minutes);
+                for (const line of lines) {
+                  noteEntries.push({ minutes, triId, timeLabel, line });
+                }
+              }
+            }
+            noteEntries.sort((a, b) => a.minutes - b.minutes);
+            const notesHtml = noteEntries.length
+              ? noteEntries.map(n => `<li>${escapeHtml(`${n.timeLabel} • ${n.line}`)}</li>`).join('')
+              : '<li>(none)</li>';
+
+            return `
+              <div style="border:1px solid #e5e7eb; border-radius:10px; padding:16px; margin-bottom:16px;">
+                <h2 style="margin:0 0 8px; font-size:16px;">${escapeHtml(getDisplayDate(dStr))}</h2>
+                <div style="margin-bottom:12px; color:#374151;">
+                  Todos: ${todosGreen} completed, ${todosYellow} partial, ${todosRed} not completed${todosSnoozed ? `, ${todosSnoozed} snoozed` : ''}.<br/>
+                  Habits: ${habitGreen} completed, ${habitYellow} partial, ${habitRed} not completed.
+                </div>
+
+                <div style="margin-bottom:12px;">
+                  <div style="font-weight:700; margin-bottom:6px;">Journal</div>
+                  <pre style="white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px;">${escapeHtml(journalText)}</pre>
+                </div>
+
+                <div style="margin-bottom:12px;">
+                  <div style="font-weight:700; margin-bottom:6px;">To-Dos</div>
+                  <ul style="margin:0; padding-left:18px;">${todoItemsHtml}</ul>
+                </div>
+
+                <div style="margin-bottom:12px;">
+                  <div style="font-weight:700; margin-bottom:6px;">Habits</div>
+                  <ul style="margin:0; padding-left:18px;">${habitItemsHtml}</ul>
+                </div>
+
+                <div>
+                  <div style="font-weight:700; margin-bottom:6px;">Triangle Notes</div>
+                  <ul style="margin:0; padding-left:18px;">${notesHtml}</ul>
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          container.innerHTML = `
+            <div style="margin-bottom:18px;">
+              <h1 style="margin:0; font-size:20px;">Trackerbox Week Journal</h1>
+              <div style="color:#374151; margin-top:6px;">
+                ${escapeHtml(displayWeekStart)} - ${escapeHtml(displayWeekEnd)}
+              </div>
+            </div>
+            ${daySections}
+          `;
+
+          document.body.appendChild(container);
+          await window.html2pdf()
+            .from(container)
+            .set({
+              margin: [10, 10, 10, 10],
+              filename: `trackerbox_week_journal_${weekStart}_to_${weekEnd}.pdf`,
+              image: { type: 'jpeg', quality: 0.98 },
+              html2canvas: { scale: 2, useCORS: true },
+              jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
+              pagebreak: { mode: ['css', 'legacy'], avoid: ['.avoid-break'] }
+            })
+            .save();
+          showToast('✅ Week journal PDF downloaded');
+          container.remove();
+        } catch (e) {
+          showToast('❌ Failed to export PDF', 'error');
+        }
+      };
       const handleImportData = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -3090,11 +3735,13 @@
         const parsed = parseDateQuery();
         const wantJournal = searchFilter === 'all' || searchFilter === 'journal';
         const wantTodos = searchFilter === 'all' || searchFilter === 'todos';
+        const wantNotes = searchFilter === 'all' || searchFilter === 'notes';
         const wantDates = searchFilter === 'all' || searchFilter === 'dates';
 
         const dateSet = new Set([
           ...Object.keys(allData || {}),
           ...Object.keys(journalData || {}),
+          ...Object.keys(descriptions || {}),
           ...Object.keys(todosData || {})
         ]);
 
@@ -3145,9 +3792,42 @@
           }
         }
 
-        results.sort((a, b) => (b.dateStr || '').localeCompare(a.dateStr || ''));
+        if (wantNotes) {
+          for (const [dStr, byHour] of Object.entries(descriptions || {})) {
+            for (const [hourKey, triMap] of Object.entries(byHour || {})) {
+              const hour = parseInt(hourKey, 10);
+              if (!Number.isFinite(hour)) continue;
+              for (const [triId, noteText] of Object.entries(triMap || {})) {
+                const txt = String(noteText || '');
+                if (!txt.trim()) continue;
+                if (txt.toLowerCase().includes(qLower)) {
+                  const minutes = getMinutesForTriangleId(hour, triId);
+                  push({
+                    kind: 'note',
+                    dateStr: dStr,
+                    hour,
+                    triangleId: triId,
+                    label: `Note • ${getDisplayDate(dStr)} • ${formatTimeLabelFromMinutes(minutes)}`,
+                    preview: preview(txt)
+                  });
+                }
+                if (results.length >= 30) break;
+              }
+              if (results.length >= 30) break;
+            }
+            if (results.length >= 30) break;
+          }
+        }
+
+        results.sort((a, b) => {
+          const d = (b.dateStr || '').localeCompare(a.dateStr || '');
+          if (d !== 0) return d;
+          const aT = a.kind === 'note' ? (a.hour * 60) : -1;
+          const bT = b.kind === 'note' ? (b.hour * 60) : -1;
+          return bT - aT;
+        });
         return results.slice(0, 30);
-      }, [searchQuery, searchFilter, journalData, todosData, allData, todayStr]);
+      }, [searchQuery, searchFilter, journalData, todosData, allData, descriptions, todayStr]);
 
       if (!isLoaded) {
         return (
@@ -3425,7 +4105,7 @@
                    </div>
                    <div className="flex flex-col lg:flex-row gap-4 md:gap-6 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar pb-2">
                      {/* ToDo List (renamed) */}
-                     <div className="flex flex-col flex-1 border border-cyan-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
+                    <div className="order-1 flex flex-col flex-1 border border-cyan-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
                        <div className="bg-cyan-500/10 p-3 border-b border-cyan-500/30 flex justify-between items-center">
                          <span className="font-bold text-cyan-400 uppercase tracking-widest text-xs">ToDo List</span>
                        </div>
@@ -3521,7 +4201,7 @@
                        </div>
                      </div>
                      {/* Habit Tracking - Streak for each individual habit (always visible) */}
-                     <div className="flex flex-col flex-1 border border-emerald-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
+                    <div className="order-3 flex flex-col flex-1 border border-emerald-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
                        <div className="bg-emerald-500/10 p-3 border-b border-emerald-500/30">
                          <span className="font-bold text-emerald-400 uppercase tracking-widest text-xs">Habit Tracking</span>
                        </div>
@@ -3587,26 +4267,49 @@
                        </div>
                      </div>
                      {/* JOURNAL REWORKED: SINGLE FULL JOURNAL SCREEN – NO PREVIEW, NO TWO SCREENS */}
-                     <div className="flex flex-col flex-1 border border-purple-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
+                    <div className={`order-2 flex flex-col flex-1 border border-purple-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink ${journalSavePulseTick ? 'journal-save-pulse' : ''}`}>
                        <div className="bg-purple-500/10 p-3 border-b border-purple-500/30 flex items-center justify-between">
-                         <span className="font-bold text-purple-400 uppercase tracking-widest text-xs">Captain's Journal</span>
-                         <span className="text-[10px] text-purple-300 font-medium">Saved instantly</span>
+                        <span className="font-bold text-purple-400 uppercase tracking-widest text-xs">Captain's Journal</span>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => insertTimestampIntoTextarea(activeJournalDate, journalTextareaRef.current)}
+                            className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap"
+                            title="Insert current local time at cursor (Ctrl+T)"
+                          >
+                            🕒 Time
+                          </button>
+                          <button
+                            onClick={() => { playSound('click'); handleDownloadWeekJournalPdf(); }}
+                            className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap"
+                            title="Download full week's journal as PDF"
+                          >
+                            Download Week PDF
+                          </button>
+                          <span className="text-[10px] text-purple-300 font-medium">Saved instantly</span>
+                        </div>
                        </div>
                       {/* NEW: List helpers */}
                       <div className="flex items-center gap-2 p-3 border-b border-purple-500/20 bg-purple-500/5">
                         <button
                           onClick={() => { playSound('click'); insertJournalListMarker('bullet'); }}
                           className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all"
-                          title="Insert bullet '- ' at cursor"
+                          title="Insert bullet '◈ ' at cursor"
                         >
-                          - Bullet
+                          ◈ Bullet
                         </button>
                         <button
                           onClick={() => { playSound('click'); insertJournalListMarker('number'); }}
                           className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all"
                           title="Insert numbered list 'N. ' at cursor"
                         >
-                          1. Number
+                          Bullet {getNextJournalNumberAtCursor()}
+                        </button>
+                        <button
+                          onClick={() => { playSound('click'); boxJournalAboveCursor(); }}
+                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all whitespace-nowrap"
+                          title="Box the block above cursor in a ---- frame"
+                        >
+                          Box (----)
                         </button>
                         <span className="ml-auto text-[10px] text-purple-300/70 font-bold uppercase tracking-widest">
                           Inserts at cursor
@@ -3614,10 +4317,16 @@
                       </div>
                        <textarea
                         ref={journalTextareaRef}
-                         className="flex-1 bg-transparent p-4 text-slate-200 font-mono text-sm focus:outline-none resize-none custom-scrollbar"
+                         className="flex-1 bg-transparent p-4 text-slate-200 font-mono text-sm focus:outline-none resize-none overflow-y-auto"
                          placeholder="What happened today?"
                          value={journalData[activeJournalDate] || ''}
-                         onChange={e => handleJournalSave(activeJournalDate, e.target.value)}
+                         onChange={e => {
+                           handleJournalSave(activeJournalDate, e.target.value);
+                           requestAnimationFrame(() => autoResizeJournalTextarea(journalTextareaRef.current));
+                         }}
+                         onKeyUp={() => autoResizeJournalTextarea(journalTextareaRef.current)}
+                         onMouseUp={() => autoResizeJournalTextarea(journalTextareaRef.current)}
+                         onSelect={() => autoResizeJournalTextarea(journalTextareaRef.current)}
                        />
                      </div>
                    </div>
@@ -3934,7 +4643,7 @@
                       <div>
                         <h3 className="font-black text-cyan-300 uppercase tracking-widest">Global Search</h3>
                         <div className="text-xs text-slate-400 mt-1">
-                          Search Journal & Completed ToDos, or jump by date.
+                          Search Journal, Notes, and Completed ToDos, or jump by date.
                         </div>
                       </div>
                     </div>
@@ -3964,6 +4673,7 @@
                     {[
                       { id: 'all', label: 'All' },
                       { id: 'journal', label: 'Journal' },
+                      { id: 'notes', label: 'Notes' },
                       { id: 'todos', label: 'Completed ToDos' },
                       { id: 'dates', label: 'Dates' },
                     ].map(f => (
@@ -3994,6 +4704,10 @@
                             onClick={() => {
                               playSound('click');
                               if (r.dateStr) setActiveJournalDate(r.dateStr);
+                              if (r.kind === 'note' && r.triangleId && Number.isFinite(r.hour)) {
+                                expandSectionForHour(r.hour);
+                                setKeyboardCursor({ dateStr: r.dateStr, hour: r.hour, triangleId: r.triangleId });
+                              }
                               setShowSearchModal(false);
                             }}
                             className="w-full text-left bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl p-3 transition-all"
@@ -4005,10 +4719,12 @@
                                     ? 'bg-purple-500/20 text-purple-300 border border-purple-400/30'
                                     : r.kind === 'todo'
                                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
-                                      : 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30'
+                                      : r.kind === 'note'
+                                        ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
+                                        : 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30'
                                 }`}
                               >
-                                {r.kind === 'journal' ? 'J' : r.kind === 'todo' ? 'T' : 'D'}
+                                {r.kind === 'journal' ? 'J' : r.kind === 'todo' ? 'T' : r.kind === 'note' ? 'N' : 'D'}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-bold text-white truncate">{r.label}</div>
@@ -4184,6 +4900,12 @@
                     >
                       <span className="text-xl">📖</span> Journal
                     </button>
+                    <button
+                      onClick={() => setQuickSaveType('notes')}
+                      className={`py-4 rounded-3xl font-bold flex items-center justify-center gap-2 text-base transition-all col-span-2 ${quickSaveType === 'notes' ? 'bg-amber-400 text-black shadow-inner' : 'bg-white/10 text-slate-200 hover:bg-white/20'}`}
+                    >
+                      <span className="text-xl">📝</span> Notes (Triangles)
+                    </button>
                   </div>
                   <div className="mt-8">
                     <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-3">
@@ -4215,6 +4937,29 @@
                       />
                     )}
                   </div>
+                  {quickSaveType === 'notes' && (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-3">
+                        <span>TIME SLOT (30m)</span>
+                        <span className="text-[10px] text-amber-300">{formatTimeLabelFromMinutes(quickNotesStartMinutes)}</span>
+                      </div>
+                      <select
+                        value={String(quickNotesStartMinutes)}
+                        onChange={(e) => setQuickNotesStartMinutes(parseInt(e.target.value, 10))}
+                        className="w-full bg-[#0b1120] border border-white/20 rounded-3xl px-6 py-4 text-slate-200 font-medium outline-none"
+                      >
+                        {Array.from({ length: 48 }).map((_, i) => {
+                          const start = (6 * 60 + i * 30) % 1440;
+                          const end = (start + 30) % 1440;
+                          return (
+                            <option key={i} value={start}>
+                              {formatTimeLabelFromMinutes(start)} - {formatTimeLabelFromMinutes(end)}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
                   <div className="mt-8 flex gap-3">
                     <button
                       onClick={() => { setShowQuickCapture(false); }}
@@ -4240,7 +4985,23 @@
                   className={`glass-panel px-5 py-4 rounded-3xl flex items-center gap-3 shadow-2xl border-l-4 text-sm font-medium transition-all animate-[toastPop_0.3s_ease-out] ${toast.type === 'success' ? 'border-green-400 bg-green-900/90 text-green-100' : 'border-red-400 bg-red-900/90 text-red-100'}`}
                 >
                   {toast.type === 'success' ? <span className="text-2xl">✅</span> : <span className="text-2xl">❌</span>}
-                  <span>{toast.message}</span>
+                  <span className="flex-1 min-w-0">{toast.message}</span>
+                  <button
+                    onClick={() => {
+                      if (past.length === 0) return;
+                      handleUndo();
+                      setToasts(prev => prev.filter(t => t.id !== toast.id));
+                    }}
+                    disabled={past.length === 0}
+                    className={`shrink-0 px-3 py-1.5 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${
+                      past.length > 0
+                        ? 'border-white/20 bg-white/10 hover:bg-white/20 text-white'
+                        : 'border-white/10 bg-white/5 text-white/40 cursor-not-allowed'
+                    }`}
+                    title="Undo last grid change (Ctrl+Z)"
+                  >
+                    Undo
+                  </button>
                 </div>
               ))}
             </div>
@@ -4330,6 +5091,20 @@
                     title="Quick Capture"
                   >
                     <span className="text-3xl font-black leading-none">+</span>
+                  </button>
+                  {/* Journal-only shortcut (focus + direct writing) */}
+                  <button
+                    onClick={() => {
+                      playSound('click');
+                      setJournalModuleDate(activeJournalDate || todayStr);
+                      setSectionsOpen(prev => ({ ...prev, journal: true }));
+                      setJournalFocusTick(t => t + 1);
+                      try { document.getElementById('journal-only-module')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+                    }}
+                    className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${sectionsOpen.journal ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                    title="Open Journal-only module"
+                  >
+                    <FileText size={20} />
                   </button>
                   <div className="flex gap-2">
                     {/* NEW: Global Mute Icon */}
@@ -4515,12 +5290,28 @@
                                     <Activity size={16} />
                                   </button>
                                   <div className="w-full h-px bg-white/10 my-1"></div>
-                                  <button onClick={() => handleColorSelect('lock')} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-500 bg-red-500/20 text-red-300 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`} title="Lock">
+                                  <button
+                                    onClick={() => handleColorSelect('lock')}
+                                    className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100 shadow-[0_0_18px_rgba(239,68,68,0.45)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                    title="Lock"
+                                  >
                                     <Lock size={14} />
                                   </button>
                                   <div className="w-full h-px bg-white/10 my-1"></div>
                                   {categories.map(cat => (
-                                    <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border border-white/20 transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110' : ''}`} style={{ backgroundColor: cat.color, boxShadow: selectedColorId === cat.id ? `0 0 12px ${cat.color}` : `0 0 4px ${cat.color}80` }} title={cat.name} />
+                                    <button
+                                      key={cat.id}
+                                      onClick={() => handleColorSelect(cat.id)}
+                                      className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110 border-white/60' : 'border-white/20'}`}
+                                      style={{
+                                        backgroundColor: selectedColorId === cat.id ? cat.color : 'transparent',
+                                        backgroundImage: selectedColorId === cat.id
+                                          ? 'none'
+                                          : `repeating-linear-gradient(45deg, ${cat.color}55 0, ${cat.color}55 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 7px)`,
+                                        boxShadow: selectedColorId === cat.id ? `0 0 16px ${cat.color}` : `0 0 4px ${cat.color}80`,
+                                      }}
+                                      title={cat.name}
+                                    />
                                   ))}
                                 </div>
                               </div>
@@ -4826,12 +5617,28 @@
                                               <Activity size={16} />
                                             </button>
                                             <div className="w-full h-px bg-white/10 my-1"></div>
-                                            <button onClick={() => handleColorSelect('lock')} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-500 bg-red-500/20 text-red-300 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`} title="Lock">
+                                            <button
+                                              onClick={() => handleColorSelect('lock')}
+                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100 shadow-[0_0_18px_rgba(239,68,68,0.45)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                              title="Lock"
+                                            >
                                               <Lock size={14} />
                                             </button>
                                             <div className="w-full h-px bg-white/10 my-1"></div>
                                             {categories.map(cat => (
-                                              <button key={cat.id} onClick={() => handleColorSelect(cat.id)} className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border border-white/20 transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110' : ''}`} style={{ backgroundColor: cat.color, boxShadow: selectedColorId === cat.id ? `0 0 12px ${cat.color}` : `0 0 4px ${cat.color}80` }} title={cat.name} />
+                                              <button
+                                                key={cat.id}
+                                                onClick={() => handleColorSelect(cat.id)}
+                                                className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110 border-white/60' : 'border-white/20'}`}
+                                                style={{
+                                                  backgroundColor: selectedColorId === cat.id ? cat.color : 'transparent',
+                                                  backgroundImage: selectedColorId === cat.id
+                                                    ? 'none'
+                                                    : `repeating-linear-gradient(45deg, ${cat.color}55 0, ${cat.color}55 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 7px)`,
+                                                  boxShadow: selectedColorId === cat.id ? `0 0 16px ${cat.color}` : `0 0 4px ${cat.color}80`,
+                                                }}
+                                                title={cat.name}
+                                              />
                                             ))}
                                           </div>
                                         </td>
@@ -5230,6 +6037,92 @@
                           </div>
                         );
                       })()}
+                    </div>
+                  </div>
+                )}
+              </section>
+              {/* ---------------- SECTION 3: JOURNAL ONLY MODULE ---------------- */}
+              <section className={`glass-panel rounded-3xl w-full overflow-hidden mb-6 ${journalSavePulseTick ? 'journal-save-pulse' : ''}`} id="journal-only-module">
+                <button onClick={() => toggleSection('journal')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
+                    <div className="flex items-center gap-3">
+                        <FileText size={24} className="text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+                        <h2 className="text-lg md:text-xl font-black uppercase tracking-wider text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.2)]">JOURNAL</h2>
+                    </div>
+                    <ChevronDown size={24} className={`text-slate-400 transform transition-transform ${sectionsOpen.journal ? 'rotate-180' : ''}`} />
+                </button>
+                {sectionsOpen.journal && (
+                  <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-bold text-amber-300 uppercase tracking-widest">TARGET DAY</span>
+                        <input
+                          type="date"
+                          value={journalModuleDate}
+                          onChange={(e) => setJournalModuleDate(e.target.value)}
+                          className="bg-[#0b1120] border border-amber-400/30 text-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-amber-400"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => insertTimestampIntoTextarea(journalModuleDate, journalOnlyTextareaRef.current)}
+                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap"
+                          title="Insert current local time at cursor (Ctrl+T)"
+                        >
+                          🕒 Time
+                        </button>
+                        <button
+                          onClick={() => { playSound('click'); handleDownloadWeekJournalPdf(); }}
+                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap"
+                          title="Download full week's journal as PDF"
+                        >
+                          Download Week PDF
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mb-3">
+                      <button
+                        onClick={() => { playSound('click'); insertJournalListMarkerAt(journalModuleDate, journalOnlyTextareaRef, 'bullet'); }}
+                        className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all"
+                        title="Insert bullet '◈ ' at cursor"
+                      >
+                        ◈ Bullet
+                      </button>
+                      <button
+                        onClick={() => { playSound('click'); insertJournalListMarkerAt(journalModuleDate, journalOnlyTextareaRef, 'number'); }}
+                        className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all"
+                        title="Insert numbered list 'N. ' at cursor"
+                      >
+                        Bullet {getNextJournalNumberAtCursorFor(journalModuleDate, journalOnlyTextareaRef)}
+                      </button>
+                      <button
+                        onClick={() => { playSound('click'); boxJournalAboveCursorAt(journalModuleDate, journalOnlyTextareaRef); }}
+                        className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-xs font-bold transition-all whitespace-nowrap"
+                        title="Box the block above cursor in a ---- frame"
+                      >
+                        Box (----)
+                      </button>
+                      <span className="ml-auto text-[10px] text-amber-300/70 font-bold uppercase tracking-widest">
+                        Inserts at cursor
+                      </span>
+                    </div>
+
+                    <textarea
+                      ref={journalOnlyTextareaRef}
+                      className="w-full bg-transparent p-4 text-slate-200 font-mono text-sm focus:outline-none resize-none overflow-y-auto"
+                      placeholder="Write your journal for the selected day..."
+                      value={journalData[journalModuleDate] || ''}
+                      onChange={(e) => {
+                        handleJournalSave(journalModuleDate, e.target.value);
+                        requestAnimationFrame(() => autoResizeJournalTextarea(journalOnlyTextareaRef.current));
+                      }}
+                      onKeyUp={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
+                      onMouseUp={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
+                      onSelect={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
+                    />
+
+                    <div className="mt-3 text-[11px] text-slate-400">
+                      Tip: write like <span className="text-amber-300 font-bold">7am (did this)</span> or <span className="text-amber-300 font-bold">22.3 (note)</span> to auto-fill triangle notes.
                     </div>
                   </div>
                 )}
