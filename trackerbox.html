@@ -366,6 +366,30 @@
       }
       return weeks;
     };
+    const getDaysInMonth = (yearMonthStr) => {
+      if (!yearMonthStr) return [];
+      const [year, month] = yearMonthStr.split('-').map(Number);
+      if (Number.isNaN(year) || Number.isNaN(month)) return [];
+      const days = [];
+      const date = new Date(year, month - 1, 1);
+      while (date.getMonth() === month - 1) {
+        days.push(formatDateString(date));
+        date.setDate(date.getDate() + 1);
+      }
+      return days;
+    };
+    const getDaysInYear = (yearStr) => {
+      const year = Number(yearStr);
+      if (Number.isNaN(year)) return [];
+      const days = [];
+      const date = new Date(year, 0, 1);
+      const endDate = new Date(year + 1, 0, 1);
+      while (date < endDate) {
+        days.push(formatDateString(date));
+        date.setDate(date.getDate() + 1);
+      }
+      return days;
+    };
     const getPaletteButtonStyle = (cat, isSelected) => {
       if (!cat || !cat.color) return {};
       const toRgb = (hex) => {
@@ -1307,7 +1331,10 @@
       const [statWeekIndex, setStatWeekIndex] = useState(0);
       const statAvailableWeeks = useMemo(() => getWeeksInMonth(statWeekMonth), [statWeekMonth]);
       const [statMonth, setStatMonth] = useState(initialMonthStr);
+      const [activityTimeView, setActivityTimeView] = useState('week');
+      const [activityTimeMonth, setActivityTimeMonth] = useState(initialMonthStr);
       const [statYear, setStatYear] = useState(initialYearStr);
+      const [habitZoneYear, setHabitZoneYear] = useState(initialYearStr);
       const printMonthStr = initialMonthStr;
       const printWeeks = useMemo(() => getWeeksInMonth(printMonthStr), [printMonthStr]);
       const [resetDay, setResetDay] = useState(todayStr);
@@ -1330,7 +1357,7 @@
       const [searchQuery, setSearchQuery] = useState('');
       const [searchFilter, setSearchFilter] = useState('all'); // all | journal | todos | dates
       const searchInputRef = useRef(null);
-      const [habitZoneMode, setHabitZoneMode] = useState('week'); // week | month
+      const [habitZoneMode, setHabitZoneMode] = useState('week'); // week | month | year
       const [habitZoneMonth, setHabitZoneMonth] = useState(initialMonthStr);
       const [habitZoneWeekMonth, setHabitZoneWeekMonth] = useState(initialMonthStr);
       const [habitZoneWeekIndex, setHabitZoneWeekIndex] = useState(0);
@@ -1679,6 +1706,11 @@
           }
           if (key === ' ') {
             e.preventDefault();
+            if (selectedColorId === 'lock') {
+              playSound('click');
+              setActiveJournalDate(todayStr);
+              return;
+            }
             const cur = keyboardCursor || getFirstNonColoredTriangle(todayStr);
             if (!cur) return;
             expandSectionForHour(cur.hour);
@@ -1688,6 +1720,14 @@
             saveHistoryState();
             playSound(nextValue ? 'paint' : 'erase');
             handleUpdateSegment(cur.dateStr, cur.hour, cur.triangleId, nextValue);
+            return;
+          }
+          if (key === 'j' && selectedColorId === 'lock') {
+            e.preventDefault();
+            playSound('click');
+            setSectionsOpen(prev => ({ ...prev, journal: true }));
+            setJournalModuleDate(todayStr);
+            setJournalFocusTick(Date.now());
             return;
           }
           const num = parseInt(key, 10);
@@ -1784,15 +1824,31 @@
       const displayDates = isFocusMode ? [todayStr] : currentWeekDates;
       const habitZoneDates = useMemo(() => {
         if (habitZoneMode === 'week') return habitZoneAvailableWeeks[habitZoneWeekIndex]?.dates || [];
-        if (!habitZoneMonth) return [];
-        const [y, m] = habitZoneMonth.split('-').map(Number);
-        const end = new Date(y, m, 0).getDate();
-        const out = [];
-        for (let d = 1; d <= end; d++) {
-          out.push(formatDateString(new Date(y, m - 1, d)));
+        if (habitZoneMode === 'month') {
+          if (!habitZoneMonth) return [];
+          const [y, m] = habitZoneMonth.split('-').map(Number);
+          const end = new Date(y, m, 0).getDate();
+          const out = [];
+          for (let d = 1; d <= end; d++) {
+            out.push(formatDateString(new Date(y, m - 1, d)));
+          }
+          return out;
         }
-        return out;
-      }, [habitZoneMode, habitZoneAvailableWeeks, habitZoneWeekIndex, habitZoneMonth]);
+        if (habitZoneMode === 'year') {
+          return getDaysInYear(habitZoneYear);
+        }
+        return [];
+      }, [habitZoneMode, habitZoneAvailableWeeks, habitZoneWeekIndex, habitZoneMonth, habitZoneYear]);
+      const habitZoneYearCells = useMemo(() => {
+        if (habitZoneMode !== 'year') return [];
+        const days = getDaysInYear(habitZoneYear);
+        const start = new Date(habitZoneYear, 0, 1);
+        let offset = start.getDay();
+        offset = offset === 0 ? 6 : offset - 1;
+        const cells = Array(offset).fill(null);
+        days.forEach(dateStr => cells.push(dateStr));
+        return cells;
+      }, [habitZoneMode, habitZoneYear]);
       const getHabitStatusForDate = useCallback((habitId, dateStr) => {
         const day = (habitLogs[dateStr] || []).find(h => h.id === habitId && !h.deleted);
         if (!day) return null;
@@ -3753,7 +3809,7 @@
         let totalPoints = 0;
         dateStringsArray.forEach(dateStr => {
           const dayData = allData[dateStr] || {};
-          const isComplete = hasActivity(dayData);
+          const isComplete = hasFullActivity(dayData);
           if (isComplete) completedDaysCount++;
           Object.values(dayData).forEach(hourData => {
             const processPart = (id, duration) => {
@@ -4178,7 +4234,7 @@
             {/* --- CAPTAIN'S LOG MODAL (JOURNAL REWORKED: SINGLE FULL JOURNAL SCREEN, NO PREVIEW, NO SPLIT) --- */}
             {activeJournalDate && (
                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4" onClick={() => setActiveJournalDate(null)}>
-                 <div className="glass-panel animate-modal border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.2)] rounded-3xl p-4 md:p-6 max-w-6xl w-full relative flex flex-col max-h-[95vh] md:h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+                 <div className="glass-panel animate-modal border-purple-500/50 shadow-[0_0_30px_rgba(168,85,247,0.2)] rounded-3xl pt-10 md:pt-12 p-4 md:p-6 max-w-6xl w-full relative flex flex-col max-h-[95vh] md:h-[85vh] overflow-hidden" onClick={e => e.stopPropagation()}>
                    <button onClick={() => { playSound('click'); setActiveJournalDate(null); }} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors z-10 bg-black/50 p-1 rounded-full md:bg-transparent md:p-0"><X size={24} /></button>
                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 md:mb-6 shrink-0 border-b border-white/10 pb-4">
                      <div className="flex items-center gap-3">
@@ -6190,8 +6246,48 @@
                         <StatCard title="Selected Year" stats={statsYear} categories={categories} showGoals={true} multiplier={365} showAverage={true} />
                       </div>
                     </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { playSound('click'); setActivityTimeView('week'); }}
+                          className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${activityTimeView === 'week' ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/50' : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'}`}
+                        >WEEK</button>
+                        <button
+                          onClick={() => { playSound('click'); setActivityTimeView('month'); }}
+                          className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest ${activityTimeView === 'month' ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/50' : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'}`}
+                        >MONTH</button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {activityTimeView === 'week' ? (
+                          <>
+                            <input
+                              type="month"
+                              value={statWeekMonth}
+                              onChange={e => { playSound('click'); setStatWeekMonth(e.target.value); setStatWeekIndex(0); }}
+                              className="bg-[#0b1120] rounded-xl border border-cyan-500/30 text-slate-200 px-3 py-2 text-xs font-bold outline-none"
+                            />
+                            <select
+                              value={statWeekIndex}
+                              onChange={e => { playSound('click'); setStatWeekIndex(Number(e.target.value)); }}
+                              className="bg-[#0b1120] rounded-xl border border-cyan-500/30 text-slate-200 px-3 py-2 text-xs font-bold outline-none"
+                            >
+                              {statAvailableWeeks.map((week, idx) => <option key={week.id} value={idx}>{week.label}</option>)}
+                            </select>
+                          </>
+                        ) : (
+                          <input
+                            type="month"
+                            value={activityTimeMonth}
+                            onChange={e => { playSound('click'); setActivityTimeMonth(e.target.value); }}
+                            className="bg-[#0b1120] rounded-xl border border-cyan-500/30 text-slate-200 px-3 py-2 text-xs font-bold outline-none"
+                          />
+                        )}
+                      </div>
+                    </div>
                     <WeeklyChart
+                      viewMode={activityTimeView}
                       weekDates={statAvailableWeeks[statWeekIndex]?.dates || []}
+                      monthDates={activityTimeMonth ? getDaysInMonth(activityTimeMonth) : []}
                       allData={allData}
                       categories={categories}
                       onDayClick={setActiveJournalDate}
@@ -6482,6 +6578,7 @@
                         <div className="flex items-center gap-2">
                           <button onClick={() => setHabitZoneMode('week')} className={`px-3 py-1.5 rounded-xl text-xs font-black ${habitZoneMode === 'week' ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50' : 'bg-white/5 text-slate-400 border border-white/10'}`}>WEEK</button>
                           <button onClick={() => setHabitZoneMode('month')} className={`px-3 py-1.5 rounded-xl text-xs font-black ${habitZoneMode === 'month' ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50' : 'bg-white/5 text-slate-400 border border-white/10'}`}>MONTH</button>
+                          <button onClick={() => setHabitZoneMode('year')} className={`px-3 py-1.5 rounded-xl text-xs font-black ${habitZoneMode === 'year' ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50' : 'bg-white/5 text-slate-400 border border-white/10'}`}>YEAR</button>
                           {habitZoneMode === 'week' && (
                             <>
                               <input type="month" value={habitZoneWeekMonth} onChange={e => { setHabitZoneWeekMonth(e.target.value); setHabitZoneWeekIndex(0); }} className="bg-[#0b1120] border border-emerald-500/30 text-slate-200 rounded-xl px-2 py-1 text-xs font-bold outline-none" />
@@ -6493,9 +6590,41 @@
                           {habitZoneMode === 'month' && (
                             <input type="month" value={habitZoneMonth} onChange={e => setHabitZoneMonth(e.target.value)} className="bg-[#0b1120] border border-emerald-500/30 text-slate-200 rounded-xl px-2 py-1 text-xs font-bold outline-none" />
                           )}
+                          {habitZoneMode === 'year' && (
+                            <input type="number" value={habitZoneYear} min="2000" max="2100" onChange={e => setHabitZoneYear(e.target.value)} className="bg-[#0b1120] border border-emerald-500/30 text-slate-200 rounded-xl px-2 py-1 text-xs font-bold outline-none w-[96px]" />
+                          )}
                         </div>
                       </div>
                       <div className="overflow-x-auto custom-scrollbar border border-white/10 rounded-2xl">
+                        {habitZoneMode === 'year' ? (
+                          <div className="p-4">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Yearly Habit Heatmap</div>
+                            <div className="min-w-max grid grid-rows-7 grid-flow-col gap-1">
+                              {habitZoneYearCells.map((dateStr, idx) => {
+                                if (!dateStr) return <div key={`hz-empty-${idx}`} className="w-4 h-4 rounded-sm bg-white/10"></div>;
+                                const statuses = (habitLogs[dateStr] || []).filter(h => !h.deleted).map(h => h.status || 'red');
+                                const color = statuses.length === 0
+                                  ? 'rgba(148,163,184,0.2)'
+                                  : statuses.every(s => s === 'green')
+                                  ? '#4ade80'
+                                  : statuses.some(s => s === 'yellow')
+                                  ? '#fbbf24'
+                                  : '#fb7185';
+                                const title = `${getDisplayDate(dateStr)} • ${statuses.length === 0 ? 'No habit logs' : statuses.join(', ').toUpperCase()}`;
+                                return (
+                                  <button
+                                    key={dateStr}
+                                    onClick={() => setActiveJournalDate(dateStr)}
+                                    className="w-4 h-4 rounded-sm border border-white/10 transition-transform hover:scale-110"
+                                    style={{ backgroundColor: color }}
+                                    title={title}
+                                  />
+                                );
+                              })}
+                            </div>
+                            <div className="mt-3 text-[10px] text-slate-400">Green = all habits done, yellow = partial, red = missed habits, grey = no logs.</div>
+                          </div>
+                        ) : (
                         <table className="min-w-full text-xs table-fixed">
                           <thead>
                             <tr className="bg-white/5">
@@ -6540,6 +6669,7 @@
                             )}
                           </tbody>
                         </table>
+                        )}
                       </div>
                       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                         {habitsConfig.map(habit => {
@@ -6711,9 +6841,10 @@
       );
     }
     // --- Component: WeeklyChart ---
-    function WeeklyChart({ weekDates, allData, categories, onDayClick }) {
-      if (!weekDates || weekDates.length === 0) return null;
-      const chartData = weekDates.map(dateStr => {
+    function WeeklyChart({ viewMode = 'week', weekDates = [], monthDates = [], allData, categories, onDayClick }) {
+      const dates = viewMode === 'month' ? monthDates : weekDates;
+      if (!dates || dates.length === 0) return null;
+      const chartData = dates.map(dateStr => {
          const dayData = allData[dateStr] || {};
          const segments = [];
          let totalHours = 0;
@@ -6739,14 +6870,17 @@
             }
          }
          const dateObj = new Date(dateStr);
-         const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+         const dayName = viewMode === 'month'
+           ? `${String(dateObj.getDate()).padStart(2, '0')}`
+           : dateObj.toLocaleDateString('en-US', { weekday: 'short' });
          return { dayName, segments, totalHours, dateStr };
       });
       return (
          <div className="mt-6 md:mt-8 bg-[#0b1120] p-4 md:p-6 rounded-2xl border border-white/10 w-full overflow-hidden print:border-none print:shadow-none print:p-0 print:bg-transparent">
-            <h3 className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">Weekly Activity Timeline</h3>
-            <div className="flex items-end justify-between gap-1 sm:gap-2 h-48 md:h-64 pt-4">
-               {chartData.map((data, i) => (
+            <h3 className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">{viewMode === 'month' ? 'Monthly Activity Timeline' : 'Weekly Activity Timeline'}</h3>
+            <div className="overflow-x-auto custom-scrollbar pb-2 pt-4">
+              <div className="min-w-max flex items-end justify-between gap-1 sm:gap-2 h-48 md:h-64">
+                {chartData.map((data, i) => (
                      <div
                        key={i}
                        className="flex flex-col items-center flex-1 gap-2 group h-full cursor-pointer active:scale-95 transition-transform"
@@ -6761,13 +6895,13 @@
                               const baseId = seg.id && seg.id.startsWith('bp_') ? seg.id.slice(3) : seg.id;
                               const cat = categories.find(c => c.id === baseId);
                               const bgColor = cat ? cat.color : 'transparent';
-                              return <div key={idx} className="w-full" style={{ backgroundColor: bgColor, flexGrow: seg.duration }}></div>
+                              return <div key={idx} className="w-full" style={{ backgroundColor: bgColor, flexGrow: seg.duration }}></div>;
                            })}
                         </div>
                         <span className="text-[8px] md:text-[10px] font-bold text-slate-500 uppercase text-center mt-auto group-hover:text-purple-300 transition-colors">{data.dayName}</span>
                      </div>
-                  )
-               )}
+                  ))}
+              </div>
             </div>
          </div>
       );
@@ -6778,10 +6912,8 @@
       if (isNaN(year)) return null;
       const getHeatmapValue = useCallback((dateStr) => {
         const dayData = allData[dateStr] || {};
-        const todayStr = formatDateString(new Date());
-        const isPastDay = dateStr < todayStr;
         const isFullyLoggedDay = hasFullActivity(dayData);
-        if (!isPastDay || !isFullyLoggedDay) {
+        if (!isFullyLoggedDay) {
           return { value: 0, hasActivity: false };
         }
         let value = 0;
