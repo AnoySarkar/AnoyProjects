@@ -26,197 +26,121 @@
     /* Fluid Loading Screen */
     #loading-screen {
       position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
-      background: radial-gradient(circle at top left, rgba(34, 211, 238, 0.16), transparent 25%),
-                  radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.14), transparent 28%),
-                  #05070e;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle at top left, rgba(34, 211, 238, 0.14), transparent 28%), radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.12), transparent 32%), linear-gradient(180deg, #05070e 0%, #090c17 100%);
       display: flex;
-      flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
-      padding-top: clamp(3rem, 10vh, 5rem);
-      z-index: 9999;
+      justify-content: center;
       overflow: hidden;
-      transition: opacity 0.45s ease, visibility 0.45s ease;
+      z-index: 9999;
+      transition: opacity 0.5s ease, visibility 0.5s ease;
+    }
+    #loading-screen::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(circle at 20% 18%, rgba(34, 211, 238, 0.18), transparent 18%), radial-gradient(circle at 80% 30%, rgba(168, 85, 247, 0.14), transparent 16%), radial-gradient(circle at 50% 85%, rgba(56, 189, 248, 0.12), transparent 24%);
+      pointer-events: none;
+      mix-blend-mode: screen;
+      animation: bgPulse 5s ease-in-out infinite alternate;
     }
     #loading-screen.hidden {
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
     }
-    #loading-screen::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(circle at 50% 20%, rgba(255,255,255,0.12), transparent 22%),
-                  radial-gradient(circle at 30% 80%, rgba(167,139,250,0.12), transparent 18%);
-      pointer-events: none;
-    }
-    .loader-top {
+    .loader-frame {
+      position: relative;
+      z-index: 1;
+      text-align: center;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 1rem;
-      margin-bottom: 1.8rem;
-      z-index: 1;
+      gap: 1.5rem;
+      max-width: 320px;
+      width: 100%;
+      padding: 2rem 1.5rem;
     }
     .loader-logo {
-      font-size: clamp(2.25rem, 4vw, 3.5rem);
+      font-size: clamp(2rem, 5vw, 3rem);
       font-weight: 900;
+      color: #22d3ee;
       text-transform: uppercase;
-      letter-spacing: 0.24em;
-      margin: 0;
-      line-height: 1;
-      background: linear-gradient(90deg, #22d3ee, #a855f7, #f472b6, #22d3ee);
-      background-size: 200% 200%;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      text-shadow: 0 0 28px rgba(34, 211, 238, 0.35);
-      animation: logo-wave 3.5s ease-in-out infinite, float 4s ease-in-out infinite;
-    }
-    .loader-logo span {
-      color: #f8fafc;
-      background: none;
-      -webkit-text-fill-color: currentColor;
-      text-shadow: 0 0 20px rgba(248, 250, 252, 0.3);
-    }
-    .loader-slogan {
-      color: #cbd5e1;
-      font-size: 0.95rem;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      opacity: 0.9;
-      z-index: 1;
-      animation: slogan-fade 4s ease-in-out infinite;
+      letter-spacing: 0.28em;
+      text-shadow: 0 0 20px rgba(34, 211, 238, 0.7);
+      animation: pulse 1.8s infinite ease-in-out;
     }
     .loader-ring {
-      position: relative;
       width: 110px;
       height: 110px;
-      margin: 2rem auto 1.5rem;
+      border: 2px solid rgba(34, 211, 238, 0.35);
       border-radius: 50%;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
-      overflow: visible;
-      z-index: 1;
-      animation: ring-pulse 2.8s ease-in-out infinite;
-    }
-    .loader-ring::before,
-    .loader-ring::after {
-      content: '';
-      position: absolute;
-      inset: 8px;
-      border-radius: 50%;
-      box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.25);
-    }
-    .loader-ring::after {
-      inset: 22px;
-      box-shadow: 0 0 32px rgba(56, 189, 248, 0.12), 0 0 68px rgba(168, 85, 247, 0.08);
-    }
-    .loader-core {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      background: radial-gradient(circle, #ffffff 0%, #22d3ee 45%, rgba(34, 211, 238, 0.4) 100%);
-      transform: translate(-50%, -50%);
-      box-shadow: 0 0 20px rgba(34, 211, 238, 0.45);
-      animation: core-pulse 1.6s ease-in-out infinite;
+      position: relative;
+      display: grid;
+      place-items: center;
+      animation: ringSpin 2.6s linear infinite;
+      box-shadow: 0 0 30px rgba(34, 211, 238, 0.18);
     }
     .loader-ring span {
       position: absolute;
-      width: 12px;
-      height: 12px;
-      background: radial-gradient(circle, #22d3ee, #a855f7 86%);
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
-      filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.55));
+      background: linear-gradient(180deg, #22d3ee, #a855f7);
+      box-shadow: 0 0 18px rgba(34, 211, 238, 0.7);
+      opacity: 0.85;
     }
-    .loader-ring span:nth-child(1) { top: 0; left: 50%; transform: translate(-50%, -50%); animation: orbit 1.5s linear infinite reverse; }
-    .loader-ring span:nth-child(2) { right: 0; top: 50%; transform: translate(50%, -50%); animation: orbit 1.5s linear infinite; }
-    .loader-ring span:nth-child(3) { bottom: 0; left: 50%; transform: translate(-50%, 50%); animation: orbit 1.5s linear infinite reverse; }
-    .loader-ring span:nth-child(4) { left: 0; top: 50%; transform: translate(-50%, -50%); animation: orbit 1.5s linear infinite; }
+    .loader-ring span:nth-child(1) { top: 10px; left: 50%; transform: translateX(-50%); }
+    .loader-ring span:nth-child(2) { right: 10px; top: 50%; transform: translateY(-50%); }
+    .loader-ring span:nth-child(3) { bottom: 10px; left: 50%; transform: translateX(-50%); }
+    .loader-ring span:nth-child(4) { left: 10px; top: 50%; transform: translateY(-50%); }
     .loader-status {
-      position: relative;
-      min-height: 1.75rem;
-      margin-bottom: 1.75rem;
-      color: #94a3b8;
       font-size: 0.95rem;
-      letter-spacing: 0.18em;
+      color: #dbeafe;
+      letter-spacing: 0.07em;
       text-transform: uppercase;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1;
+      opacity: 0.9;
+      animation: statusPulse 1.8s ease-in-out infinite;
     }
-    .loader-status span {
-      position: absolute;
-      opacity: 0;
-      transform: translateY(12px);
-      animation: statusCycle 9s infinite ease-in-out;
-      white-space: nowrap;
-    }
-    .loader-status span:nth-child(1) { animation-delay: 0s; }
-    .loader-status span:nth-child(2) { animation-delay: 3s; }
-    .loader-status span:nth-child(3) { animation-delay: 6s; }
-    @keyframes statusCycle {
-      0%, 20%, 100% { opacity: 0; transform: translateY(16px); }
-      25%, 45% { opacity: 1; transform: translateY(0); }
-      50%, 95% { opacity: 0; transform: translateY(-10px); }
-    }
-    @keyframes core-pulse {
-      0%, 100% { transform: translate(-50%, -50%) scale(1); }
-      50% { transform: translate(-50%, -50%) scale(1.15); }
-    }    .loader-bar-container {
-      width: min(320px, 85vw);
-      height: 8px;
-      background: rgba(255, 255, 255, 0.08);
+    .loader-bar-container {
+      width: min(260px, 90%);
+      height: 4px;
+      background: rgba(255, 255, 255, 0.12);
       border-radius: 999px;
       overflow: hidden;
       position: relative;
-      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
-      z-index: 1;
+      box-shadow: inset 0 0 12px rgba(255,255,255,0.08);
     }
     .loader-bar {
-      width: 130%;
+      width: 100%;
       height: 100%;
-      background: linear-gradient(90deg, rgba(34,211,238,0.15), #22d3ee 24%, #a855f7 48%, rgba(248,113,166,0.55) 72%, rgba(34,211,238,0.15));
-      background-size: 300% 100%;
+      background: linear-gradient(90deg, #22d3ee, #a855f7, #f472b6);
       position: absolute;
-      left: -130%;
-      animation: loading 3.2s ease-in-out infinite, trackGlow 5s ease-in-out infinite;
-      filter: blur(0.6px);
+      left: -100%;
+      animation: loading 1.4s infinite cubic-bezier(0.6, 0.05, 0.15, 0.95);
     }
     @keyframes loading {
-      0% { left: -130%; }
+      0% { left: -100%; }
       50% { left: 0; }
-      100% { left: 130%; }
+      100% { left: 100%; }
     }
-    @keyframes trackGlow {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.75; transform: scale(0.98); }
     }
-    @keyframes logo-wave {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
+    @keyframes ringSpin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
-    @keyframes float {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-6px); }
+    @keyframes statusPulse {
+      0%, 100% { opacity: 0.9; transform: translateY(0); }
+      50% { opacity: 0.7; transform: translateY(2px); }
     }
-    @keyframes slogan-fade {
-      0%, 100% { opacity: 0.9; }
-      50% { opacity: 0.55; }
-    }
-    @keyframes ring-pulse {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.03); }
-    }
-    @keyframes orbit {
-      0% { transform: rotate(0deg) translate(45px) rotate(0deg); }
-      100% { transform: rotate(360deg) translate(45px) rotate(-360deg); }
+    @keyframes bgPulse {
+      0% { opacity: 0.8; }
+      100% { opacity: 1; }
     }
 
     /* Futuristic Base & Variables */
@@ -359,24 +283,18 @@
 </head>
 <body class="selection:bg-cyan-500/30 selection:text-cyan-100">
   <div id="loading-screen">
-    <div class="loader-top">
-      <div class="loader-logo">Tracker <span>box</span></div>
-      <div class="loader-slogan">Tracking your momentum in real time...</div>
-    </div>
-    <div class="loader-ring">
-      <span></span>
-      <span></span>
-      <span></span>
-      <span></span>
-      <div class="loader-core"></div>
-    </div>
-    <div class="loader-status">
-      <span>Fueling your focus engine…</span>
-      <span>Syncing your rhythm…</span>
-      <span>Ready for your next breakthrough…</span>
-    </div>
-    <div class="loader-bar-container">
-      <div class="loader-bar"></div>
+    <div class="loader-frame">
+      <div class="loader-logo">Trackerbox</div>
+      <div class="loader-ring">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div class="loader-status">Loading Your Productivity</div>
+      <div class="loader-bar-container">
+        <div class="loader-bar"></div>
+      </div>
     </div>
   </div>
   <div id="root"></div>
@@ -2525,7 +2443,7 @@
         const timer = setTimeout(() => {
           const loader = document.getElementById('loading-screen');
           if (loader) loader.classList.add('hidden');
-        }, 800);
+        }, 400);
 
         setIsLoaded(true);
         setTimeout(() => {
