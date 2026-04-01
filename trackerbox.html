@@ -80,7 +80,7 @@
       position: relative;
       display: grid;
       place-items: center;
-      animation: ringSpin 2.6s linear infinite;
+      animation: ringSpin 1.4s linear infinite;
       box-shadow: 0 0 30px rgba(34, 211, 238, 0.18);
     }
     .loader-ring span {
@@ -5489,44 +5489,135 @@
                   </div>
                  <div className="space-y-6 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 1: How the top bar works</h3>
-                      <p>The top buttons are shortcuts. Quick Capture opens the quick entry panel. Wallet, Journal, and Grid jump to that section header and make it visible below the sticky top bar.</p>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">1. Core Operating Modes</h3>
+                      <p>The system operates through four distinct interactive layers:</p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Reality Mode (Standard):</strong> The default state. Used for logging actual time spent. Clicking a segment fills it with the active category color.</li>
+                        <li><strong>Plan Mode (Sparkles Icon):</strong> Enables "Hatched" segments. Use this to schedule your future self. Blueprints can be "Committed to Reality" once the time has actually passed.</li>
+                        <li><strong>Notes Mode (File Icon):</strong> Enables deep metadata. Clicking a segment opens a text editor to log specific details of that time block.</li>
+                        <li><strong>Privacy Mode (Lock Icon):</strong> Instantly blurs financial data and balances in the Wallet section for use in public spaces.</li>
+                      </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 2: Opening a section</h3>
-                      <p>Click Wallet, Journal, or Grid. The app opens just that section and scrolls it into view with enough space so the section title is not hidden behind the top bar.</p>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">2. Temporal Grid (The 24h Matrix)</h3>
+                      <p>The heart of the system is the interactive time matrix, divided into four 6-hour Epochs:</p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Night:</strong> 12 AM – 6 AM</li>
+                        <li><strong>Morning:</strong> 6 AM – 12 PM</li>
+                        <li><strong>Afternoon:</strong> 12 PM – 6 PM</li>
+                        <li><strong>Evening:</strong> 6 PM – 12 AM</li>
+                      </ul>
+                      <p className="mt-3">Segment Mechanics:</p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Primary Split:</strong> Every hour starts as two 30-minute halves (t1, t2).</li>
+                        <li><strong>Granular Split (Scissor Mode):</strong> High-precision users can split any half into two 15-minute quarters (q1, q2, q3, q4).</li>
+                        <li><strong>Chrono-Cloning:</strong> Copy an entire day’s structure and paste it onto another date to maintain consistency.</li>
+                        <li><strong>Magic Fill:</strong> Instantly fills the Night epoch (12 AM - 8 AM) with your "Sleep" category for rapid logging.</li>
+                      </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 3: Seeing the section header</h3>
-                      <p>Because the top bar is sticky, the shortcut uses an offset scroll so the section heading appears just below it and stays visible.</p>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">3. Captain’s Log (The Daily Nerve Center)</h3>
+                      <p>Accessible by clicking any date header or the spacebar while in "Lock" mode.</p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Unified Workspace:</strong> Journaling: A markdown-supported area for free-writing.</li>
+                        <li><strong>Flexible Time-Parsing:</strong> Writing 7am (Workout) or 22.3 (Reading) in the journal automatically injects those notes into the corresponding grid segments.</li>
+                        <li><strong>ToDo System:</strong> Triple-state objectives (Not Started → Partial → Done). Includes sub-tasks and the Snooze (🌙) feature to migrate tasks to the next day.</li>
+                        <li><strong>Habit Sync:</strong> Automatically pulls scheduled habits for that specific day of the week.</li>
+                      </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 4: Closing the section</h3>
-                      <p>After jumping to a section, you can still collapse it using the section heading button. The section remains fully interactive.</p>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">4. Wallet Tracker (Financial Intelligence)</h3>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Multi-Wallet Support:</strong> Manage separate balances (e.g., Cash, Bank, Savings).</li>
+                        <li><strong>Transaction Templates:</strong> Save recurring spending patterns for one-click entry.</li>
+                        <li><strong>Debt Tracker:</strong> Monitor "Owe Me" vs "I Owe" status with partial settlement logging.</li>
+                        <li><strong>Subscription Manager:</strong> Tracks monthly recurring costs and logs them to the ledger upon payment.</li>
+                        <li><strong>Budgeting:</strong> Set monthly limits per category. Visual heat-bars turn amber/red as you approach or exceed limits.</li>
+                      </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 5: Wallet section</h3>
-                      <p>The Wallet button opens the Wallet header and scrolls it into view. Use the Wallet header button to collapse the wallet section again anytime.</p>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">5. Progression & Analytics (Gamification)</h3>
+                      <p>Trackerbox rewards consistency through a complex RPG-style XP system.</p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Time Tracking:</strong> +10 XP per hour logged.</li>
+                        <li><strong>Point Weights:</strong> Categories carry "Points Per Hour" (e.g., Study = +10, Waste = -2.5).</li>
+                        <li><strong>Objectives:</strong> +20 XP per completed ToDo.</li>
+                        <li><strong>Streaks:</strong> +50 XP per consecutive day of "Full Activity" (all 24 hours logged).</li>
+                      </ul>
+                      <p className="mt-3">Visual Intelligence:</p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Chrono-Spectral Heatmap:</strong> A yearly view that colors days based on point performance or category density.</li>
+                        <li><strong>Bar Graphs:</strong> Toggle between Points, XP, or specific Category hours over weeks or months.</li>
+                        <li><strong>Cryo-Sleep (❄️):</strong> Mark a day as a "Rest Day." It protects your streak from breaking even if you don't log activity.</li>
+                      </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 6: Journal section</h3>
-                      <p>The Journal button opens the Journal section and scrolls the journal heading below the sticky top bar. You can then close it with the Journal heading button.</p>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">6. System Integrity (Data & Safety)</h3>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Local-First:</strong> All data lives in your browser’s LocalStorage.</li>
+                        <li><strong>Manual Backups:</strong> Export/Import full System JSON files.</li>
+                        <li><strong>Automated Rolling Backups:</strong> Link a local folder to the system; Trackerbox will automatically save a timestamped JSON file every time a 6-hour block is completed, keeping a rolling history of the last 5 saves.</li>
+                        <li><strong>Undo/Redo:</strong> 30-step history buffer for grid painting.</li>
+                      </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 7: Grid section</h3>
-                      <p>The Grid button opens the Grid section and scrolls its header into view. That way the heading is visible and you can collapse or expand it as needed.</p>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">7. Quality of Life (QoL) Enhancements</h3>
+                      <p><strong>Frictionless Capture & Navigation</strong></p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Quick Capture:</strong> A rapid-entry overlay to instantly log a ToDo, Journal bullet, time-stamped Note, or Wallet transaction without leaving your current view.</li>
+                        <li><strong>Global Search (Omnibar):</strong> Instantly search across your entire database—Journal entries, Notes, Completed ToDos, and Wallet transactions. Type "today", "yesterday", or a specific date (e.g., 2026-04-01) to immediately jump to that day's Captain's Log.</li>
+                        <li><strong>Sticky Offsets:</strong> Clicking navigation buttons automatically scrolls sections perfectly into view just beneath the sticky header.</li>
+                        <li><strong>Toast Notifications:</strong> Non-blocking, auto-dismissing visual confirmations for saves, updates, and errors so your workflow isn't interrupted by popups.</li>
+                      </ul>
+                      <p className="mt-4"><strong>Advanced Task Management</strong></p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Snooze Tasks (🌙):</strong> Instantly push an unfinished ToDo to tomorrow’s list with a single click.</li>
+                        <li><strong>Migrate Yesterday:</strong> A dedicated button inside the Captain's Log sweeps all unfinished tasks from the previous day into today's list.</li>
+                        <li><strong>Granular Habit Tracking:</strong> Reorder habits via drag-and-drop, track individual habit streaks, and log partial progress (Yellow state) via a percentage slider.</li>
+                      </ul>
+                      <p className="mt-4"><strong>Grid & Journal Automation</strong></p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Smart Magic Fill:</strong> Fills all empty time segments in a day with your designated "Sleep" category without overwriting any existing real or blueprint data.</li>
+                        <li><strong>Blueprint Presets:</strong> Save an entire day or week's layout (both real and hatched blueprint colors) as a reusable template. Load it on a blank week to instantly populate your schedule.</li>
+                        <li><strong>Auto-Formatting Journal:</strong> Typing -- and pressing space auto-converts to a custom bullet (◈). Typing 1. auto-formats numbered lists and increments automatically on a new line.</li>
+                        <li><strong>Auto-Resizing Textareas:</strong> Journal and note editors organically grow to fit your text while keeping the last few lines visible above the keyboard or screen edge.</li>
+                      </ul>
+                      <p className="mt-4"><strong>Focus & Utility</strong></p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Focus Chronos:</strong> A built-in Pomodoro timer with quick-select presets (10/25/50/60 mins).</li>
+                        <li><strong>+2m Boost:</strong> Extend your focus session without breaking flow.</li>
+                        <li><strong>Dynamic Tab Title:</strong> The browser tab updates to show the remaining countdown time.</li>
+                        <li><strong>Auto-Logging:</strong> Finishing a focus session automatically writes a timestamped completion note directly into today's Journal.</li>
+                        <li><strong>PDF Reporting:</strong> Export high-fidelity, beautifully formatted PDF reports for both your Weekly Journal/Grid and your Wallet Analytics.</li>
+                        <li><strong>Theme Engine:</strong> 12 completely distinct visual modes, ranging from high-contrast dark modes (Cyber, Void, Neon) to eye-friendly light modes (Daylight, Light Mode).</li>
+                        <li><strong>Global Mute:</strong> A master switch in the settings to disable all system audio cues (paint, erase, success, trash) for silent environments.</li>
+                      </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 8: Search and timer</h3>
-                      <p>Search opens the global search modal. Clock toggles the Focus Chronos timer overlay without affecting the main section navigation.</p>
-                    </div>
-                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 9: Settings and sound</h3>
-                      <p>Settings opens app preferences. The mute switch is now inside Settings so you can control sounds from there.</p>
-                    </div>
-                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 10: Quick Capture</h3>
-                      <p>Quick Capture is for fast entries. Use it when you want to add something quickly, then review it in the Wallet, Journal, or Grid section later.</p>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">8. System Keyboard Shortcuts</h3>
+                      <p><strong>Trackerbox features a robust hotkey system allowing you to navigate and log without touching the mouse.</strong></p>
+                      <p className="mt-3"><strong>Global Shortcuts</strong></p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Shift + T :</strong> Open Quick Capture.</li>
+                        <li><strong>Ctrl + K (or Cmd + K):</strong> Open Global Search.</li>
+                        <li><strong>Escape :</strong> Close Global Search or any active modal.</li>
+                        <li><strong>Spacebar :</strong> Universal closer. If a modal, settings menu, or Captain's log is open, Spacebar closes it.</li>
+                      </ul>
+                      <p className="mt-4"><strong>Grid Navigation & Painting</strong></p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Arrow Keys (Up/Down/Left/Right):</strong> Move the active cell cursor around the temporal grid. Automatically expands collapsed Epochs as you move into them.</li>
+                        <li><strong>Spacebar :</strong> When no modals are open, paints the currently highlighted grid segment with your active category color.</li>
+                        <li><strong>1 through 8 :</strong> Instantly switch your active "paint" color to the corresponding category in your manifest.</li>
+                        <li><strong>L :</strong> Equip the "Lock" (cursor). Prevents accidental grid painting.</li>
+                        <li><strong>J :</strong> Opens today's Journal module directly (only works while the "Lock" is equipped).</li>
+                        <li><strong>Ctrl + Z (or Cmd + Z):</strong> Undo the last grid paint action.</li>
+                        <li><strong>Ctrl + Y (or Cmd + Shift + Z):</strong> Redo the last undone grid action.</li>
+                      </ul>
+                      <p className="mt-4"><strong>Journal Shortcuts</strong></p>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Ctrl + T (or Cmd + T):</strong> While typing in any Journal or Notes text box, instantly inserts the current local time in brackets (e.g., [08:42am]).</li>
+                        <li><strong>Arrow Left / Arrow Right :</strong> While viewing the Captain's Log (and not actively typing), instantly jump to the previous or next day's log.</li>
+                      </ul>
                     </div>
                   </div>
                  </div>
