@@ -7350,7 +7350,7 @@
                         </button>
                     </div>
                     <div className="flex items-center gap-4">
-                      <div className="hidden md:flex items-center gap-2 mr-4">
+                      <div className="flex flex-wrap items-center gap-2 mr-4">
                         <select 
                           value={activeWalletId} 
                           onClick={e => e.stopPropagation()}
@@ -7393,7 +7393,7 @@
                         const totalExpense = activeWalletTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
                         const balance = totalIncome - totalExpense;
                         return (
-                          <div className="hidden md:flex items-center gap-4 text-xs font-black uppercase tracking-widest">
+                          <div className="flex flex-wrap items-center gap-4 text-xs font-black uppercase tracking-widest">
                             <span className={isPrivacyMode ? 'blur-sm select-none' : 'text-emerald-400'}>Bal: {walletCurrency}{balance.toLocaleString()}</span>
                           </div>
                         );
