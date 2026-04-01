@@ -598,6 +598,7 @@
          graph: false,
          wallet: false
       });
+      const [walletAmountFocusTick, setWalletAmountFocusTick] = useState(0);
       // NEW: Collapsible Time Epochs (default Night collapsed for sleep QoL)
       const [collapsedEpochs, setCollapsedEpochs] = useState(() => {
         try {
@@ -663,6 +664,29 @@
       const toggleSection = (sec) => {
          playSound('click');
          setSectionsOpen(prev => ({ ...prev, [sec]: !prev[sec] }));
+      };
+      const openOnlySection = (sec) => {
+         playSound('click');
+         setSectionsOpen({
+           tracker: false,
+           journal: false,
+           analytics: false,
+           modules: false,
+           storage: false,
+           graph: false,
+           wallet: false,
+           [sec]: true
+         });
+      };
+      const scrollToElementWithStickyOffset = (elementId) => {
+         setTimeout(() => {
+           const el = document.getElementById(elementId);
+           if (!el) return;
+           const header = document.querySelector('header.sticky');
+           const headerHeight = header ? header.offsetHeight : 80;
+           const top = el.getBoundingClientRect().top + window.scrollY - headerHeight - 12;
+           window.scrollTo({ top, behavior: 'smooth' });
+         }, 10);
       };
       const toggleEpoch = (id) => {
         playSound('click');
@@ -4439,6 +4463,7 @@
         const wantTodos = searchFilter === 'all' || searchFilter === 'todos';
         const wantNotes = searchFilter === 'all' || searchFilter === 'notes';
         const wantDates = searchFilter === 'all' || searchFilter === 'dates';
+        const wantWallet = searchFilter === 'all';
 
         const dateSet = new Set([
           ...Object.keys(allData || {}),
@@ -4521,6 +4546,31 @@
           }
         }
 
+        if (wantWallet) {
+          for (const tx of walletTransactions || []) {
+            const category = walletCategories.find(c => c.id === tx.categoryId)?.name || 'Other';
+            const amountString = String(tx.amount || '');
+            const targetFields = [
+              tx.date,
+              tx.remark,
+              category,
+              amountString,
+              tx.type,
+              walletCategories.find(c => c.id === tx.categoryId)?.name || ''
+            ].filter(Boolean).map(item => String(item).toLowerCase());
+            const matches = targetFields.some(item => item.includes(qLower));
+            if (!matches) continue;
+            push({
+              kind: 'wallet',
+              dateStr: tx.date,
+              walletId: tx.walletId,
+              label: `Wallet • ${getDisplayDate(tx.date)} • ${tx.type === 'income' ? 'Income' : 'Expense'} • ${category}`,
+              preview: `${tx.type === 'income' ? 'Income' : 'Expense'} ${walletCurrency}${tx.amount.toLocaleString()} ${category}${tx.remark ? ' · ' + tx.remark : ''}`
+            });
+            if (results.length >= 30) break;
+          }
+        }
+
         results.sort((a, b) => {
           const d = (b.dateStr || '').localeCompare(a.dateStr || '');
           if (d !== 0) return d;
@@ -4529,7 +4579,7 @@
           return bT - aT;
         });
         return results.slice(0, 30);
-      }, [searchQuery, searchFilter, journalData, todosData, allData, descriptions, todayStr]);
+}, [searchQuery, searchFilter, journalData, todosData, allData, descriptions, todayStr, walletTransactions, walletCategories]);
 
       if (!isLoaded) {
         return (
@@ -5351,91 +5401,48 @@
                    <button onClick={() => { playSound('click'); setShowHelp(false); }} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
                   <div className="flex items-center gap-3 mb-6 shrink-0">
                     <Info size={32} className="text-cyan-400" />
-                    <h2 className="text-2xl font-black uppercase text-white">System Protocol — Trackerbox A→Z</h2>
+                    <h2 className="text-2xl font-black uppercase text-white">System Protocol — Trackerbox Guide</h2>
                   </div>
                  <div className="space-y-6 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
-                    <div className="bg-emerald-900/30 p-5 rounded-2xl border border-emerald-400/30">
-                      <h3 className="font-bold text-emerald-300 uppercase mb-3">A) The Big Idea</h3>
-                      <ul className="text-xs space-y-2 list-disc pl-5">
-                        <li><strong>Grid</strong> = your day in time triangles (log what you did).</li>
-                        <li><strong>Categories</strong> = your “why” (work, study, fitness…) with colors + points per hour.</li>
-                        <li><strong>Captain&apos;s Log</strong> = your day report (Tasks + Habits + Journal).</li>
-                        <li><strong>Notes</strong> = text tied to a specific triangle (time slot).</li>
-                      </ul>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 1: How the top bar works</h3>
+                      <p>The top buttons are shortcuts. Quick Capture opens the quick entry panel. Wallet, Journal, and Grid jump to that section header and make it visible below the sticky top bar.</p>
                     </div>
-
-                    <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-cyan-300 uppercase mb-3 border-b border-cyan-500/30 pb-2">B) Grid (Time Logging)</h3>
-                      <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>Each hour is split into <strong>2 triangles (30m)</strong> by default.</li>
-                        <li>You can split halves into <strong>quarters (15m)</strong> (Scissor Mode enables splitting).</li>
-                        <li><strong>Lock</strong> prevents painting; select a color to paint.</li>
-                        <li><strong>Drag paint</strong>: press and move across triangles to fill multiple.</li>
-                      </ul>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 2: Opening a section</h3>
+                      <p>Click Wallet, Journal, or Grid. The app opens just that section and scrolls it into view with enough space so the section title is not hidden behind the top bar.</p>
                     </div>
-
-                    <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-sky-300 uppercase mb-3 border-b border-sky-500/30 pb-2">C) Modes</h3>
-                      <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li><strong>Plan Mode</strong>: paints blueprint (future) triangles.</li>
-                        <li><strong>Notes Mode</strong>: edit triangle notes (descriptions).</li>
-                        <li><strong>Focus Mode</strong>: shows only today as 4 six‑hour blocks.</li>
-                        <li><strong>Scissor Mode</strong>: splitting is enabled only when this is ON.</li>
-                      </ul>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 3: Seeing the section header</h3>
+                      <p>Because the top bar is sticky, the shortcut uses an offset scroll so the section heading appears just below it and stays visible.</p>
                     </div>
-
-                    <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-purple-300 uppercase mb-3 border-b border-purple-500/30 pb-2">D) Captain&apos;s Log (Daily Report)</h3>
-                      <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li><strong>Tasks</strong>: red/yellow/green + progress % + remark + snooze + migrate + sweep.</li>
-                        <li><strong>Habits</strong>: scheduled by weekday; red/yellow/green + optional % + remark.</li>
-                        <li><strong>Journal</strong>: instant-save long-form text. Buttons: ◈ bullet, numbering, timestamp, week PDF.</li>
-                        <li><strong>Date arrows</strong>: browse days inside the week without closing the modal.</li>
-                      </ul>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 4: Closing the section</h3>
+                      <p>After jumping to a section, you can still collapse it using the section heading button. The section remains fully interactive.</p>
                     </div>
-
-                    <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-amber-300 uppercase mb-3 border-b border-amber-500/30 pb-2">E) Triangle Notes (Auto + Manual)</h3>
-                      <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>Write: <strong>7am (did dishes)</strong> or <strong>[07:42am] (note)</strong> → it auto-fills that time’s triangle note.</li>
-                        <li>Notes are stored with <strong>serial numbering</strong> inside each triangle.</li>
-                        <li>Global Search can search notes and jump + highlight the triangle.</li>
-                      </ul>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 5: Wallet section</h3>
+                      <p>The Wallet button opens the Wallet header and scrolls it into view. Use the Wallet header button to collapse the wallet section again anytime.</p>
                     </div>
-
-                    <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-amber-200 uppercase mb-3 border-b border-amber-500/30 pb-2">F) Analytics</h3>
-                      <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>Heatmap + Weekly chart + Bar graph to review trends.</li>
-                        <li>Points / XP / streaks reflect consistency over time.</li>
-                      </ul>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 6: Journal section</h3>
+                      <p>The Journal button opens the Journal section and scrolls the journal heading below the sticky top bar. You can then close it with the Journal heading button.</p>
                     </div>
-
-                    <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-blue-300 uppercase mb-3 border-b border-blue-500/30 pb-2">G) Data & Storage</h3>
-                      <ul className="text-xs space-y-1 list-disc pl-5">
-                        <li>Download/upload full JSON backup (everything).</li>
-                        <li>Optional folder auto-backups (rolling).</li>
-                        <li>PWA update tools: check + apply update.</li>
-                        <li>Reset tools: day/week/month/system.</li>
-                      </ul>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 7: Grid section</h3>
+                      <p>The Grid button opens the Grid section and scrolls its header into view. That way the heading is visible and you can collapse or expand it as needed.</p>
                     </div>
-
-                    <div className="bg-white/5 p-5 rounded-2xl border border-white/10">
-                      <h3 className="font-bold text-slate-200 uppercase mb-3 border-b border-white/20 pb-2">H) Shortcuts</h3>
-                      <ul className="grid grid-cols-2 gap-x-8 text-xs">
-                        <li><strong>Ctrl+Z</strong> Undo</li>
-                        <li><strong>Ctrl+Y</strong> Redo</li>
-                        <li><strong>Ctrl+K</strong> Global Search</li>
-                        <li><strong>Ctrl+T</strong> Insert timestamp in journal</li>
-                        <li><strong>L</strong> Lock tool</li>
-                        <li><strong>1–8</strong> Select category</li>
-                        <li><strong>Space</strong> Paint/remove selected triangle</li>
-                        <li><strong>Arrow keys</strong> Move keyboard cursor</li>
-                        <li><strong>P</strong> Plan mode</li>
-                        <li><strong>N</strong> Notes mode</li>
-                        <li><strong>F</strong> Focus mode</li>
-                      </ul>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 8: Search and timer</h3>
+                      <p>Search opens the global search modal. Clock toggles the Focus Chronos timer overlay without affecting the main section navigation.</p>
+                    </div>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 9: Settings and sound</h3>
+                      <p>Settings opens app preferences. The mute switch is now inside Settings so you can control sounds from there.</p>
+                    </div>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">Step 10: Quick Capture</h3>
+                      <p>Quick Capture is for fast entries. Use it when you want to add something quickly, then review it in the Wallet, Journal, or Grid section later.</p>
                     </div>
                   </div>
                  </div>
@@ -5517,7 +5524,12 @@
                             key={`${r.kind}-${r.dateStr}-${idx}`}
                             onClick={() => {
                               playSound('click');
-                              if (r.dateStr) setActiveJournalDate(r.dateStr);
+                              if (r.kind === 'wallet') {
+                                openOnlySection('wallet');
+                                if (r.walletId) setActiveWalletId(r.walletId);
+                              } else if (r.dateStr) {
+                                setActiveJournalDate(r.dateStr);
+                              }
                               if (r.kind === 'note' && r.triangleId && Number.isFinite(r.hour)) {
                                 expandSectionForHour(r.hour);
                                 setKeyboardCursor({ dateStr: r.dateStr, hour: r.hour, triangleId: r.triangleId });
@@ -5535,10 +5547,12 @@
                                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
                                       : r.kind === 'note'
                                         ? 'bg-amber-500/20 text-amber-300 border border-amber-400/30'
-                                        : 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30'
+                                        : r.kind === 'wallet'
+                                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                                          : 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/30'
                                 }`}
                               >
-                                {r.kind === 'journal' ? 'J' : r.kind === 'todo' ? 'T' : r.kind === 'note' ? 'N' : 'D'}
+                                {r.kind === 'journal' ? 'J' : r.kind === 'todo' ? 'T' : r.kind === 'note' ? 'N' : r.kind === 'wallet' ? 'W' : 'D'}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-bold text-white truncate">{r.label}</div>
@@ -5847,6 +5861,27 @@
                     <button onClick={() => setShowSettingsModal(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
                   </div>
                   <div className="grid gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <button
+                        onClick={() => {
+                          playSound('click');
+                          setShowSettingsModal(false);
+                          setShowHelp(true);
+                        }}
+                        className="w-full py-3 bg-white/5 border border-white/10 text-slate-200 rounded-2xl hover:bg-white/10 transition-all"
+                      >
+                        System Protocol
+                      </button>
+                      <button
+                        onClick={() => {
+                          playSound('click');
+                          setIsMuted(prev => !prev);
+                        }}
+                        className="w-full py-3 bg-white/5 border border-white/10 text-slate-200 rounded-2xl hover:bg-white/10 transition-all"
+                      >
+                        {isMuted ? 'Unmute Sounds' : 'Mute Sounds'}
+                      </button>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <label className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl p-4 cursor-pointer">
                         <input
@@ -6609,32 +6644,41 @@
                   >
                     <span className="text-3xl font-black leading-none">+</span>
                   </button>
-                  {/* Journal-only shortcut (focus + direct writing) */}
                   <button
                     onClick={() => {
-                      playSound('click');
+                      openOnlySection('wallet');
+                      setWalletAmountFocusTick(t => t + 1);
+                      scrollToElementWithStickyOffset('section-wallet');
+                    }}
+                    className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${sectionsOpen.wallet ? 'border-emerald-400/70 bg-emerald-400/10 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                    title="Open Wallet-only module"
+                  >
+                    <Wallet size={20} />
+                  </button>
+                  {/* Journal shortcut - jump to the journal section header */}
+                  <button
+                    onClick={() => {
+                      openOnlySection('journal');
                       setJournalModuleDate(activeJournalDate || todayStr);
-                      setSectionsOpen(prev => ({ ...prev, journal: true }));
                       setJournalFocusTick(t => t + 1);
-                      try { document.getElementById('journal-only-module')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+                      scrollToElementWithStickyOffset('journal-only-module');
                     }}
                     className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${sectionsOpen.journal ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                    title="Open Journal-only module"
+                    title="Open Journal section"
                   >
                     <FileText size={20} />
                   </button>
+                  <button
+                    onClick={() => {
+                      openOnlySection('tracker');
+                      scrollToElementWithStickyOffset('section-tracker');
+                    }}
+                    className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
+                    title="Show only Grid and jump to top"
+                  >
+                    <CalendarIcon size={20} />
+                  </button>
                   <div className="flex gap-2">
-                    {/* NEW: Global Mute Icon */}
-                    <button
-                      onClick={() => { playSound('click'); setIsMuted(!isMuted); }}
-                      className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${isMuted ? 'border-red-400/70 text-red-400 bg-red-400/10' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                      title={isMuted ? "Unmute all sounds" : "Mute all sounds"}
-                    >
-                      {isMuted ? <VolumeX2 size={20} /> : <Volume2 size={20} />}
-                    </button>
-                    <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
-                      <Clock size={20} />
-                    </button>
                     <button
                       onClick={() => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); }}
                       className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
@@ -6642,21 +6686,8 @@
                     >
                       <Search size={20} />
                     </button>
-                    <button
-                      onClick={() => {
-                        playSound('click');
-                        setSectionsOpen(prev => ({ ...prev, tracker: true, analytics: false, modules: false, storage: false, graph: false, journal: false }));
-                        setTimeout(() => {
-                          try { document.getElementById('section-tracker')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
-                        }, 0);
-                      }}
-                      className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
-                      title="Show only Grid and jump to top"
-                    >
-                      <CalendarIcon size={20} />
-                    </button>
-                    <button onClick={() => { playSound('click'); setShowHelp(true); }} className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all" title="System Protocol">
-                      <Info size={20} />
+                    <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
+                      <Clock size={20} />
                     </button>
                     <button onClick={() => { playSound('click'); setShowSettingsModal(true); }} className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all" title="Open Settings">
                       <Settings2 size={20} />
@@ -7404,6 +7435,7 @@
                             todayStr={todayStr} 
                             activeWalletId={activeWalletId} 
                             templates={walletTemplates}
+                            focusTrigger={walletAmountFocusTick}
                           />
                         </div>
                       </div>
@@ -8740,12 +8772,19 @@
       );
     }
     // --- WALLET TRACKER COMPONENTS ---
-    function WalletForm({ addTransaction, categories, currency, todayStr, activeWalletId, templates = [] }) {
+    function WalletForm({ addTransaction, categories, currency, todayStr, activeWalletId, templates = [], focusTrigger = 0 }) {
       const [type, setType] = useState('expense');
       const [categoryId, setCategoryId] = useState(categories.find(c => c.type === 'expense')?.id || '');
       const [amount, setAmount] = useState('');
       const [remark, setRemark] = useState('');
       const [date, setDate] = useState(todayStr);
+      const amountInputRef = useRef(null);
+
+      useEffect(() => {
+        if (focusTrigger > 0) {
+          amountInputRef.current?.focus();
+        }
+      }, [focusTrigger]);
 
       const handleSubmit = (e) => {
         e.preventDefault();
@@ -8791,6 +8830,7 @@
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">{currency}</span>
                 <input
+                  ref={amountInputRef}
                   type="number"
                   step="0.01"
                   value={amount}
