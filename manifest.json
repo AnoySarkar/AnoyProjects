@@ -1,6 +1,6 @@
 {
-  "name": "Trackerbox",
-  "short_name": "Trackerbox",
+  "name": "TrackerBox",
+  "short_name": "TrackerBox",
   "description": "A futuristic productivity and time tracking tool.",
   "start_url": "./trackerbox.html",
   "display": "standalone",
