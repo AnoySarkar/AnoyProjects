@@ -417,6 +417,8 @@
     const PieChart = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>;
     const BarChart3 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>;
     const DollarSign = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
+    const Edit2 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>;
+    const Globe = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="2" x2="22" y1="12" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>;
     // --- Volume icons for global mute ---
     const Volume2 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>;
     const VolumeX2 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>;
@@ -751,6 +753,16 @@
         showToast('🗑️ Transaction deleted');
       };
 
+      const updateWalletTransaction = (id, updatedTx) => {
+        setWalletTransactions(prev => {
+          const next = prev.map(tx => tx.id === id ? { ...tx, ...updatedTx } : tx);
+          try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+        playSound('success');
+        showToast('✅ Transaction updated');
+      };
+
       const toggleSection = (sec) => {
          playSound('click');
          setSectionsOpen(prev => ({ ...prev, [sec]: !prev[sec] }));
@@ -870,6 +882,45 @@
       const updateDebts = (updater) => {
         setDebts(prev => {
           const next = typeof updater === 'function' ? updater(prev) : updater;
+          try { localStorage.setItem(LOCAL_DEBTS_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+      };
+
+      const saveDebtRecord = (record) => {
+        setDebts(prev => {
+          const exists = prev.some(d => d.id === record.id);
+          const oldRecord = exists ? prev.find(d => d.id === record.id) : null;
+          
+          if (!exists) {
+            // Creation logic
+            const type = record.type === 'i_owe' ? 'income' : 'expense';
+            const catId = record.type === 'i_owe' ? 'debt_income' : 'debt';
+            addWalletTransaction(type, catId, record.amount, `New Debt: ${record.person}`, todayStr, activeWalletId);
+            
+            if (record.settledAmount > 0) {
+              const sType = record.type === 'i_owe' ? 'expense' : 'income';
+              const sCatId = record.type === 'i_owe' ? 'debt' : 'debt_income';
+              addWalletTransaction(sType, sCatId, record.settledAmount, `Initial Payment: ${record.person}`, todayStr, activeWalletId);
+            }
+          } else {
+            // Settlement/Payment logic (partial or full)
+            const diff = record.settledAmount - (oldRecord?.settledAmount || 0);
+            if (diff > 0) {
+              const type = record.type === 'i_owe' ? 'expense' : 'income';
+              const catId = record.type === 'i_owe' ? 'debt' : 'debt_income';
+              addWalletTransaction(type, catId, diff, `Debt Payment: ${record.person}`, todayStr, activeWalletId);
+            } else if (record.settled && !oldRecord?.settled) {
+              const remaining = record.amount - (oldRecord?.settledAmount || 0);
+              if (remaining > 0) {
+                const type = record.type === 'i_owe' ? 'expense' : 'income';
+                const catId = record.type === 'i_owe' ? 'debt' : 'debt_income';
+                addWalletTransaction(type, catId, remaining, `Debt Settlement: ${record.person}`, todayStr, activeWalletId);
+              }
+            }
+          }
+
+          const next = exists ? prev.map(d => d.id === record.id ? record : d) : [record, ...prev];
           try { localStorage.setItem(LOCAL_DEBTS_KEY, JSON.stringify(next)); } catch (e) {}
           return next;
         });
@@ -4096,31 +4147,32 @@
               : '<li>(none)</li>';
 
             return `
-              <div class="trackerbox-day-section" style="border:1px solid #e5e7eb; border-radius:10px; padding:16px; margin-bottom:16px;">
-                <h2 style="margin:0 0 8px; font-size:16px;">${escapeHtml(getDisplayDate(dStr))}</h2>
-                <div style="margin-bottom:12px; color:#374151;">
-                  Todos: ${todosGreen} completed, ${todosYellow} partial, ${todosRed} not completed${todosSnoozed ? `, ${todosSnoozed} snoozed` : ''}.<br/>
-                  Habits: ${habitGreen} completed, ${habitYellow} partial, ${habitRed} not completed.
+              <div class="trackerbox-day-section" style="border:1px solid #e5e7eb; border-radius:12px; padding:20px; margin-bottom:24px; background:#fafafa; page-break-inside:avoid;">
+                <h2 style="margin:0 0 12px; font-size:18px; color:#111827; border-bottom:2px solid #e5e7eb; padding-bottom:8px;">${escapeHtml(getDisplayDate(dStr))}</h2>
+                
+                <div style="margin-bottom:16px; font-size:11px; color:#4b5563; background:#f3f4f6; padding:10px; border-radius:8px;">
+                  <strong>Summary:</strong> ${todosGreen} completed todos, ${habitGreen} habits done.
                 </div>
 
-                <div style="margin-bottom:12px;">
-                  <div style="font-weight:700; margin-bottom:6px;">Journal</div>
-                  <pre class="trackerbox-journal-text" style="white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px;">${escapeHtml(journalText)}</pre>
+                <div style="margin-bottom:16px;">
+                  <div style="font-weight:800; margin-bottom:6px; text-transform:uppercase; font-size:10px; color:#6b7280; letter-spacing:1px;">Journal Entry</div>
+                  <pre class="trackerbox-journal-text" style="white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px; font-family:inherit; color:#1f2937; line-height:1.5; background:white; padding:12px; border:1px solid #f3f4f6; border-radius:8px;">${escapeHtml(journalText || '(No journal entry for this day)')}</pre>
                 </div>
 
-                <div style="margin-bottom:12px;">
-                  <div style="font-weight:700; margin-bottom:6px;">To-Dos</div>
-                  <ul style="margin:0; padding-left:18px;">${todoItemsHtml}</ul>
-                </div>
-
-                <div style="margin-bottom:12px;">
-                  <div style="font-weight:700; margin-bottom:6px;">Habits</div>
-                  <ul style="margin:0; padding-left:18px;">${habitItemsHtml}</ul>
+                <div style="display:grid; grid-template-cols: 1fr 1fr; gap:20px; margin-bottom:16px;">
+                  <div style="min-width:0;">
+                    <div style="font-weight:800; margin-bottom:6px; text-transform:uppercase; font-size:10px; color:#6b7280; letter-spacing:1px;">Objectives</div>
+                    <ul style="margin:0; padding-left:18px; font-size:11px; color:#374151;">${todoItemsHtml}</ul>
+                  </div>
+                  <div style="min-width:0;">
+                    <div style="font-weight:800; margin-bottom:6px; text-transform:uppercase; font-size:10px; color:#6b7280; letter-spacing:1px;">Routines</div>
+                    <ul style="margin:0; padding-left:18px; font-size:11px; color:#374151;">${habitItemsHtml}</ul>
+                  </div>
                 </div>
 
                 <div>
-                  <div style="font-weight:700; margin-bottom:6px;">Triangle Notes</div>
-                  <ul style="margin:0; padding-left:18px;">${notesHtml}</ul>
+                  <div style="font-weight:800; margin-bottom:6px; text-transform:uppercase; font-size:10px; color:#6b7280; letter-spacing:1px;">Triangle Notes</div>
+                  <ul style="margin:0; padding-left:18px; font-size:11px; color:#374151;">${notesHtml}</ul>
                 </div>
               </div>
             `;
@@ -4129,33 +4181,39 @@
           container.innerHTML = `
             <style>
               .trackerbox-day-section { page-break-inside: avoid; break-inside: avoid; }
-              .trackerbox-day-section + .trackerbox-day-section { page-break-before: always; }
-              .trackerbox-journal-text { font-weight: 700; color: #111827; }
+              .trackerbox-journal-text { font-weight: 600; }
             </style>
-            <div style="margin-bottom:18px;">
-              <h1 style="margin:0; font-size:20px;">Trackerbox Week Journal</h1>
-              <div style="color:#374151; margin-top:6px;">
-                ${escapeHtml(displayWeekStart)} - ${escapeHtml(displayWeekEnd)}
+            <div style="padding: 40px; background: white;">
+              <div style="margin-bottom:30px; border-bottom:3px solid #22d3ee; padding-bottom:20px;">
+                <h1 style="margin:0; font-size:28px; color:#0891b2; text-transform:uppercase; letter-spacing:2px;">Weekly Performance Journal</h1>
+                <div style="color:#64748b; margin-top:8px; font-size:14px; font-weight:bold;">
+                  ${escapeHtml(displayWeekStart)} — ${escapeHtml(displayWeekEnd)}
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 10px;">
+                ${daySections}
+              </div>
+              <div style="margin-top:40px; text-align:center; font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9; padding-top:20px;">
+                Generated by TrackerBox • ${new Date().toLocaleDateString()}
               </div>
             </div>
-            ${daySections}
           `;
 
           document.body.appendChild(container);
-          await window.html2pdf()
-            .from(container)
-            .set({
-              margin: [10, 10, 10, 10],
-              filename: `trackerbox_week_journal_${weekStart}_to_${weekEnd}.pdf`,
-              image: { type: 'jpeg', quality: 0.98 },
-              html2canvas: { scale: 2, useCORS: true },
-              jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-              pagebreak: { mode: ['css', 'legacy'], avoid: ['.trackerbox-day-section'] }
-            })
-            .save();
+          const opt = {
+            margin: 0,
+            filename: `trackerbox_week_journal_${weekStart}_to_${weekEnd}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'] }
+          };
+
+          await window.html2pdf().set(opt).from(container).save();
           showToast('✅ Week journal PDF downloaded');
-          container.remove();
+          document.body.removeChild(container);
         } catch (e) {
+          console.error(e);
           showToast('❌ Failed to export PDF', 'error');
         }
       };
@@ -6471,30 +6529,7 @@
                             settlementStatus: status,
                             remainingAmount: Math.max(0, amount - settledAmt)
                           };
-                          updateDebts(prev => {
-                            const exists = prev.some(d => d.id === record.id);
-                            const oldRecord = exists ? prev.find(d => d.id === record.id) : null;
-                            
-                            // Log payment if settledAmount increased
-                            if (record.settledAmount > (oldRecord ? oldRecord.settledAmount : 0)) {
-                              const paidNow = record.settledAmount - (oldRecord ? oldRecord.settledAmount : 0);
-                              const type = record.type === 'owe_me' ? 'income' : 'expense';
-                              const catId = record.type === 'owe_me' ? 'debt_income' : 'debt';
-                              addWalletTransaction(type, catId, paidNow, `Debt payment from/to ${record.person}`, todayStr, activeWalletId);
-                            } else if (record.settled && (!oldRecord || !oldRecord.settled)) {
-                              // If marked as settled but settledAmount didn't change (e.g. manually checked)
-                              const remaining = record.amount - (oldRecord ? oldRecord.settledAmount : 0);
-                              if (remaining > 0) {
-                                const type = record.type === 'owe_me' ? 'income' : 'expense';
-                                const catId = record.type === 'owe_me' ? 'debt_income' : 'debt';
-                                addWalletTransaction(type, catId, remaining, `Debt settlement: ${record.person}`, todayStr, activeWalletId);
-                              }
-                            }
-
-                            const next = exists ? prev.map(d => d.id === record.id ? record : d) : [record, ...prev];
-                            try { localStorage.setItem(LOCAL_DEBTS_KEY, JSON.stringify(next)); } catch (e) {}
-                            return next;
-                          });
+                          saveDebtRecord(record);
                           setShowDebtModal(false);
                           setDebtDraft({ id: '', person: '', type: 'owe_me', amount: '', dateTaken: formatDateString(new Date()), dueDate: formatDateString(new Date()), settlementStatus: 'not_settled', settledAmount: 0, note: '' });
                         }}
@@ -7772,6 +7807,7 @@
                               categories={walletCategories} 
                               currency={walletCurrency} 
                               deleteTransaction={deleteWalletTransaction} 
+                              editTransaction={updateWalletTransaction}
                               isPrivacyMode={isPrivacyMode}
                             />
                           </div>
@@ -7951,13 +7987,8 @@
                                   title="Edit debt"
                                 ><Info size={14}/></button>
                                 <button onClick={(e) => { e.stopPropagation(); if (confirm('Settle this debt?')) {
-                                    const amountToSettle = debt.amount - (debt.settledAmount || 0);
-                                    if (amountToSettle > 0) {
-                                      const type = debt.type === 'owe_me' ? 'income' : 'expense';
-                                      const catId = debt.type === 'owe_me' ? 'debt_income' : 'debt';
-                                      addWalletTransaction(type, catId, amountToSettle, `Debt settlement: ${debt.person}`, todayStr, activeWalletId);
-                                    }
-                                    updateDebts(prev => prev.map(d => d.id === debt.id ? { ...d, settled: true, settledAmount: d.amount } : d));
+                                    const record = { ...debt, settled: true, settledAmount: debt.amount, settlementStatus: 'settled', remainingAmount: 0 };
+                                    saveDebtRecord(record);
                                     playSound('success');
                                   } }} className="text-slate-500 hover:text-emerald-400"><CheckSquare size={14}/></button>
                               </div>
@@ -9300,7 +9331,10 @@
       );
     }
 
-    function WalletLogs({ transactions, categories, currency, deleteTransaction, isPrivacyMode }) {
+    function WalletLogs({ transactions, categories, currency, deleteTransaction, editTransaction, isPrivacyMode }) {
+      const [editingTxId, setEditingTxId] = useState(null);
+      const [editDraft, setEditDraft] = useState(null);
+
       if (transactions.length === 0) {
         return (
           <div className="flex flex-col items-center justify-center py-20 text-slate-600">
@@ -9309,6 +9343,28 @@
           </div>
         );
       }
+
+      const startEditing = (tx) => {
+        setEditingTxId(tx.id);
+        setEditDraft({ ...tx });
+        playSound('click');
+      };
+
+      const cancelEditing = () => {
+        setEditingTxId(null);
+        setEditDraft(null);
+        playSound('click');
+      };
+
+      const saveEdit = () => {
+        if (!editDraft.amount || isNaN(editDraft.amount)) return;
+        editTransaction(editingTxId, {
+          ...editDraft,
+          amount: parseFloat(editDraft.amount)
+        });
+        setEditingTxId(null);
+        setEditDraft(null);
+      };
 
       // Helper to format date as "10 Feb 2026"
       const formatLogDate = (dateStr) => {
@@ -9342,6 +9398,62 @@
               <div className="space-y-2">
                 {grouped[date].map(tx => {
                   const cat = categories.find(c => c.id === tx.categoryId) || { name: 'Unknown', color: '#64748b' };
+                  const isEditing = editingTxId === tx.id;
+
+                  if (isEditing) {
+                    return (
+                      <div key={tx.id} className="bg-white/10 border border-cyan-500/50 rounded-2xl p-4 space-y-3 animate-pulse-slow">
+                        <div className="flex gap-2">
+                          <select
+                            value={editDraft.type}
+                            onChange={e => setEditDraft({ ...editDraft, type: e.target.value })}
+                            className="bg-[#0b1120] border border-white/10 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none"
+                          >
+                            <option value="expense">Expense</option>
+                            <option value="income">Income</option>
+                          </select>
+                          <select
+                            value={editDraft.categoryId}
+                            onChange={e => setEditDraft({ ...editDraft, categoryId: e.target.value })}
+                            className="flex-1 bg-[#0b1120] border border-white/10 text-white text-xs font-bold rounded-lg px-2 py-1 outline-none"
+                          >
+                            {categories.filter(c => c.type === editDraft.type).map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-xs">{currency}</span>
+                            <input
+                              type="number"
+                              value={editDraft.amount}
+                              onChange={e => setEditDraft({ ...editDraft, amount: e.target.value })}
+                              className="w-full bg-[#0b1120] border border-white/10 text-white text-xs font-bold rounded-lg pl-6 pr-2 py-1.5 outline-none"
+                            />
+                          </div>
+                          <input
+                            type="date"
+                            value={editDraft.date}
+                            onChange={e => setEditDraft({ ...editDraft, date: e.target.value })}
+                            className="bg-[#0b1120] border border-white/10 text-white text-[10px] font-bold rounded-lg px-2 py-1.5 outline-none"
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          value={editDraft.remark}
+                          onChange={e => setEditDraft({ ...editDraft, remark: e.target.value })}
+                          placeholder="Remark"
+                          className="w-full bg-[#0b1120] border border-white/10 text-white text-xs font-medium rounded-lg px-3 py-1.5 outline-none"
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={cancelEditing} className="px-3 py-1 text-[10px] font-black uppercase text-slate-400 hover:text-white transition-all">Cancel</button>
+                          <button onClick={saveEdit} className="px-4 py-1 bg-cyan-500 text-black text-[10px] font-black uppercase rounded-lg hover:bg-cyan-400 transition-all">Save</button>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div key={tx.id} className="group flex items-center gap-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl p-3 transition-all">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${cat.color}20`, border: `1px solid ${cat.color}40` }}>
@@ -9356,12 +9468,22 @@
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-[10px] text-slate-500 truncate italic">{tx.remark || 'No remark'}</span>
-                          <button
-                            onClick={() => { if(confirm('Delete this transaction?')) deleteTransaction(tx.id); }}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-rose-400 transition-all"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => startEditing(tx)}
+                              className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-cyan-400 transition-all"
+                              title="Edit"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => { if(confirm('Delete this transaction?')) deleteTransaction(tx.id); }}
+                              className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-rose-400 transition-all"
+                              title="Delete"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
