@@ -1022,6 +1022,10 @@
       const autoBackupTimerRef = useRef(null);
       const backupPayloadRef = useRef({});
       const scheduleGridBackupRef = useRef(null);
+      const [backupFolderName, setBackupFolderName] = useState('');
+      const importFileInputRef = useRef(null);
+      const holdSplitTimerRef = useRef(null);
+      const holdSplitTriggeredRef = useRef(false);
       const enforceAutoBackupRolling = async (dir, prefix, limit) => {
         // Keep only the newest `limit` auto-backups (delete older ones).
         try {
@@ -1135,8 +1139,8 @@
           const writable = await fileHandle.createWritable();
           await writable.write(blob);
           await writable.close();
-          await enforceAutoBackupRolling(dir, 'trackerbox_auto_', 5);
-          showToast('✅ Auto-saved (rolling last 5 backups)', 'success');
+          await enforceAutoBackupRolling(dir, 'trackerbox_auto_', 10);
+          showToast('✅ Auto-saved (rolling last 10 backups)', 'success');
         } catch (e) {
           console.warn('Auto-backup failed (permission may have expired)', e);
         }
@@ -4371,6 +4375,15 @@
           openDescription(dateStr, hourIndex, triangleId);
           return;
         }
+        if (isFocusMode && !isScissorMode) {
+          clearTimeout(holdSplitTimerRef.current);
+          holdSplitTriggeredRef.current = false;
+          const half = ['t1', 'q1', 'q2'].includes(triangleId) ? 'half1' : 'half2';
+          holdSplitTimerRef.current = window.setTimeout(() => {
+            holdSplitTriggeredRef.current = true;
+            handleSplitToggle(dateStr, hourIndex, half, null);
+          }, 600);
+        }
         if (selectedColorId === 'lock') return;
         saveHistoryState();
         const hourData = allData[dateStr]?.[hourIndex] || {};
@@ -4378,7 +4391,7 @@
         const targetValue = getTargetValue(currentValue, selectedColorId, isBlueprintMode);
         handleUpdateSegment(dateStr, hourIndex, triangleId, targetValue);
         setIsDragging(true);
-      }, [isDescriptionMode, selectedColorId, isBlueprintMode, saveHistoryState, getTargetValue, handleUpdateSegment, allData, openDescription, frozenDays]);
+      }, [isDescriptionMode, selectedColorId, isBlueprintMode, saveHistoryState, getTargetValue, handleUpdateSegment, allData, openDescription, frozenDays, isFocusMode, isScissorMode, handleSplitToggle]);
       const handlePointerEnter = useCallback((dateStr, hourIndex, triangleId) => {
         if (!isDragging || selectedColorId === 'lock' || isDescriptionMode || frozenDays[dateStr]) return;
         const hourData = allData[dateStr]?.[hourIndex] || {};
@@ -4388,10 +4401,10 @@
       }, [isDragging, selectedColorId, isDescriptionMode, isBlueprintMode, getTargetValue, handleUpdateSegment, allData, frozenDays]);
       const handleSplitToggle = (dateStr, hour, half, e) => {
         if (isDescriptionMode) return;
-        if (!isScissorMode) return;
+        if (!isScissorMode && !isFocusMode) return;
         // NEW: Cryo-Sleep disables ALL input
         if (frozenDays[dateStr]) return;
-        e.preventDefault();
+        if (e && e.preventDefault) e.preventDefault();
         saveHistoryState();
         playSound('click');
         setAllData(prev => {
@@ -4427,7 +4440,14 @@
         });
       };
       useEffect(() => {
-        const handleMouseUp = () => setIsDragging(false);
+        const handleMouseUp = () => {
+          setIsDragging(false);
+          if (holdSplitTimerRef.current) {
+            clearTimeout(holdSplitTimerRef.current);
+            holdSplitTimerRef.current = null;
+          }
+          holdSplitTriggeredRef.current = false;
+        };
         window.addEventListener('pointerup', handleMouseUp);
         return () => window.removeEventListener('pointerup', handleMouseUp);
       }, []);
@@ -8705,7 +8725,7 @@
                           <h3 className="font-black uppercase tracking-widest text-emerald-400 text-sm">Automated File Backup</h3>
                         </div>
                         <p className="text-xs text-slate-300 leading-relaxed">
-                          For maximum security, you can link a local folder. A full JSON backup will be written automatically whenever you complete a 6-hour block or finish your day.
+                          For maximum security, you can link a local folder. A full JSON backup will be written automatically whenever you complete a 6-hour block or finish your day. Use Export JSON to download the full app snapshot, Import JSON to restore data, or Link Backup Folder for rolling auto backups.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3 mt-auto">
                           <button
@@ -8716,7 +8736,9 @@
                                 return;
                               }
                               try {
-                                backupDirHandleRef.current = await window.showDirectoryPicker({ mode: 'readwrite' });
+                                const dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+                                backupDirHandleRef.current = dir;
+                                setBackupFolderName(dir.name || 'Linked folder');
                                 showToast('✅ Auto-save folder linked successfully.');
                                 await flushAutoBackupToFolder(null);
                               } catch (e) {
@@ -8733,7 +8755,20 @@
                           >
                             <Download size={16}/> Export JSON
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => importFileInputRef.current?.click()}
+                            className="flex-1 tb-interactive bg-violet-600/20 text-violet-300 hover:bg-violet-600/40 hover:text-violet-100 font-black uppercase tracking-widest py-3 rounded-2xl border border-violet-500/50 flex items-center justify-center gap-2 text-[10px]"
+                          >
+                            <UploadCloud size={16}/> Import JSON
+                          </button>
+                          <input type="file" accept="application/json" ref={importFileInputRef} className="hidden" onChange={handleImportData} />
                         </div>
+                        {backupFolderName && (
+                          <div className="text-[10px] text-slate-400 mt-2">
+                            Backups will be saved to: <span className="font-bold text-slate-200">{backupFolderName}</span>
+                          </div>
+                        )}
                       </div>
                       <div className="xl:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 w-full">
                         <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-4 flex flex-col gap-4">
@@ -9599,6 +9634,6 @@
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
-  </script>
+  </script>n
 </body>
 </html> 
