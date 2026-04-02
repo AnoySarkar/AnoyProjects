@@ -471,8 +471,10 @@
       { id: 'health', name: 'Health', color: '#4ade80', type: 'expense', monthlyLimit: 0 },
       { id: 'savings', name: 'Savings', color: '#2dd4bf', type: 'expense', monthlyLimit: 0 },
       { id: 'shopping', name: 'Shopping', color: '#fb923c', type: 'expense', monthlyLimit: 0 },
+      { id: 'debt', name: 'Debt', color: '#f43f5e', type: 'expense', monthlyLimit: 0 },
       { id: 'salary', name: 'Salary', color: '#22d3ee', type: 'income', monthlyLimit: 0 },
       { id: 'business', name: 'Business', color: '#818cf8', type: 'income', monthlyLimit: 0 },
+      { id: 'debt_income', name: 'Debt', color: '#10b981', type: 'income', monthlyLimit: 0 },
       { id: 'others', name: 'Others', color: '#94a3b8', type: 'expense', monthlyLimit: 0 }
     ];
     const SECTIONS = [
@@ -715,7 +717,11 @@
           walletId,
           createdAt: new Date().toISOString()
         };
-        setWalletTransactions(prev => [newTx, ...prev]);
+        setWalletTransactions(prev => {
+          const next = [newTx, ...prev];
+          try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
         
         // Handle savings goals if the category is 'savings' (user might have renamed or added such category)
         const cat = walletCategories.find(c => c.id === categoryId);
@@ -723,7 +729,11 @@
             // Treat expense to 'savings' as contribution to a goal
             const goal = savingsGoals.find(g => g.active); // simplified: find first active goal
             if (goal) {
-                setSavingsGoals(prev => prev.map(g => g.id === goal.id ? { ...g, currentAmount: g.currentAmount + numAmount } : g));
+                setSavingsGoals(prev => {
+                  const next = prev.map(g => g.id === goal.id ? { ...g, currentAmount: g.currentAmount + numAmount } : g);
+                  try { localStorage.setItem(LOCAL_SAVINGS_GOALS_KEY, JSON.stringify(next)); } catch (e) {}
+                  return next;
+                });
             }
         }
 
@@ -732,7 +742,11 @@
       };
 
       const deleteWalletTransaction = (id) => {
-        setWalletTransactions(prev => prev.filter(tx => tx.id !== id));
+        setWalletTransactions(prev => {
+          const next = prev.filter(tx => tx.id !== id);
+          try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
         playSound('trash');
         showToast('🗑️ Transaction deleted');
       };
@@ -830,25 +844,62 @@
           return saved ? JSON.parse(saved) : [{ id: 'default', name: 'Main Wallet', color: '#22d3ee' }];
         } catch (e) { return [{ id: 'default', name: 'Main Wallet', color: '#22d3ee' }]; }
       });
-      const [activeWalletId, setActiveWalletId] = useState('default');
+      const updateWallets = (updater) => {
+        setWallets(prev => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          try { localStorage.setItem(LOCAL_WALLETS_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+      };
+      const [activeWalletId, setActiveWalletId] = useState(() => {
+        try {
+          const saved = localStorage.getItem('trackerbox_active_wallet_id_v1');
+          return saved || 'default';
+        } catch (e) { return 'default'; }
+      });
+      const updateActiveWalletId = (val) => {
+        setActiveWalletId(val);
+        try { localStorage.setItem('trackerbox_active_wallet_id_v1', val); } catch (e) {}
+      };
       const [debts, setDebts] = useState(() => {
         try {
           const saved = localStorage.getItem(LOCAL_DEBTS_KEY);
           return saved ? JSON.parse(saved) : [];
         } catch (e) { return []; }
       });
+      const updateDebts = (updater) => {
+        setDebts(prev => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          try { localStorage.setItem(LOCAL_DEBTS_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+      };
       const [subscriptions, setSubscriptions] = useState(() => {
         try {
           const saved = localStorage.getItem(LOCAL_SUBSCRIPTIONS_KEY);
           return saved ? JSON.parse(saved) : [];
         } catch (e) { return []; }
       });
+      const updateSubscriptions = (updater) => {
+        setSubscriptions(prev => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          try { localStorage.setItem(LOCAL_SUBSCRIPTIONS_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+      };
       const [walletTemplates, setWalletTemplates] = useState(() => {
         try {
           const saved = localStorage.getItem(LOCAL_TEMPLATES_KEY);
           return saved ? JSON.parse(saved) : [];
         } catch (e) { return []; }
       });
+      const updateWalletTemplates = (updater) => {
+        setWalletTemplates(prev => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          try { localStorage.setItem(LOCAL_TEMPLATES_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+      };
       const [showTemplateModal, setShowTemplateModal] = useState(false);
       const [templateDraft, setTemplateDraft] = useState(() => ({
         id: '',
@@ -865,6 +916,13 @@
           return saved ? JSON.parse(saved) : [];
         } catch (e) { return []; }
       });
+      const updateSavingsGoals = (updater) => {
+        setSavingsGoals(prev => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          try { localStorage.setItem(LOCAL_SAVINGS_GOALS_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+      };
 
       const [showSavingsGoalModal, setShowSavingsGoalModal] = useState(false);
       const [savingsGoalDraft, setSavingsGoalDraft] = useState({ id: '', name: '', targetAmount: '', currentAmount: 0, active: true });
@@ -875,6 +933,13 @@
           return saved ? JSON.parse(saved) : DEFAULT_WALLET_CATEGORIES;
         } catch (e) { return DEFAULT_WALLET_CATEGORIES; }
       });
+      const updateWalletCategories = (updater) => {
+        setWalletCategories(prev => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          try { localStorage.setItem(LOCAL_CATEGORIES_KEY + '_wallet', JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+      };
       const getDefaultSubscriptionCategoryId = () => {
         return walletCategories.find(c => c.name.toLowerCase() === 'food')?.id
           || walletCategories.find(c => c.type === 'expense')?.id
@@ -883,9 +948,13 @@
       const [walletCurrency, setWalletCurrency] = useState(() => {
         try {
           const saved = localStorage.getItem(LOCAL_CURRENCY_KEY);
-          return saved || '$';
-        } catch (e) { return '$'; }
+          return saved || '₹';
+        } catch (e) { return '₹'; }
       });
+      const updateWalletCurrency = (val) => {
+        setWalletCurrency(val);
+        try { localStorage.setItem(LOCAL_CURRENCY_KEY, val); } catch (e) {}
+      };
       const [walletFilterPeriod, setWalletFilterPeriod] = useState('all');
       const [walletCategoryFilter, setWalletCategoryFilter] = useState('all');
       const [walletAnalyticsPeriod, setWalletAnalyticsPeriod] = useState(() => {
@@ -4108,14 +4177,14 @@
               if (imported.descriptions) setDescriptions(imported.descriptions);
               if (imported.frozenDays) setFrozenDays(imported.frozenDays);
               if (imported.blueprintPresets) setBlueprintPresets(imported.blueprintPresets);
-              if (imported.walletTransactions) setWalletTransactions(imported.walletTransactions);
-              if (imported.wallets) setWallets(imported.wallets);
-              if (imported.activeWalletId) setActiveWalletId(imported.activeWalletId);
-              if (imported.debts) setDebts(imported.debts);
-              if (imported.subscriptions) setSubscriptions(imported.subscriptions);
-              if (imported.walletTemplates) setWalletTemplates(imported.walletTemplates);
-              if (imported.walletCategories) setWalletCategories(imported.walletCategories);
-              if (imported.walletCurrency) setWalletCurrency(imported.walletCurrency);
+              if (imported.walletTransactions) { setWalletTransactions(imported.walletTransactions); localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(imported.walletTransactions)); }
+              if (imported.wallets) updateWallets(imported.wallets);
+              if (imported.activeWalletId) updateActiveWalletId(imported.activeWalletId);
+              if (imported.debts) { setDebts(imported.debts); localStorage.setItem(LOCAL_DEBTS_KEY, JSON.stringify(imported.debts)); }
+              if (imported.subscriptions) { setSubscriptions(imported.subscriptions); localStorage.setItem(LOCAL_SUBSCRIPTIONS_KEY, JSON.stringify(imported.subscriptions)); }
+              if (imported.walletTemplates) { setWalletTemplates(imported.walletTemplates); localStorage.setItem(LOCAL_TEMPLATES_KEY, JSON.stringify(imported.walletTemplates)); }
+              if (imported.walletCategories) updateWalletCategories(imported.walletCategories);
+              if (imported.walletCurrency) updateWalletCurrency(imported.walletCurrency);
               if (imported.uiPreferences && typeof imported.uiPreferences === 'object') {
                 const u = imported.uiPreferences;
                 if (u.theme) {
@@ -4202,6 +4271,14 @@
         setCategories(newCats);
         localStorage.setItem(LOCAL_CATEGORIES_KEY, JSON.stringify(newCats));
       };
+      useEffect(() => {
+        if (!selectedColorId) return;
+        try {
+          const savedSettings = JSON.parse(localStorage.getItem(LOCAL_SETTINGS_KEY)) || {};
+          const nextSettings = { ...savedSettings, defaultSelectedColorId: selectedColorId };
+          localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(nextSettings));
+        } catch (e) {}
+      }, [selectedColorId]);
       const handleColorSelect = (id) => {
         if (isDescriptionMode) return; // no colour change in description mode
         playSound('click');
@@ -5701,7 +5778,7 @@
                               playSound('click');
                               if (r.kind === 'wallet') {
                                 openOnlySection('wallet');
-                                if (r.walletId) setActiveWalletId(r.walletId);
+                                if (r.walletId) updateActiveWalletId(r.walletId);
                               } else if (r.dateStr) {
                                 setActiveJournalDate(r.dateStr);
                               }
@@ -6155,7 +6232,7 @@
                             <input 
                               type="number" 
                               value={cat.monthlyLimit || 0} 
-                              onChange={e => setWalletCategories(prev => prev.map(c => c.id === cat.id ? { ...c, monthlyLimit: parseFloat(e.target.value) || 0 } : c))}
+                              onChange={e => updateWalletCategories(prev => prev.map(c => c.id === cat.id ? { ...c, monthlyLimit: parseFloat(e.target.value) || 0 } : c))}
                               className="bg-transparent border-none outline-none text-sm font-bold text-white"
                             />
                           </div>
@@ -6181,14 +6258,18 @@
                         <input 
                           type="text" 
                           value={w.name} 
-                          onChange={e => setWallets(prev => prev.map(item => item.id === w.id ? { ...item, name: e.target.value } : item))}
+                          onChange={e => updateWallets(prev => prev.map(item => item.id === w.id ? { ...item, name: e.target.value } : item))}
                           className="flex-1 bg-transparent border-none outline-none text-sm font-bold text-white"
                         />
                         {wallets.length > 1 && (
                           <button onClick={() => {
                             if (confirm('Delete wallet and all its transactions?')) {
-                              setWallets(prev => prev.filter(item => item.id !== w.id));
-                              setWalletTransactions(prev => prev.filter(t => t.walletId !== w.id));
+                              updateWallets(prev => prev.filter(item => item.id !== w.id));
+                              setWalletTransactions(prev => {
+                                const next = prev.filter(t => t.walletId !== w.id);
+                                try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(next)); } catch (e) {}
+                                return next;
+                              });
                               if (activeWalletId === w.id) setActiveWalletId(wallets.find(x => x.id !== w.id).id);
                             }
                           }} className="text-slate-600 hover:text-rose-400"><Trash2 size={16}/></button>
@@ -6202,7 +6283,7 @@
                           const id = 'w_' + Date.now();
                           const colors = ['#22d3ee', '#818cf8', '#c084fc', '#f472b6', '#fb7185', '#fb923c', '#facc15', '#4ade80'];
                           const color = colors[wallets.length % colors.length];
-                          setWallets(prev => [...prev, { id, name, color }]);
+                          updateWallets(prev => [...prev, { id, name, color }]);
                         }
                       }}
                       className="w-full py-3 border-2 border-dashed border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:border-emerald-500/50 hover:text-emerald-400 transition-all"
@@ -6231,7 +6312,7 @@
                           <input
                             type="text"
                             value={cat.name}
-                            onChange={e => setWalletCategories(prev => prev.map(item => item.id === cat.id ? { ...item, name: e.target.value } : item))}
+                            onChange={e => updateWalletCategories(prev => prev.map(item => item.id === cat.id ? { ...item, name: e.target.value } : item))}
                             className="w-full bg-[#05070e] border border-white/10 rounded-2xl px-3 py-2 text-white outline-none"
                           />
                         </div>
@@ -6239,7 +6320,7 @@
                           <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-1">Type</label>
                           <select
                             value={cat.type}
-                            onChange={e => setWalletCategories(prev => prev.map(item => item.id === cat.id ? { ...item, type: e.target.value } : item))}
+                            onChange={e => updateWalletCategories(prev => prev.map(item => item.id === cat.id ? { ...item, type: e.target.value } : item))}
                             className="w-full bg-[#05070e] border border-white/10 rounded-2xl px-3 py-2 text-white outline-none"
                           >
                             <option value="expense">Expense</option>
@@ -6251,7 +6332,7 @@
                           <input
                             type="number"
                             value={cat.monthlyLimit || 0}
-                            onChange={e => setWalletCategories(prev => prev.map(item => item.id === cat.id ? { ...item, monthlyLimit: parseFloat(e.target.value) || 0 } : item))}
+                            onChange={e => updateWalletCategories(prev => prev.map(item => item.id === cat.id ? { ...item, monthlyLimit: parseFloat(e.target.value) || 0 } : item))}
                             className="w-full bg-[#05070e] border border-white/10 rounded-2xl px-3 py-2 text-white outline-none"
                           />
                         </div>
@@ -6259,7 +6340,7 @@
                           <button
                             onClick={() => {
                               if (walletCategories.length <= 1) return;
-                              setWalletCategories(prev => prev.filter(item => item.id !== cat.id));
+                              updateWalletCategories(prev => prev.filter(item => item.id !== cat.id));
                               if (walletCategoryFilter === cat.id) setWalletCategoryFilter('all');
                             }}
                             className="w-full bg-rose-500/10 hover:bg-rose-500/20 text-rose-200 border border-rose-500/20 rounded-2xl px-3 py-2 text-xs font-black uppercase tracking-widest"
@@ -6272,7 +6353,7 @@
                     <button
                       onClick={() => {
                         const newId = 'cat_' + Date.now() + Math.random().toString(36).slice(2, 7);
-                        setWalletCategories(prev => [...prev, { id: newId, name: 'New Category', color: '#94a3b8', type: 'expense', monthlyLimit: 0 }]);
+                        updateWalletCategories(prev => [...prev, { id: newId, name: 'New Category', color: '#94a3b8', type: 'expense', monthlyLimit: 0 }]);
                         setWalletCategoryFilter(newId);
                       }}
                       className="w-full py-3 bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-cyan-500/20 transition-all"
@@ -6390,7 +6471,7 @@
                             settlementStatus: status,
                             remainingAmount: Math.max(0, amount - settledAmt)
                           };
-                          setDebts(prev => {
+                          updateDebts(prev => {
                             const exists = prev.some(d => d.id === record.id);
                             const oldRecord = exists ? prev.find(d => d.id === record.id) : null;
                             
@@ -6398,20 +6479,21 @@
                             if (record.settledAmount > (oldRecord ? oldRecord.settledAmount : 0)) {
                               const paidNow = record.settledAmount - (oldRecord ? oldRecord.settledAmount : 0);
                               const type = record.type === 'owe_me' ? 'income' : 'expense';
-                              const catId = walletCategories.find(c => c.type === type)?.id || '';
+                              const catId = record.type === 'owe_me' ? 'debt_income' : 'debt';
                               addWalletTransaction(type, catId, paidNow, `Debt payment from/to ${record.person}`, todayStr, activeWalletId);
                             } else if (record.settled && (!oldRecord || !oldRecord.settled)) {
                               // If marked as settled but settledAmount didn't change (e.g. manually checked)
                               const remaining = record.amount - (oldRecord ? oldRecord.settledAmount : 0);
                               if (remaining > 0) {
                                 const type = record.type === 'owe_me' ? 'income' : 'expense';
-                                const catId = walletCategories.find(c => c.type === type)?.id || '';
+                                const catId = record.type === 'owe_me' ? 'debt_income' : 'debt';
                                 addWalletTransaction(type, catId, remaining, `Debt settlement: ${record.person}`, todayStr, activeWalletId);
                               }
                             }
 
-                            if (exists) return prev.map(d => d.id === record.id ? record : d);
-                            return [record, ...prev];
+                            const next = exists ? prev.map(d => d.id === record.id ? record : d) : [record, ...prev];
+                            try { localStorage.setItem(LOCAL_DEBTS_KEY, JSON.stringify(next)); } catch (e) {}
+                            return next;
                           });
                           setShowDebtModal(false);
                           setDebtDraft({ id: '', person: '', type: 'owe_me', amount: '', dateTaken: formatDateString(new Date()), dueDate: formatDateString(new Date()), settlementStatus: 'not_settled', settledAmount: 0, note: '' });
@@ -6511,10 +6593,11 @@
                             categoryId: subscriptionDraft.categoryId || getDefaultSubscriptionCategoryId(),
                             amount
                           };
-                          setSubscriptions(prev => {
+                          updateSubscriptions(prev => {
                             const exists = prev.some(s => s.id === record.id);
-                            if (exists) return prev.map(s => s.id === record.id ? record : s);
-                            return [record, ...prev];
+                            const next = exists ? prev.map(s => s.id === record.id ? record : s) : [record, ...prev];
+                            try { localStorage.setItem(LOCAL_SUBSCRIPTIONS_KEY, JSON.stringify(next)); } catch (e) {}
+                            return next;
                           });
                           setShowSubscriptionModal(false);
                           setSubscriptionDraft({ id: '', name: '', amount: '', paymentDate: formatDateString(new Date()), categoryId: getDefaultSubscriptionCategoryId(), note: '' });
@@ -6620,10 +6703,11 @@
                             id: templateDraft.id || 'tmpl_' + Date.now() + Math.random().toString(36).slice(2, 7),
                             amount
                           };
-                          setWalletTemplates(prev => {
+                          updateWalletTemplates(prev => {
                             const exists = prev.some(t => t.id === record.id);
-                            if (exists) return prev.map(t => t.id === record.id ? record : t);
-                            return [record, ...prev];
+                            const next = exists ? prev.map(t => t.id === record.id ? record : t) : [record, ...prev];
+                            try { localStorage.setItem(LOCAL_TEMPLATES_KEY, JSON.stringify(next)); } catch (e) {}
+                            return next;
                           });
                           setShowTemplateModal(false);
                           showToast('Template saved', 'success');
@@ -6712,10 +6796,11 @@
                             targetAmount: target,
                             currentAmount: current
                           };
-                          setSavingsGoals(prev => {
+                          updateSavingsGoals(prev => {
                             const exists = prev.some(g => g.id === record.id);
-                            if (exists) return prev.map(g => g.id === record.id ? record : g);
-                            return [...prev, record];
+                            const next = exists ? prev.map(g => g.id === record.id ? record : g) : [...prev, record];
+                            try { localStorage.setItem(LOCAL_SAVINGS_GOALS_KEY, JSON.stringify(next)); } catch (e) {}
+                            return next;
                           });
                           setShowSavingsGoalModal(false);
                           playSound('success');
@@ -7534,7 +7619,7 @@
                             if (e.target.value === 'manage') {
                               setShowWalletManager(true);
                             } else {
-                              setActiveWalletId(e.target.value); 
+                              updateActiveWalletId(e.target.value); 
                             }
                             playSound('click'); 
                           }}
@@ -7546,7 +7631,7 @@
                         <select
                           value={walletCurrency}
                           onClick={e => e.stopPropagation()}
-                          onChange={e => { setWalletCurrency(e.target.value); playSound('click'); }}
+                          onChange={e => { e.stopPropagation(); updateWalletCurrency(e.target.value); playSound('click'); }}
                           className="bg-[#0b1120] border border-white/10 text-slate-300 text-[10px] font-black uppercase tracking-widest rounded-lg px-2 py-1 outline-none"
                         >
                           <option value="$">$ USD</option>
@@ -7610,6 +7695,9 @@
                             todayStr={todayStr} 
                             activeWalletId={activeWalletId} 
                             templates={walletTemplates}
+                            setTemplates={updateWalletTemplates}
+                            setTemplateDraft={setTemplateDraft}
+                            setShowTemplateModal={setShowTemplateModal}
                             focusTrigger={walletAmountFocusTick}
                           />
                         </div>
@@ -7866,10 +7954,10 @@
                                     const amountToSettle = debt.amount - (debt.settledAmount || 0);
                                     if (amountToSettle > 0) {
                                       const type = debt.type === 'owe_me' ? 'income' : 'expense';
-                                      const catId = walletCategories.find(c => c.type === type)?.id || '';
+                                      const catId = debt.type === 'owe_me' ? 'debt_income' : 'debt';
                                       addWalletTransaction(type, catId, amountToSettle, `Debt settlement: ${debt.person}`, todayStr, activeWalletId);
                                     }
-                                    setDebts(prev => prev.map(d => d.id === debt.id ? { ...d, settled: true, settledAmount: d.amount } : d));
+                                    updateDebts(prev => prev.map(d => d.id === debt.id ? { ...d, settled: true, settledAmount: d.amount } : d));
                                     playSound('success');
                                   } }} className="text-slate-500 hover:text-emerald-400"><CheckSquare size={14}/></button>
                               </div>
@@ -8577,42 +8665,44 @@
                 {sectionsOpen.storage && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
                     <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 md:gap-6">
-                      <div className="xl:col-span-1 bg-blue-900/10 border border-blue-500/20 rounded-2xl p-4 flex flex-col gap-4 w-full">
-                        <h3 className="font-bold uppercase text-blue-400 border-b border-blue-500/20 pb-2">System Files</h3>
-                        <p className="text-xs text-slate-400 flex-1">Save your database to a local file, or restore from backup securely. Keep your JSON safe.</p>
-                        <div className="flex flex-col gap-2 mt-auto">
-                          <button onClick={handleExportData} className="w-full tb-interactive bg-blue-600/20 text-blue-300 hover:bg-blue-600/40 hover:text-blue-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-blue-500/50 flex items-center justify-center gap-2">
-                            <Download size={16}/> Download Data
-                          </button>
-                          <button onClick={() => { playSound('click'); fileInputRef.current.click(); }} className="w-full tb-interactive bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 hover:text-purple-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-purple-500/50 flex items-center justify-center gap-2">
-                            <UploadCloud size={16}/> Upload Data
-                          </button>
-                          <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportData} className="hidden" />
+                      {/* Automated Local Auto-Save */}
+                      <div className="xl:col-span-2 bg-emerald-900/10 border border-emerald-500/20 rounded-2xl p-6 flex flex-col gap-4">
+                        <div className="flex items-center gap-3 border-b border-emerald-500/20 pb-3">
+                          <div className="p-2 bg-emerald-500/20 rounded-lg">
+                            <UploadCloud size={20} className="text-emerald-400" />
+                          </div>
+                          <h3 className="font-black uppercase tracking-widest text-emerald-400 text-sm">Automated File Backup</h3>
                         </div>
-                      </div>
-                      {/* NEW: AUTO-SAVE FOLDER SETUP */}
-                      <div className="xl:col-span-1 bg-emerald-900/10 border border-emerald-500/20 rounded-2xl p-4 flex flex-col gap-4">
-                        <h3 className="font-bold uppercase text-emerald-400 border-b border-emerald-500/20 pb-2">Automated Local Auto-Save</h3>
-                        <p className="text-xs text-slate-400 flex-1">Select a folder once. A full JSON backup is written only when you finish a 6-hour block (real colours, not plan-only) or complete all 24 hours of a day—plus once now to confirm the folder works.</p>
-                        <button
-                          onClick={async () => {
-                            playSound('click');
-                            if (!('showDirectoryPicker' in window)) {
-                              showToast('❌ Auto-save requires a modern browser (Chrome/Edge)', 'error');
-                              return;
-                            }
-                            try {
-                              backupDirHandleRef.current = await window.showDirectoryPicker({ mode: 'readwrite' });
-                              showToast('✅ Auto-save folder ready.');
-                              await flushAutoBackupToFolder(null);
-                            } catch (e) {
-                              showToast('❌ Folder access cancelled or denied', 'error');
-                            }
-                          }}
-                          className="mt-auto tb-interactive bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 hover:text-emerald-100 font-bold uppercase tracking-wider py-2 rounded-xl border border-emerald-500/50 flex items-center justify-center gap-2"
-                        >
-                          <UploadCloud size={16}/> Setup Auto-Save Folder
-                        </button>
+                        <p className="text-xs text-slate-300 leading-relaxed">
+                          For maximum security, you can link a local folder. A full JSON backup will be written automatically whenever you complete a 6-hour block or finish your day.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3 mt-auto">
+                          <button
+                            onClick={async () => {
+                              playSound('click');
+                              if (!('showDirectoryPicker' in window)) {
+                                showToast('❌ Auto-save requires a modern browser (Chrome/Edge)', 'error');
+                                return;
+                              }
+                              try {
+                                backupDirHandleRef.current = await window.showDirectoryPicker({ mode: 'readwrite' });
+                                showToast('✅ Auto-save folder linked successfully.');
+                                await flushAutoBackupToFolder(null);
+                              } catch (e) {
+                                showToast('❌ Folder access cancelled or denied', 'error');
+                              }
+                            }}
+                            className="flex-1 tb-interactive bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 hover:text-emerald-100 font-black uppercase tracking-widest py-3 rounded-2xl border border-emerald-500/50 flex items-center justify-center gap-2 text-[10px]"
+                          >
+                            <UploadCloud size={16}/> Link Backup Folder
+                          </button>
+                          <button
+                            onClick={handleExportData}
+                            className="flex-1 tb-interactive bg-blue-600/20 text-blue-300 hover:bg-blue-600/40 hover:text-blue-100 font-black uppercase tracking-widest py-3 rounded-2xl border border-blue-500/50 flex items-center justify-center gap-2 text-[10px]"
+                          >
+                            <Download size={16}/> Export JSON
+                          </button>
+                        </div>
                       </div>
                       <div className="xl:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 w-full">
                         <div className="bg-red-900/10 border border-red-500/20 rounded-2xl p-4 flex flex-col gap-4">
@@ -8947,12 +9037,33 @@
       );
     }
     // --- WALLET TRACKER COMPONENTS ---
-    function WalletForm({ addTransaction, categories, currency, todayStr, activeWalletId, templates = [], focusTrigger = 0 }) {
-      const [type, setType] = useState('expense');
-      const [categoryId, setCategoryId] = useState(categories.find(c => c.type === 'expense')?.id || '');
-      const [amount, setAmount] = useState('');
-      const [remark, setRemark] = useState('');
+    function WalletForm({ addTransaction, categories, currency, todayStr, activeWalletId, templates = [], setTemplates, setTemplateDraft, setShowTemplateModal, focusTrigger = 0 }) {
+      const [type, setType] = useState(() => {
+        try { return localStorage.getItem('trackerbox_wallet_draft_type') || 'expense'; } catch (e) { return 'expense'; }
+      });
+      const [categoryId, setCategoryId] = useState(() => {
+        try {
+          const saved = localStorage.getItem('trackerbox_wallet_draft_cat');
+          return saved && categories.some(c => c.id === saved) ? saved : (categories.find(c => c.type === 'expense')?.id || '');
+        } catch (e) { return categories.find(c => c.type === 'expense')?.id || ''; }
+      });
+      const [amount, setAmount] = useState(() => {
+        try { return localStorage.getItem('trackerbox_wallet_draft_amount') || ''; } catch (e) { return ''; }
+      });
+      const [remark, setRemark] = useState(() => {
+        try { return localStorage.getItem('trackerbox_wallet_draft_remark') || ''; } catch (e) { return ''; }
+      });
       const [date, setDate] = useState(todayStr);
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('trackerbox_wallet_draft_type', type);
+          localStorage.setItem('trackerbox_wallet_draft_cat', categoryId);
+          localStorage.setItem('trackerbox_wallet_draft_amount', amount);
+          localStorage.setItem('trackerbox_wallet_draft_remark', remark);
+        } catch (e) {}
+      }, [type, categoryId, amount, remark]);
+
       const amountInputRef = useRef(null);
 
       useEffect(() => {
@@ -8967,6 +9078,10 @@
         addTransaction(type, categoryId, amount, remark, date, activeWalletId);
         setAmount('');
         setRemark('');
+        try {
+          localStorage.removeItem('trackerbox_wallet_draft_amount');
+          localStorage.removeItem('trackerbox_wallet_draft_remark');
+        } catch (e) {}
       };
 
       const fillFromTemplate = (t) => {
@@ -8975,6 +9090,21 @@
         setAmount(t.amount || '');
         setRemark(t.remark || '');
         setDate(todayStr);
+        playSound('click');
+      };
+
+      const deleteTemplate = (e, tid) => {
+        e.stopPropagation();
+        if (confirm('Delete this template?')) {
+          setTemplates(prev => prev.filter(t => t.id !== tid));
+          playSound('trash');
+        }
+      };
+
+      const editTemplate = (e, t) => {
+        e.stopPropagation();
+        setTemplateDraft({ ...t });
+        setShowTemplateModal(true);
         playSound('click');
       };
 
@@ -9055,15 +9185,24 @@
           {templates.length > 0 && (
             <div className="flex flex-wrap gap-2 py-2">
               {templates.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => fillFromTemplate(t)}
-                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold text-slate-300 uppercase tracking-wider transition-all"
-                  title={`Use template: ${t.name}`}
-                >
-                  {t.name}
-                </button>
+                <div key={t.id} className="group relative">
+                  <button
+                    type="button"
+                    onClick={() => fillFromTemplate(t)}
+                    className="pl-3 pr-10 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold text-slate-300 uppercase tracking-wider transition-all"
+                    title={`Use template: ${t.name}`}
+                  >
+                    {t.name}
+                  </button>
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button type="button" onClick={(e) => editTemplate(e, t)} className="p-1 text-slate-500 hover:text-cyan-400 transition-colors" title="Edit Template">
+                      <Settings2 size={10} />
+                    </button>
+                    <button type="button" onClick={(e) => deleteTemplate(e, t.id)} className="p-1 text-slate-500 hover:text-rose-400 transition-colors" title="Delete Template">
+                      <Trash2 size={10} />
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           )}
