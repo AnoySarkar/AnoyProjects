@@ -4058,241 +4058,170 @@
       };
 
       const executeWalletPdfDownload = async () => {
-        playSound('click');
-        setShowPdfModal(null);
-        
-        const activeWallet = wallets.find(w => w.id === activeWalletId) || wallets[0];
-        let filteredTxs = walletTransactions.filter(t => t.walletId === activeWalletId);
-        
-        // Filter by period
-        if (walletPdfPeriod === 'week' && availableWeeks[walletPdfWeekIndex]) {
-          const weekDates = availableWeeks[walletPdfWeekIndex].dates;
-          const weekStart = weekDates[0];
-          const weekEnd = weekDates[weekDates.length - 1];
-          filteredTxs = filteredTxs.filter(t => t.date >= weekStart && t.date <= weekEnd);
-        } else if (walletPdfPeriod === 'month') {
-          filteredTxs = filteredTxs.filter(t => t.date.startsWith(walletPdfMonth));
-        }
-        
-        const incomeTotal = filteredTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-        const expenseTotal = filteredTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-        
-        // Group transactions by date
-        const groupedByDate = {};
-        filteredTxs.forEach(tx => {
-          if (!groupedByDate[tx.date]) groupedByDate[tx.date] = [];
-          groupedByDate[tx.date].push(tx);
-        });
-        const sortedDates = Object.keys(groupedByDate).sort().reverse();
-        
-        // Generate period label
-        let periodLabel = '';
-        if (walletPdfPeriod === 'week' && availableWeeks[walletPdfWeekIndex]) {
-          const weekDates = availableWeeks[walletPdfWeekIndex].dates;
-          periodLabel = `${getDisplayDate(weekDates[0])} to ${getDisplayDate(weekDates[weekDates.length - 1])}`;
-        } else if (walletPdfPeriod === 'month') {
-          const [year, month] = walletPdfMonth.split('-');
-          periodLabel = new Date(parseInt(year), parseInt(month) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
-        }
-        
-        const reportHtml = `
-          <style>
-            @page {
-              margin: 20mm;
-              border: 3px solid #22d3ee;
-              background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            }
-            .day-section {
-              page-break-before: always;
-              page-break-inside: auto;
-              break-inside: auto;
-              break-before: page;
-              border: 3px solid #06b6d4;
-              border-radius: 16px;
-              padding: 25px;
-              margin-bottom: 0;
-              background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-              box-shadow: 0 8px 32px rgba(6, 182, 212, 0.1);
-              position: relative;
-              overflow: hidden;
-            }
-            .day-section::before {
-              content: '';
-              position: absolute;
-              top: 0;
-              left: 0;
-              right: 0;
-              height: 6px;
-              background: linear-gradient(90deg, #22d3ee, #06b6d4, #0891b2, #0e7490);
-            }
-            .day-section:first-child {
-              page-break-before: avoid;
-            }
-            .day-header {
-              background: linear-gradient(135deg, #0891b2 0%, #06b6d4 50%, #22d3ee 100%);
-              color: white;
-              padding: 16px 20px;
-              border-radius: 12px;
-              font-weight: 900;
-              font-size: 16px;
-              margin-bottom: 20px;
-              text-transform: uppercase;
-              letter-spacing: 1px;
-              box-shadow: 0 4px 16px rgba(6, 182, 212, 0.3);
-              position: relative;
-            }
-            .day-header::after {
-              content: '';
-              position: absolute;
-              bottom: -8px;
-              left: 20px;
-              width: 0;
-              height: 0;
-              border-left: 8px solid transparent;
-              border-right: 8px solid transparent;
-              border-top: 8px solid #06b6d4;
-            }
-            .transaction-row {
-              transition: background-color 0.2s ease;
-            }
-            .transaction-row:hover {
-              background: #f1f5f9 !important;
-            }
-            .income-amount {
-              color: #059669 !important;
-              font-weight: 900;
-              text-shadow: 0 1px 2px rgba(5, 150, 105, 0.2);
-            }
-            .expense-amount {
-              color: #dc2626 !important;
-              font-weight: 900;
-              text-shadow: 0 1px 2px rgba(220, 38, 38, 0.2);
-            }
-            .category-badge {
-              background: linear-gradient(135deg, #22d3ee, #06b6d4) !important;
-              color: white !important;
-              padding: 4px 12px !important;
-              border-radius: 20px !important;
-              font-weight: 700 !important;
-              font-size: 10px !important;
-              text-transform: uppercase !important;
-              letter-spacing: 0.5px !important;
-              box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3) !important;
-            }
-            .day-summary {
-              background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%) !important;
-              border: 2px solid #10b981 !important;
-              border-radius: 12px !important;
-              padding: 12px !important;
-              margin-top: 15px !important;
-              font-weight: 700 !important;
-              color: #065f46 !important;
-            }
-          </style>
-          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1a1a1a; background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); min-height: 100vh;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #22d3ee; padding: 30px 40px 25px 40px; margin-bottom: 35px; background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border-radius: 0 0 20px 20px; box-shadow: 0 4px 16px rgba(6, 182, 212, 0.1);">
-              <div>
-                <h1 style="margin: 0; background: linear-gradient(135deg, #0891b2, #06b6d4, #22d3ee); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 32px; text-transform: uppercase; letter-spacing: 3px; font-weight: 900; text-shadow: 0 2px 4px rgba(6, 182, 212, 0.2);">Wallet Report</h1>
-                <p style="margin: 8px 0 0 0; color: #0891b2; font-size: 16px; font-weight: 600;">Wallet: <strong style="color: #06b6d4;">${activeWallet.name}</strong></p>
-                <p style="margin: 8px 0 0 0; color: #0891b2; font-size: 14px; font-weight: 500;">Period: <strong style="color: #22d3ee;">${periodLabel}</strong></p>
-              </div>
-              <div style="text-align: right;">
-                <p style="margin: 0; font-size: 12px; color: #64748b; font-weight: 500;">Generated by TrackerBox</p>
-                <p style="margin: 8px 0 0 0; font-size: 16px; font-weight: 700; color: #0891b2;">${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
-              </div>
-            </div>
-
-            <div style="display: flex; gap: 25px; margin: 0 40px 45px 40px;">
-              <div style="flex: 1; background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%); border: 3px solid #5eead4; padding: 25px; border-radius: 20px; text-align: center; box-shadow: 0 8px 32px rgba(20, 184, 166, 0.15); position: relative; overflow: hidden;">
-                <div style="position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #14b8a6, #0d9488, #0f766e);"></div>
-                <span style="display: block; font-size: 11px; font-weight: 900; color: #0d9488; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 1px;">Total Income</span>
-                <span style="font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #065f46, #047857); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; text-shadow: 0 2px 4px rgba(6, 95, 70, 0.2);">${walletCurrency}${incomeTotal.toLocaleString()}</span>
-              </div>
-              <div style="flex: 1; background: linear-gradient(135deg, #fff1f2 0%, #fce7f3 100%); border: 3px solid #fecdd3; padding: 25px; border-radius: 20px; text-align: center; box-shadow: 0 8px 32px rgba(244, 63, 94, 0.15); position: relative; overflow: hidden;">
-                <div style="position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #f43f5e, #e11d48, #be123c);"></div>
-                <span style="display: block; font-size: 11px; font-weight: 900; color: #e11d48; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 1px;">Total Expenses</span>
-                <span style="font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #881337, #be185d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; text-shadow: 0 2px 4px rgba(136, 19, 55, 0.2);">${walletCurrency}${expenseTotal.toLocaleString()}</span>
-              </div>
-              <div style="flex: 1; background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%); border: 3px solid #a5f3fc; padding: 25px; border-radius: 20px; text-align: center; box-shadow: 0 8px 32px rgba(6, 182, 212, 0.15); position: relative; overflow: hidden;">
-                <div style="position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #0891b2, #06b6d4, #22d3ee);"></div>
-                <span style="display: block; font-size: 11px; font-weight: 900; color: #0891b2; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 1px;">Net Balance</span>
-                <span style="font-size: 28px; font-weight: 900; background: linear-gradient(135deg, #164e63, #0891b2); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; text-shadow: 0 2px 4px rgba(22, 78, 99, 0.2);">${walletCurrency}${(incomeTotal - expenseTotal).toLocaleString()}</span>
-              </div>
-            </div>
-
-            ${sortedDates.map(date => {
-              const dayTxs = groupedByDate[date];
-              const dayIncome = dayTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-              const dayExpense = dayTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-              const d = new Date(date);
-              const dayLabel = d.toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-              
-              return `
-                <div class="day-section">
-                  <div class="day-header">${dayLabel}</div>
-                  <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 15px;">
-                    <tbody>
-                      ${dayTxs.sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map(tx => `
-                        <tr class="transaction-row" style="border-bottom: 1px solid #e2e8f0;">
-                          <td style="padding: 10px; width: 30%; font-weight: bold;">
-                            <span class="category-badge">
-                              ${walletCategories.find(c => c.id === tx.categoryId)?.name || 'Other'}
-                            </span>
-                          </td>
-                          <td style="padding: 10px; width: 40%; color: #64748b; font-style: italic; font-size: 11px;">${tx.remark || '-'}</td>
-                          <td style="padding: 10px; width: 15%; font-size: 10px; color: #94a3b8;">${tx.createdAt ? new Date(tx.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}</td>
-                          <td style="padding: 10px; width: 15%; text-align: right; font-weight: 900; font-size: 13px;" class="${tx.type === 'income' ? 'income-amount' : 'expense-amount'}">
-                            ${tx.type === 'income' ? '+' : '-'}${walletCurrency}${tx.amount.toLocaleString()}
-                          </td>
-                        </tr>
-                      `).join('')}
-                      <tr class="day-summary">
-                        <td colspan="3" style="padding: 12px; text-align: right; font-weight: 700; font-size: 12px;">Day Summary:</td>
-                        <td style="padding: 12px; text-align: right; font-weight: 900; font-size: 14px; color: #065f46;">
-                          +${walletCurrency}${dayIncome.toLocaleString()} / -${walletCurrency}${dayExpense.toLocaleString()}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              `;
-            }).join('')}
-            
-            <div style="margin-top: 60px; text-align: center; font-size: 11px; color: #64748b; border-top: 2px solid #22d3ee; padding-top: 25px; background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%); border-radius: 15px 15px 0 0;">
-              &copy; ${new Date().getFullYear()} TrackerBox Productivity Suite. All rights reserved.
-            </div>
-          </div>
-        `;
-
-        const container = document.createElement('div');
-        container.style.position = 'fixed';
-        container.style.left = '-9999px';
-        container.style.top = '0';
-        container.style.width = '210mm'; // A4 width
-        container.style.minHeight = '297mm'; // A4 height
-        container.style.background = 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)';
-        container.style.border = '3px solid #22d3ee';
-        container.style.borderRadius = '8px';
-        container.innerHTML = reportHtml;
-        document.body.appendChild(container);
-
-        const opt = {
-          margin: [25, 20, 25, 20], // top, right, bottom, left margins in mm
-          filename: `Wallet_Report_${activeWallet.name}_${walletPdfPeriod}_${walletPdfPeriod === 'week' ? availableWeeks[walletPdfWeekIndex]?.dates?.[0] : walletPdfMonth}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, allowTaint: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'], before: '.day-section', avoid: ['tr', 'td'] }
-        };
-
         try {
+          playSound('click');
+          setShowPdfModal(null);
+          showToast('⏳ Generating Wallet PDF, please wait...', 'info', 6000);
+
+          // Get selected week dates
+          const datesToExport = availableWeeks[walletPdfWeekIndex]?.dates || [];
+          
+          if (!datesToExport.length) {
+            showToast('❌ No week selected to export', 'error');
+            return;
+          }
+
+          const escapeHtml = (val) => {
+            const s = String(val ?? '');
+            return s
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#039;');
+          };
+
+          const displayStart = getDisplayDate(datesToExport[0]);
+          const displayEnd = getDisplayDate(datesToExport[datesToExport.length - 1]);
+          const periodTitle = 'Weekly Wallet Report';
+
+          const container = document.createElement('div');
+          container.style.background = 'linear-gradient(135deg, #05070e 0%, #0b1120 100%)';
+          container.style.color = '#e2e8f0';
+          container.style.padding = '40px';
+          container.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+          container.style.fontSize = '14px';
+          container.style.lineHeight = '1.4';
+          container.style.minHeight = '297mm'; // A4 height
+
+          const daySections = datesToExport.map((dStr) => {
+            const dateObj = new Date(dStr);
+            const dayWalletTxs = walletTransactions.filter(tx => tx.date === dStr && tx.walletId === activeWalletId);
+            const dayIncome = dayWalletTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+            const dayExpense = dayWalletTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+            const dayNet = dayIncome - dayExpense;
+
+            return `
+              <div class="wallet-day-section" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 16px; padding: 24px; margin-bottom: 32px; backdrop-filter: blur(12px); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); page-break-inside: avoid; break-inside: avoid;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid rgba(34, 197, 94, 0.4);">
+                  <div style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 12px rgba(34, 197, 94, 0.6);"></div>
+                  <h2 style="margin: 0; font-size: 20px; font-weight: 700; color: #e2e8f0; text-transform: uppercase; letter-spacing: 1px;">${escapeHtml(getDisplayDate(dStr))}</h2>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 24px;">
+                  <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 16px rgba(34, 197, 94, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Transactions</div>
+                      <div style="font-size: 14px; color: #e2e8f0; font-weight: 700;">${dayWalletTxs.length} Total</div>
+                    </div>
+                  </div>
+
+                  <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #10b981; border-radius: 50%; box-shadow: 0 0 16px rgba(16, 185, 129, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Income</div>
+                      <div style="font-size: 14px; color: #e2e8f0; font-weight: 700;">${walletCurrency}${dayIncome.toLocaleString()}</div>
+                    </div>
+                  </div>
+
+                  <div style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #ef4444; border-radius: 50%; box-shadow: 0 0 16px rgba(239, 68, 68, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Expenses</div>
+                      <div style="font-size: 14px; color: #e2e8f0; font-weight: 700;">${walletCurrency}${dayExpense.toLocaleString()}</div>
+                    </div>
+                  </div>
+
+                  <div style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(6, 182, 212, 0.05) 100%); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #06b6d4; border-radius: 50%; box-shadow: 0 0 16px rgba(6, 182, 212, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Net Balance</div>
+                      <div style="font-size: 14px; color: ${dayNet >= 0 ? '#e2e8f0' : '#ef4444'}; font-weight: 700;">${walletCurrency}${dayNet.toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                    <div style="width: 6px; height: 6px; background: #22c55e; border-radius: 50%;"></div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #22c55e; text-transform: uppercase; letter-spacing: 1px;">Transaction Details</h3>
+                  </div>
+                  <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.04) 100%); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 12px; padding: 16px;">
+                    ${dayWalletTxs.length
+                      ? dayWalletTxs.sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map(tx => {
+                          const category = walletCategories.find(c => c.id === tx.categoryId)?.name || 'Other';
+                          const statusColor = tx.type === 'income' ? '#10b981' : '#ef4444';
+                          const sign = tx.type === 'income' ? '+' : '-';
+                          return `<li style="margin-bottom: 8px; padding: 8px 12px; background: rgba(34, 197, 94, 0.05); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="flex: 1;">
+                              <span style="color: ${statusColor}; font-weight: bold; margin-right: 8px;">${sign}</span>
+                              <span style="color: #e2e8f0; font-size: 13px;">${escapeHtml(category)}</span>
+                              <span style="color: #94a3b8; font-size: 11px; margin-left: 8px;">${escapeHtml(tx.remark || '')}</span>
+                            </div>
+                            <span style="color: ${statusColor}; font-weight: bold; font-size: 13px;">${walletCurrency}${tx.amount.toLocaleString()}</span>
+                          </li>`;
+                        }).join('')
+                      : '<div style="color: #64748b; font-style: italic; text-align: center; padding: 20px;">No transactions recorded</div>'
+                    }
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          container.innerHTML = `
+            <style>
+              .wallet-day-section { page-break-inside: avoid; break-inside: avoid; }
+              @page { margin: 20mm; size: A4; }
+              body { margin: 0; padding: 0; }
+            </style>
+            <div style="min-height: 100vh; background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); padding: 40px; color: #e2e8f0; font-family: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace';">
+              <div style="max-width: 800px; margin: 0 auto;">
+                <div style="text-align: center; margin-bottom: 40px; padding: 32px; background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 2px solid rgba(34, 197, 94, 0.4); border-radius: 20px; backdrop-filter: blur(16px); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);">
+                  <div style="display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 20px;">
+                    <div style="width: 16px; height: 16px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 20px rgba(34, 197, 94, 0.8);"></div>
+                    <h1 style="margin: 0; font-size: 32px; font-weight: 900; color: #e2e8f0; text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 2px 8px rgba(34, 197, 94, 0.5);">Wallet Report</h1>
+                    <div style="width: 16px; height: 16px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 20px rgba(34, 197, 94, 0.8);"></div>
+                  </div>
+                  <div style="font-size: 18px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 2px;">
+                    ${escapeHtml(periodTitle)}
+                  </div>
+                  <div style="font-size: 14px; color: #64748b; margin-top: 12px; font-weight: 500;">
+                    ${escapeHtml(displayStart)} — ${escapeHtml(displayEnd)}
+                  </div>
+                  <div style="font-size: 12px; color: #94a3b8; margin-top: 8px; font-weight: 500;">
+                    Wallet: ${escapeHtml(wallets.find(w => w.id === activeWalletId)?.name || 'Unknown')}
+                  </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 24px;">
+                  ${daySections}
+                </div>
+                <div style="text-align: center; margin-top: 60px; padding: 24px; background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 16px; backdrop-filter: blur(12px);">
+                  <div style="font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
+                    Generated by TrackerBox • ${new Date().toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+
+          document.body.appendChild(container);
+          const opt = {
+            margin: 0,
+            filename: `trackerbox_wallet_report_${datesToExport[0]}_to_${datesToExport[datesToExport.length - 1]}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true, backgroundColor: '#0f172a' },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'], before: '.wallet-day-section' }
+          };
+
           await window.html2pdf().set(opt).from(container).save();
-          showToast('📄 Wallet PDF Report downloaded');
-        } catch (err) {
-          console.error(err);
-          showToast('❌ Failed to export PDF', 'error');
-        } finally {
+          showToast('✅ Wallet PDF downloaded');
           document.body.removeChild(container);
+        } catch (e) {
+          console.error(e);
+          showToast('❌ Failed to export PDF', 'error');
         }
       };
 
@@ -6582,50 +6511,19 @@
                   </h2>
                   
                   <div className="space-y-4">
-                    {/* Period Selector */}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => showPdfModal === 'wallet' ? setWalletPdfPeriod('week') : setJournalPdfPeriod('week')}
-                        className={`flex-1 px-4 py-2.5 rounded-xl font-bold uppercase text-xs tracking-wider transition-all ${(showPdfModal === 'wallet' ? walletPdfPeriod : journalPdfPeriod) === 'week' ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/50' : 'bg-white/5 text-slate-400 border border-white/10 hover:border-white/20'}`}
-                      >
-                        Week
-                      </button>
-                      <button
-                        onClick={() => showPdfModal === 'wallet' ? setWalletPdfPeriod('month') : setJournalPdfPeriod('month')}
-                        className={`flex-1 px-4 py-2.5 rounded-xl font-bold uppercase text-xs tracking-wider transition-all ${(showPdfModal === 'wallet' ? walletPdfPeriod : journalPdfPeriod) === 'month' ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400/50' : 'bg-white/5 text-slate-400 border border-white/10 hover:border-white/20'}`}
-                      >
-                        Month
-                      </button>
-                    </div>
-
                     {/* Week Selector */}
-                    {(showPdfModal === 'wallet' ? walletPdfPeriod : journalPdfPeriod) === 'week' && (
-                      <div>
-                        <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-bold">Select Week</label>
-                        <select
-                          value={showPdfModal === 'wallet' ? walletPdfWeekIndex : journalPdfWeekIndex}
-                          onChange={(e) => showPdfModal === 'wallet' ? setWalletPdfWeekIndex(Number(e.target.value)) : setJournalPdfWeekIndex(Number(e.target.value))}
-                          className="w-full bg-[#0b1120] border border-white/10 rounded-xl px-3 py-2 text-white outline-none text-sm"
-                        >
-                          {availableWeeks.map((w, i) => (
-                            <option key={w.id} value={i}>{w.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {/* Month Selector */}
-                    {(showPdfModal === 'wallet' ? walletPdfPeriod : journalPdfPeriod) === 'month' && (
-                      <div>
-                        <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-bold">Select Month</label>
-                        <input
-                          type="month"
-                          value={showPdfModal === 'wallet' ? walletPdfMonth : journalPdfMonth}
-                          onChange={(e) => showPdfModal === 'wallet' ? setWalletPdfMonth(e.target.value) : setJournalPdfMonth(e.target.value)}
-                          className="w-full bg-[#0b1120] border border-white/10 rounded-xl px-3 py-2 text-white outline-none text-sm"
-                        />
-                      </div>
-                    )}
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-bold">Select Week</label>
+                      <select
+                        value={showPdfModal === 'wallet' ? walletPdfWeekIndex : journalPdfWeekIndex}
+                        onChange={(e) => showPdfModal === 'wallet' ? setWalletPdfWeekIndex(Number(e.target.value)) : setJournalPdfWeekIndex(Number(e.target.value))}
+                        className="w-full bg-[#0b1120] border border-white/10 rounded-xl px-3 py-2 text-white outline-none text-sm"
+                      >
+                        {availableWeeks.map((w, i) => (
+                          <option key={w.id} value={i}>{w.label}</option>
+                        ))}
+                      </select>
+                    </div>
 
                     {/* Action Buttons */}
                     <div className="flex gap-3 mt-6">
