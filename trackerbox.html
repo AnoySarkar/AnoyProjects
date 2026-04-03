@@ -1166,7 +1166,7 @@
           await writable.write(blob);
           await writable.close();
           await enforceAutoBackupRolling(dir, 'trackerbox_auto_', 10);
-          showToast('✅ Auto-saved (rolling last 10 backups)', 'success');
+          showToast('✅ AutoSave completed (rolling last 10 backups)', 'success');
         } catch (e) {
           console.warn('Auto-backup failed (permission may have expired)', e);
         }
@@ -3998,6 +3998,14 @@
           descriptions: descriptions,
           frozenDays,
           blueprintPresets,
+          walletTransactions,
+          wallets,
+          activeWalletId,
+          debts,
+          subscriptions,
+          walletTemplates,
+          walletCategories,
+          walletCurrency,
           uiPreferences: {
             theme: currentTheme,
             muted: isMuted,
@@ -4011,7 +4019,21 @@
             isDescriptionMode,
             collapsedEpochs,
             sectionsOpen,
-            selectedColorId
+            selectedColorId,
+            walletAnalyticsPeriod,
+            walletAnalyticsDay,
+            walletAnalyticsMonth,
+            walletAnalyticsYear,
+            walletAnalyticsWeekMonth,
+            walletAnalyticsWeekIndex,
+            selectedMonthStr,
+            selectedWeekIndex,
+            statDate,
+            statWeekMonth,
+            statWeekIndex,
+            statMonth,
+            statYear,
+            journalModuleDate
           },
           exportedAt: new Date().toISOString(),
           version: 12
@@ -4020,14 +4042,14 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `trackerbox_backup_${formatDateString(new Date())}.json`;
+        a.download = `trackerbox_data_${formatDateString(new Date())}.json`;
         a.click();
         URL.revokeObjectURL(url);
         // NEW: Update last export timestamp for reminder
         const now = Date.now();
         localStorage.setItem(LOCAL_LAST_EXPORT_KEY, now.toString());
         setLastExportTime(now);
-        showToast('✅ Backup downloaded successfully');
+        showToast('✅ Data downloaded successfully');
       };
       // --- PDF Export Functions ---
       const handleDownloadWalletPdf = async () => {
@@ -5881,8 +5903,8 @@
                       <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">6. System Integrity (Data & Safety)</h3>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
                         <li><strong>Local-First:</strong> All data lives in your browser’s LocalStorage.</li>
-                        <li><strong>Manual Backups:</strong> Export/Import full System JSON files.</li>
-                        <li><strong>Automated Rolling Backups:</strong> Link a local folder to the system; Trackerbox will automatically save a timestamped JSON file every time a 6-hour block is completed, keeping a rolling history of the last 5 saves.</li>
+                        <li><strong>Manual Backups:</strong> Download/Upload full System data files.</li>
+                        <li><strong>Automated Rolling Backups:</strong> Link a local folder to the system; Trackerbox will automatically save a timestamped data file every time a 6-hour block is completed, keeping a rolling history of the last 10 saves.</li>
                         <li><strong>Undo/Redo:</strong> 30-step history buffer for grid painting.</li>
                       </ul>
                     </div>
@@ -9004,7 +9026,7 @@
                           <h3 className="font-black uppercase tracking-widest text-emerald-400 text-sm">Automated File Backup</h3>
                         </div>
                         <p className="text-xs text-slate-300 leading-relaxed">
-                          For maximum security, you can link a local folder. A full JSON backup will be written automatically whenever you complete a 6-hour block or finish your day. Use Export JSON to download the full app snapshot, Import JSON to restore data, or Link Backup Folder for rolling auto backups.
+                          For maximum security, you can link a local folder. A full data backup will be written automatically whenever you complete a 6-hour block or finish your day. Use Download Data to download the full app snapshot, Upload Data to restore data, or Link Backup Folder for rolling auto backups.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3 mt-auto">
                           <button
@@ -9032,14 +9054,14 @@
                             onClick={handleExportData}
                             className="flex-1 tb-interactive bg-blue-600/20 text-blue-300 hover:bg-blue-600/40 hover:text-blue-100 font-black uppercase tracking-widest py-3 rounded-2xl border border-blue-500/50 flex items-center justify-center gap-2 text-[10px]"
                           >
-                            <Download size={16}/> Export JSON
+                            <Download size={16}/> Download Data
                           </button>
                           <button
                             type="button"
                             onClick={() => importFileInputRef.current?.click()}
                             className="flex-1 tb-interactive bg-violet-600/20 text-violet-300 hover:bg-violet-600/40 hover:text-violet-100 font-black uppercase tracking-widest py-3 rounded-2xl border border-violet-500/50 flex items-center justify-center gap-2 text-[10px]"
                           >
-                            <UploadCloud size={16}/> Import JSON
+                            <UploadCloud size={16}/> Upload Data
                           </button>
                           <input type="file" accept="application/json" ref={importFileInputRef} className="hidden" onChange={handleImportData} />
                         </div>
