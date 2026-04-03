@@ -4282,7 +4282,7 @@
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true, allowTaint: true },
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'], before: '.day-section', after: '.day-section', avoid: ['tr', 'td'] }
+          pagebreak: { mode: ['css', 'legacy'], before: '.day-section', avoid: ['tr', 'td'] }
         };
 
         try {
@@ -4363,12 +4363,13 @@
           const periodTitle = journalPdfPeriod === 'week' ? 'Weekly Performance Journal' : 'Monthly Performance Journal';
 
           const container = document.createElement('div');
-          container.style.background = '#ffffff';
-          container.style.color = '#111827';
-          container.style.padding = '24px';
+          container.style.background = 'linear-gradient(135deg, #05070e 0%, #0b1120 100%)';
+          container.style.color = '#e2e8f0';
+          container.style.padding = '40px';
           container.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-          container.style.fontSize = '12px';
-          container.style.lineHeight = '1.35';
+          container.style.fontSize = '14px';
+          container.style.lineHeight = '1.4';
+          container.style.minHeight = '297mm'; // A4 height
 
           const daySections = datesToExport.map((dStr) => {
             const dateObj = new Date(dStr);
@@ -4376,6 +4377,11 @@
             const dayTodos = todosData?.[dStr] || [];
             const dayHabitLogs = habitLogs?.[dStr] || [];
             const dow = dateObj.getDay();
+
+            // Get wallet transactions for this day
+            const dayWalletTxs = walletTransactions.filter(tx => tx.date === dStr && tx.walletId === activeWalletId);
+            const dayIncome = dayWalletTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+            const dayExpense = dayWalletTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
 
             const todosGreen = dayTodos.filter(t => (t.status === 'green') || !!t.done).length;
             const todosYellow = dayTodos.filter(t => t.status === 'yellow').length;
@@ -4393,14 +4399,38 @@
             }).length;
             const habitRed = scheduledHabits.length - habitGreen - habitYellow;
 
-            const todoItemsHtml = dayTodos.length ? dayTodos.map(t => `<li>${escapeHtml(formatTodoLine(t))}</li>`).join('') : '<li>(none)</li>';
+            const todoItemsHtml = dayTodos.length ? dayTodos.map(t => {
+              const status = t.status || (t.done ? 'green' : 'red');
+              const statusColor = status === 'green' ? '#10b981' : status === 'yellow' ? '#f59e0b' : '#ef4444';
+              const statusIcon = status === 'green' ? '✓' : status === 'yellow' ? '○' : '✗';
+              const textDecoration = status === 'green' ? 'line-through' : 'none';
+              const textColor = status === 'green' ? '#64748b' : '#e2e8f0';
+              return `<li style="margin-bottom: 8px; padding: 8px 12px; background: rgba(6, 182, 212, 0.05); border: 1px solid rgba(6, 182, 212, 0.2); border-radius: 8px; display: flex; align-items: flex-start; gap: 8px;">
+                <span style="color: ${statusColor}; font-weight: bold; margin-top: 1px;">${statusIcon}</span>
+                <span style="flex: 1; color: ${textColor}; text-decoration: ${textDecoration}; font-size: 13px;">${escapeHtml(t.text || '')}</span>
+                ${t.progress !== undefined && t.progress !== null ? `<span style="color: #f59e0b; font-weight: bold; font-size: 12px;">${Math.round(t.progress)}%</span>` : ''}
+              </li>`;
+            }).join('') : '<li style="color: #64748b; font-style: italic; padding: 8px;">(none)</li>';
 
             const habitItemsHtml = scheduledHabits.length
               ? scheduledHabits.map(h => {
                 const hLog = dayHabitLogs.find(l => l.id === h.id && !l.deleted);
-                return `<li>${escapeHtml(formatHabitLine(h, hLog))}</li>`;
+                const status = hLog?.status || 'red';
+                const statusColor = status === 'green' ? '#10b981' : status === 'yellow' ? '#f59e0b' : '#ef4444';
+                const statusIcon = status === 'green' ? '✓' : status === 'yellow' ? '○' : '✗';
+                const textDecoration = status === 'green' ? 'line-through' : 'none';
+                const textColor = status === 'green' ? '#64748b' : '#e2e8f0';
+                const streak = habitStreaks[h.id] || 0;
+                return `<li style="margin-bottom: 8px; padding: 8px 12px; background: rgba(16, 185, 129, 0.05); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 8px; display: flex; align-items: center; gap: 8px;">
+                  <span style="color: ${statusColor}; font-weight: bold;">${statusIcon}</span>
+                  <span style="flex: 1; color: ${textColor}; text-decoration: ${textDecoration}; font-size: 13px; font-weight: 600;">${escapeHtml(h.name || '')}</span>
+                  <span style="color: #fb923c; font-weight: bold; font-size: 12px; display: flex; align-items: center; gap: 2px;">
+                    🔥 ${streak}
+                  </span>
+                  ${hLog?.progress !== undefined && hLog?.progress !== null ? `<span style="color: #f59e0b; font-weight: bold; font-size: 12px;">${Math.round(hLog.progress)}%</span>` : ''}
+                </li>`;
               }).join('')
-              : '<li>(none scheduled)</li>';
+              : '<li style="color: #64748b; font-style: italic; padding: 8px;">(none scheduled)</li>';
 
             const noteEntries = [];
             const dayDescs = descriptions?.[dStr] || {};
@@ -4420,36 +4450,126 @@
             }
             noteEntries.sort((a, b) => a.minutes - b.minutes);
             const notesHtml = noteEntries.length
-              ? noteEntries.map(n => `<li>${escapeHtml(`${n.timeLabel} • ${n.line}`)}</li>`).join('')
-              : '<li>(none)</li>';
+              ? noteEntries.map(n => `<li style="margin-bottom: 6px; padding: 6px 10px; background: rgba(168, 85, 247, 0.05); border: 1px solid rgba(168, 85, 247, 0.2); border-radius: 6px; color: #e2e8f0; font-size: 12px;">
+                <span style="color: #a855f7; font-weight: 600; margin-right: 8px;">${escapeHtml(n.timeLabel)}</span>
+                ${escapeHtml(n.line)}
+              </li>`).join('')
+              : '<li style="color: #64748b; font-style: italic; padding: 6px;">(none)</li>';
 
             return `
-              <div class="trackerbox-day-section" style="border:1px solid #e5e7eb; border-radius:12px; padding:20px; margin-bottom:24px; background:#fafafa; page-break-inside:avoid;">
-                <h2 style="margin:0 0 12px; font-size:18px; color:#111827; border-bottom:2px solid #e5e7eb; padding-bottom:8px;">${escapeHtml(getDisplayDate(dStr))}</h2>
-                
-                <div style="margin-bottom:16px; font-size:11px; color:#4b5563; background:#f3f4f6; padding:10px; border-radius:8px;">
-                  <strong>Summary:</strong> ${todosGreen} completed todos, ${habitGreen} habits done.
+              <div class="captains-log-day-section" style="background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 16px; padding: 24px; margin-bottom: 32px; backdrop-filter: blur(12px); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); page-break-inside: avoid; break-inside: avoid;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid rgba(139, 92, 246, 0.4);">
+                  <div style="width: 8px; height: 8px; background: #8b5cf6; border-radius: 50%; box-shadow: 0 0 12px rgba(139, 92, 246, 0.6);"></div>
+                  <h2 style="margin: 0; font-size: 20px; font-weight: 700; color: #e2e8f0; text-transform: uppercase; letter-spacing: 1px;">${escapeHtml(getDisplayDate(dStr))}</h2>
                 </div>
 
-                <div style="margin-bottom:16px;">
-                  <div style="font-weight:800; margin-bottom:6px; text-transform:uppercase; font-size:10px; color:#6b7280; letter-spacing:1px;">Journal Entry</div>
-                  <pre class="trackerbox-journal-text" style="white-space:pre-wrap; word-break:break-word; margin:0; font-size:12px; font-family:inherit; color:#1f2937; line-height:1.5; background:white; padding:12px; border:1px solid #f3f4f6; border-radius:8px;">${escapeHtml(journalText || '(No journal entry for this day)')}</pre>
-                </div>
-
-                <div style="display:grid; grid-template-cols: 1fr 1fr; gap:20px; margin-bottom:16px;">
-                  <div style="min-width:0;">
-                    <div style="font-weight:800; margin-bottom:6px; text-transform:uppercase; font-size:10px; color:#6b7280; letter-spacing:1px;">Objectives</div>
-                    <ul style="margin:0; padding-left:18px; font-size:11px; color:#374151;">${todoItemsHtml}</ul>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 24px;">
+                  <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #8b5cf6; border-radius: 50%; box-shadow: 0 0 16px rgba(139, 92, 246, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Journal</div>
+                      <div style="font-size: 14px; color: #e2e8f0; font-weight: 700;">${journalText ? 'Entry Added' : 'No Entry'}</div>
+                    </div>
                   </div>
-                  <div style="min-width:0;">
-                    <div style="font-weight:800; margin-bottom:6px; text-transform:uppercase; font-size:10px; color:#6b7280; letter-spacing:1px;">Routines</div>
-                    <ul style="margin:0; padding-left:18px; font-size:11px; color:#374151;">${habitItemsHtml}</ul>
+
+                  <div style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(6, 182, 212, 0.05) 100%); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #06b6d4; border-radius: 50%; box-shadow: 0 0 16px rgba(6, 182, 212, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Objectives</div>
+                      <div style="font-size: 14px; color: #e2e8f0; font-weight: 700;">${todosGreen}/${dayTodos.length} Complete</div>
+                    </div>
+                  </div>
+
+                  <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #10b981; border-radius: 50%; box-shadow: 0 0 16px rgba(16, 185, 129, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Routines</div>
+                      <div style="font-size: 14px; color: #e2e8f0; font-weight: 700;">${habitGreen}/${scheduledHabits.length} Complete</div>
+                    </div>
+                  </div>
+
+                  <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #f59e0b; border-radius: 50%; box-shadow: 0 0 16px rgba(245, 158, 11, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Notes</div>
+                      <div style="font-size: 14px; color: #e2e8f0; font-weight: 700;">${noteEntries.length} Entries</div>
+                    </div>
+                  </div>
+
+                  <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 12px; height: 12px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 16px rgba(34, 197, 94, 0.6);"></div>
+                    <div>
+                      <div style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">Wallet</div>
+                      <div style="font-size: 14px; color: #e2e8f0; font-weight: 700;">${dayWalletTxs.length} Tx | ${walletCurrency}${(dayIncome - dayExpense).toLocaleString()}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="margin-bottom: 24px;">
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                    <div style="width: 6px; height: 6px; background: #8b5cf6; border-radius: 50%;"></div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #8b5cf6; text-transform: uppercase; letter-spacing: 1px;">Captain's Log</h3>
+                  </div>
+                  <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(139, 92, 246, 0.04) 100%); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 12px; padding: 20px;">
+                    <pre style="margin: 0; font-size: 13px; line-height: 1.6; color: #e2e8f0; white-space: pre-wrap; word-break: break-word; font-family: inherit; font-weight: 500;">${escapeHtml(journalText || 'No log entry for this day...')}</pre>
+                  </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                      <div style="width: 6px; height: 6px; background: #06b6d4; border-radius: 50%;"></div>
+                      <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #06b6d4; text-transform: uppercase; letter-spacing: 1px;">Objectives</h3>
+                    </div>
+                    <div style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(6, 182, 212, 0.04) 100%); border: 1px solid rgba(6, 182, 212, 0.2); border-radius: 12px; padding: 16px;">
+                      ${dayTodos.length ? `<ul style="margin: 0; padding: 0; list-style: none;">${todoItemsHtml}</ul>` : '<div style="color: #64748b; font-style: italic; text-align: center; padding: 20px;">No objectives set</div>'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                      <div style="width: 6px; height: 6px; background: #10b981; border-radius: 50%;"></div>
+                      <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #10b981; text-transform: uppercase; letter-spacing: 1px;">Routines</h3>
+                    </div>
+                    <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.04) 100%); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 16px;">
+                      ${scheduledHabits.length ? `<ul style="margin: 0; padding: 0; list-style: none;">${habitItemsHtml}</ul>` : '<div style="color: #64748b; font-style: italic; text-align: center; padding: 20px;">No routines scheduled</div>'}
+                    </div>
                   </div>
                 </div>
 
                 <div>
-                  <div style="font-weight:800; margin-bottom:6px; text-transform:uppercase; font-size:10px; color:#6b7280; letter-spacing:1px;">Triangle Notes</div>
-                  <ul style="margin:0; padding-left:18px; font-size:11px; color:#374151;">${notesHtml}</ul>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                    <div style="width: 6px; height: 6px; background: #f59e0b; border-radius: 50%;"></div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #f59e0b; text-transform: uppercase; letter-spacing: 1px;">Triangle Notes</h3>
+                  </div>
+                  <div style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0.04) 100%); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 12px; padding: 16px;">
+                    ${noteEntries.length ? `<ul style="margin: 0; padding: 0; list-style: none;">${notesHtml}</ul>` : '<div style="color: #64748b; font-style: italic; text-align: center; padding: 20px;">No notes recorded</div>'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                    <div style="width: 6px; height: 6px; background: #22c55e; border-radius: 50%;"></div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #22c55e; text-transform: uppercase; letter-spacing: 1px;">Wallet Log</h3>
+                  </div>
+                  <div style="background: linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(34, 197, 94, 0.04) 100%); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 12px; padding: 16px;">
+                    ${dayWalletTxs.length
+                      ? dayWalletTxs.sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map(tx => {
+                          const category = walletCategories.find(c => c.id === tx.categoryId)?.name || 'Other';
+                          const statusColor = tx.type === 'income' ? '#10b981' : '#ef4444';
+                          const sign = tx.type === 'income' ? '+' : '-';
+                          return `<li style="margin-bottom: 8px; padding: 8px 12px; background: rgba(34, 197, 94, 0.05); border: 1px solid rgba(34, 197, 94, 0.2); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="flex: 1;">
+                              <span style="color: ${statusColor}; font-weight: bold; margin-right: 8px;">${sign}</span>
+                              <span style="color: #e2e8f0; font-size: 13px;">${escapeHtml(category)}</span>
+                              <span style="color: #94a3b8; font-size: 11px; margin-left: 8px;">${escapeHtml(tx.remark || '')}</span>
+                            </div>
+                            <span style="color: ${statusColor}; font-weight: bold; font-size: 13px;">${walletCurrency}${tx.amount.toLocaleString()}</span>
+                          </li>`;
+                        }).join('')
+                      : '<div style="color: #64748b; font-style: italic; text-align: center; padding: 20px;">No transactions recorded</div>'
+                    }
+                  </div>
                 </div>
               </div>
             `;
@@ -4457,21 +4577,33 @@
 
           container.innerHTML = `
             <style>
-              .trackerbox-day-section { page-break-inside: avoid; break-inside: avoid; }
-              .trackerbox-journal-text { font-weight: 600; }
+              .captains-log-day-section { page-break-inside: avoid; break-inside: avoid; }
+              @page { margin: 20mm; size: A4; }
+              body { margin: 0; padding: 0; }
             </style>
-            <div style="padding: 40px; background: white;">
-              <div style="margin-bottom:30px; border-bottom:3px solid #22d3ee; padding-bottom:20px;">
-                <h1 style="margin:0; font-size:28px; color:#0891b2; text-transform:uppercase; letter-spacing:2px;">${periodTitle}</h1>
-                <div style="color:#64748b; margin-top:8px; font-size:14px; font-weight:bold;">
-                  ${escapeHtml(displayStart)} — ${escapeHtml(displayEnd)}
+            <div style="min-height: 100vh; background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); padding: 40px; color: #e2e8f0; font-family: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace';">
+              <div style="max-width: 800px; margin: 0 auto;">
+                <div style="text-align: center; margin-bottom: 40px; padding: 32px; background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 2px solid rgba(139, 92, 246, 0.4); border-radius: 20px; backdrop-filter: blur(16px); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);">
+                  <div style="display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 20px;">
+                    <div style="width: 16px; height: 16px; background: #8b5cf6; border-radius: 50%; box-shadow: 0 0 20px rgba(139, 92, 246, 0.8);"></div>
+                    <h1 style="margin: 0; font-size: 32px; font-weight: 900; color: #e2e8f0; text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 2px 8px rgba(139, 92, 246, 0.5);">Captain's Log</h1>
+                    <div style="width: 16px; height: 16px; background: #8b5cf6; border-radius: 50%; box-shadow: 0 0 20px rgba(139, 92, 246, 0.8);"></div>
+                  </div>
+                  <div style="font-size: 18px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 2px;">
+                    ${escapeHtml(periodTitle)}
+                  </div>
+                  <div style="font-size: 14px; color: #64748b; margin-top: 12px; font-weight: 500;">
+                    ${escapeHtml(displayStart)} — ${escapeHtml(displayEnd)}
+                  </div>
                 </div>
-              </div>
-              <div style="display: flex; flex-direction: column; gap: 10px;">
-                ${daySections}
-              </div>
-              <div style="margin-top:40px; text-align:center; font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9; padding-top:20px;">
-                Generated by TrackerBox • ${new Date().toLocaleDateString()}
+                <div style="display: flex; flex-direction: column; gap: 24px;">
+                  ${daySections}
+                </div>
+                <div style="text-align: center; margin-top: 60px; padding: 24px; background: linear-gradient(135deg, rgba(15, 23, 42, 0.9) 0%, rgba(30, 41, 59, 0.9) 100%); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 16px; backdrop-filter: blur(12px);">
+                  <div style="font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
+                    Generated by TrackerBox • ${new Date().toLocaleDateString()}
+                  </div>
+                </div>
               </div>
             </div>
           `;
@@ -4479,11 +4611,11 @@
           document.body.appendChild(container);
           const opt = {
             margin: 0,
-            filename: `trackerbox_${journalPdfPeriod}_journal_${datesToExport[0]}_to_${datesToExport[datesToExport.length - 1]}.pdf`,
+            filename: `trackerbox_${journalPdfPeriod}_captains_log_${datesToExport[0]}_to_${datesToExport[datesToExport.length - 1]}.pdf`,
             image: { type: 'jpeg', quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true },
+            html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true, backgroundColor: '#0f172a' },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-            pagebreak: { mode: ['css', 'legacy'] }
+            pagebreak: { mode: ['css', 'legacy'], before: '.captains-log-day-section' }
           };
 
           await window.html2pdf().set(opt).from(container).save();
