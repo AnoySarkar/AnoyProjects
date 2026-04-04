@@ -883,6 +883,7 @@
     const LOCAL_SCISSOR_MODE_KEY = 'trackerbox_scissor_mode_v1';
     const LOCAL_SETTINGS_KEY = 'trackerbox_settings_v1';
     const LOCAL_BLUEPRINT_PRESETS_KEY = 'trackerbox_blueprint_presets_v3'; // v3 = real colors + blueprints + fixed load
+    const LOCAL_ACTION_PRESETS_KEY = 'trackerbox_action_presets_v1';
     const LOCAL_JOURNAL_STARS_KEY = 'trackerbox_journal_stars_v1';
     const LOCAL_NOTE_STARS_KEY = 'trackerbox_note_stars_v1';
     const LOCAL_WALLET_KEY = 'trackerbox_wallet_v1';
@@ -910,6 +911,7 @@
       defaultBreakMinutes: 5,
       keepAppWarm: true,
       userDisplayName: '',
+      mobilePaletteLayout: isMobile ? 'horizontal' : 'vertical',
       showHeaderQuickShortcut: !isMobile,
       showHeaderWalletShortcut: !isMobile,
       showHeaderJournalShortcut: !isMobile,
@@ -918,6 +920,65 @@
       pinnedSections: []
     });
     const DEFAULT_SETTINGS = createDefaultSettings();
+    const normalizeActionIdList = (value, validIds, fallback = []) => {
+      const next = [];
+      const source = Array.isArray(value) ? value : [];
+      source.forEach(id => {
+        if (validIds.includes(id) && !next.includes(id)) next.push(id);
+      });
+      if (next.length === 0) {
+        fallback.forEach(id => {
+          if (validIds.includes(id) && !next.includes(id)) next.push(id);
+        });
+      }
+      return next;
+    };
+    const DEFAULT_ACTION_PRESETS = [
+      {
+        id: 'preset_tea_break',
+        name: 'Tea Break',
+        quickSaveType: 'journal',
+        quickInput: 'Tea break',
+        quickWalletType: 'expense',
+        quickWalletCat: 'food',
+        quickWalletAmount: '',
+        quickNotesStartMinutes: 16 * 60,
+        targetMode: 'today'
+      },
+      {
+        id: 'preset_commute',
+        name: 'Commute',
+        quickSaveType: 'notes',
+        quickInput: 'Commute',
+        quickWalletType: 'expense',
+        quickWalletCat: 'transport',
+        quickWalletAmount: '',
+        quickNotesStartMinutes: 9 * 60,
+        targetMode: 'today'
+      },
+      {
+        id: 'preset_salary',
+        name: 'Salary',
+        quickSaveType: 'wallet',
+        quickInput: 'Salary credited',
+        quickWalletType: 'income',
+        quickWalletCat: 'salary',
+        quickWalletAmount: '',
+        quickNotesStartMinutes: 6 * 60,
+        targetMode: 'today'
+      },
+      {
+        id: 'preset_gym',
+        name: 'Gym',
+        quickSaveType: 'todo',
+        quickInput: 'Gym session',
+        quickWalletType: 'expense',
+        quickWalletCat: 'health',
+        quickWalletAmount: '',
+        quickNotesStartMinutes: 19 * 60,
+        targetMode: 'today'
+      }
+    ];
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
       { id: 'sleep', name: 'Sleep', color: '#86efac', target: '', pointsPerHour: 0 },
@@ -1271,6 +1332,7 @@
       });
       const [showNameSetupModal, setShowNameSetupModal] = useState(() => !((window.__trackerboxInitialDisplayName || '').trim()));
       const trimmedUserDisplayName = (settingsDraft.userDisplayName || '').trim().replace(/\s+/g, ' ');
+      const mobilePaletteLayout = settingsDraft.mobilePaletteLayout === 'vertical' ? 'vertical' : 'horizontal';
       const showHeaderQuickShortcut = settingsDraft.showHeaderQuickShortcut !== false;
       const showHeaderWalletShortcut = settingsDraft.showHeaderWalletShortcut !== false;
       const showHeaderJournalShortcut = settingsDraft.showHeaderJournalShortcut !== false;
@@ -1840,6 +1902,7 @@
           noteStars: L.noteStars,
           frozenDays: L.frozenDays,
           blueprintPresets: L.blueprintPresets,
+          actionPresets: L.actionPresets,
           walletTransactions: L.walletTransactions,
           wallets: L.wallets,
           activeWalletId: L.activeWalletId,
@@ -1881,7 +1944,7 @@
             journalModuleDate: L.journalModuleDate
           },
           exportedAt: new Date().toISOString(),
-          version: 14
+          version: 15
         };
         const json = JSON.stringify(payload);
         const blob = new Blob([json], { type: 'application/json' });
@@ -2047,6 +2110,19 @@
       const [quickIsToday, setQuickIsToday] = useState(true);
       const [quickTargetDate, setQuickTargetDate] = useState(() => formatDateString(new Date()));
       const [quickNotesStartMinutes, setQuickNotesStartMinutes] = useState(6 * 60); // default: 6:00 AM
+      const [actionPresets, setActionPresets] = useState(() => {
+        try {
+          const saved = localStorage.getItem(LOCAL_ACTION_PRESETS_KEY);
+          const parsed = saved ? JSON.parse(saved) : null;
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+        return DEFAULT_ACTION_PRESETS;
+      });
+      const [showPresetLibraryModal, setShowPresetLibraryModal] = useState(false);
+      const [isPresetDeleteMode, setIsPresetDeleteMode] = useState(false);
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_ACTION_PRESETS_KEY, JSON.stringify(actionPresets)); } catch (e) {}
+      }, [actionPresets]);
       // NEW: Toast notifications (non-blocking success messages)
       const [toasts, setToasts] = useState([]);
       const [keepWarmStatus, setKeepWarmStatus] = useState({ serviceWorker: 'idle', persistence: 'idle', cache: 'idle' });
@@ -3180,6 +3256,7 @@
           noteStars,
           frozenDays,
           blueprintPresets,
+          actionPresets,
           categories,
           currentTheme,
           isMuted,
@@ -3226,7 +3303,7 @@
             flushAutoBackupToFolder(snap);
           }, 650);
         };
-}, [allData, journalData, journalStars, todosData, habitsConfig, habitLogs, sysConfig, descriptions, noteStars, frozenDays, blueprintPresets, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
+}, [allData, journalData, journalStars, todosData, habitsConfig, habitLogs, sysConfig, descriptions, noteStars, frozenDays, blueprintPresets, actionPresets, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
       useEffect(() => () => {
         clearTimeout(autoBackupTimerRef.current);
       }, []);
@@ -3374,7 +3451,7 @@
           if (key === ' ') {
             e.preventDefault();
             // NEW: If any modal/window is open, close it on spacebar (if typing is not selected)
-        if (activeJournalDate || showSettingsModal || showHelp || showSearchModal || showQuickCapture || showBlueprintManagerModal || showStreakModal || showFrozenDatesModal || showStarredModal || showWeeklyReview || showPointsSelector || showLevelHistory || showAppMenu) {
+        if (activeJournalDate || showSettingsModal || showHelp || showSearchModal || showQuickCapture || showBlueprintManagerModal || showPresetLibraryModal || showStreakModal || showFrozenDatesModal || showStarredModal || showWeeklyReview || showPointsSelector || showLevelHistory || showAppMenu) {
               playSound('click');
               setActiveJournalDate(null);
               setShowSettingsModal(false);
@@ -3382,6 +3459,7 @@
           setShowSearchModal(false);
           setShowQuickCapture(false);
           setShowBlueprintManagerModal(false);
+          setShowPresetLibraryModal(false);
           setShowStreakModal(false);
           setShowFrozenDatesModal(false);
           setShowStarredModal(false);
@@ -3432,7 +3510,7 @@
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-}, [categories, handleUniversalUndo, handleUniversalRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory, showAppMenu]);
+      }, [categories, handleUniversalUndo, handleUniversalRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showPresetLibraryModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory, showAppMenu]);
 
       // NEW: Global Search modal focus + Escape to close
       useEffect(() => {
@@ -3704,28 +3782,46 @@
           descriptionTextareaRef.current.setSelectionRange(len, len);
         }
       }, [editingDescription]);
-      // --- NEW: Quick-Capture REWORKED Handler (supports Journal + custom day) ---
-      const handleQuickCaptureSave = useCallback(() => {
-        if (quickSaveType === 'wallet') {
-          if (!quickWalletAmount || isNaN(quickWalletAmount)) {
+      const getResolvedPresetTargetDate = useCallback((targetMode = 'today', fixedTargetDate = '') => {
+        if (targetMode === 'fixed' && fixedTargetDate) return fixedTargetDate;
+        if (targetMode === 'active') return activeJournalDate || todayStr;
+        return todayStr;
+      }, [activeJournalDate, todayStr]);
+      const executeQuickCaptureAction = useCallback((payload, options = {}) => {
+        const { closeQuickCapture = false, clearDraft = false, playClick = false } = options;
+        const type = payload.quickSaveType || 'todo';
+        const targetDate = payload.quickTargetDate || todayStr;
+        const text = (payload.quickInput || '').trim();
+        if (playClick) playSound('click');
+        if (type === 'wallet') {
+          const amount = String(payload.quickWalletAmount ?? '').trim();
+          if (!amount || isNaN(amount)) {
             showToast('âš ï¸ Please enter a valid amount', 'error');
-            return;
+            return false;
           }
-          addWalletTransaction(quickWalletType, quickWalletCat, quickWalletAmount, quickInput, quickTargetDate);
-          setQuickWalletAmount('');
-          setQuickInput('');
-          setShowQuickCapture(false);
-          return;
+          const walletType = payload.quickWalletType === 'income' ? 'income' : 'expense';
+          const typeCategories = walletCategories.filter(cat => cat.type === walletType);
+          const walletCat = typeCategories.some(cat => cat.id === payload.quickWalletCat)
+            ? payload.quickWalletCat
+            : (typeCategories[0]?.id || walletCategories[0]?.id || 'others');
+          addWalletTransaction(walletType, walletCat, amount, text, targetDate);
+          if (clearDraft) {
+            setQuickWalletAmount('');
+            setQuickInput('');
+          }
+          if (closeQuickCapture) setShowQuickCapture(false);
+          return true;
         }
-        if (!quickInput.trim()) return;
-        playSound('click');
-        const targetDate = quickTargetDate;
-        if (quickSaveType === 'todo') {
+        if (!text) {
+          showToast('Add some text before saving', 'error');
+          return false;
+        }
+        if (type === 'todo') {
           setTodosData(prev => {
             const current = prev[targetDate] || [];
             const newTodo = {
               id: 'qc_' + Date.now().toString(),
-              text: quickInput.trim(),
+              text,
               status: 'red',
               remark: '',
               progress: 0,
@@ -3737,10 +3833,10 @@
             return updated;
           });
           showToast(`âœ… Added to ToDo on ${getDisplayDate(targetDate)}`);
-        } else if (quickSaveType === 'journal') {
+        } else if (type === 'journal') {
           setJournalData(prev => {
             const current = prev[targetDate] || '';
-            const bullet = `- ${quickInput.trim()}`;
+            const bullet = `- ${text}`;
             const newText = current ? `${current}\n${bullet}` : bullet;
             const updated = { ...prev, [targetDate]: newText };
             pushEntityHistory({ kind: 'journal', before: prev, after: updated, label: 'quick journal add' });
@@ -3748,11 +3844,10 @@
             return updated;
           });
           showToast(`âœ… Added to Journal on ${getDisplayDate(targetDate)}`);
-        } else if (quickSaveType === 'notes') {
-          const noteText = quickInput.trim();
-          const tri = getTriangleForMinutes(targetDate, quickNotesStartMinutes);
+        } else if (type === 'notes') {
+          const tri = getTriangleForMinutes(targetDate, Number(payload.quickNotesStartMinutes ?? quickNotesStartMinutes));
           if (tri && tri.triangleId) {
-            const inserted = appendTriangleNoteIfMissing(targetDate, tri.hour, tri.triangleId, noteText);
+            const inserted = appendTriangleNoteIfMissing(targetDate, tri.hour, tri.triangleId, text);
             if (inserted) {
               expandSectionForHour(inserted.hour);
               setKeyboardCursor(inserted);
@@ -3762,11 +3857,100 @@
             }
           } else {
             showToast('âŒ Could not map note time to a triangle', 'error');
+            return false;
           }
         }
-        setShowQuickCapture(false);
-        setQuickInput('');
-      }, [quickInput, quickSaveType, quickTargetDate, quickNotesStartMinutes, showToast, quickWalletAmount, quickWalletType, quickWalletCat, addWalletTransaction, pushEntityHistory]);
+        if (clearDraft) setQuickInput('');
+        if (closeQuickCapture) setShowQuickCapture(false);
+        return true;
+      }, [todayStr, playSound, showToast, walletCategories, addWalletTransaction, setTodosData, pushEntityHistory, setJournalData, getTriangleForMinutes, quickNotesStartMinutes, appendTriangleNoteIfMissing, expandSectionForHour, setKeyboardCursor]);
+      const getActionPresetSummary = useCallback((preset) => {
+        if (!preset) return '';
+        const targetDate = getResolvedPresetTargetDate(preset.targetMode, preset.fixedTargetDate);
+        const targetLabel = preset.targetMode === 'fixed'
+          ? getDisplayDate(targetDate)
+          : preset.targetMode === 'active'
+            ? `Captain's Log day (${getDisplayDate(targetDate)})`
+            : `Today (${getDisplayDate(targetDate)})`;
+        if (preset.quickSaveType === 'wallet') {
+          const categoryName = walletCategories.find(cat => cat.id === preset.quickWalletCat)?.name || 'Wallet';
+          const amountLabel = String(preset.quickWalletAmount || '').trim() || 'prompted amount';
+          return `${preset.quickWalletType === 'income' ? 'Income' : 'Expense'} • ${categoryName} • ${amountLabel} • ${targetLabel}`;
+        }
+        if (preset.quickSaveType === 'notes') {
+          return `Triangle note • ${formatTimeLabelFromMinutes(Number(preset.quickNotesStartMinutes || 0))} • ${targetLabel}`;
+        }
+        return `${preset.quickSaveType === 'journal' ? 'Journal' : 'ToDo'} • ${targetLabel}`;
+      }, [getResolvedPresetTargetDate, walletCategories]);
+      const saveCurrentQuickCaptureAsPreset = useCallback(() => {
+        const draftType = quickSaveType;
+        if (draftType === 'wallet' && !String(quickWalletAmount || '').trim() && !quickInput.trim()) {
+          showToast('Set up the wallet entry before saving it as a preset', 'error');
+          return;
+        }
+        if (draftType !== 'wallet' && !quickInput.trim()) {
+          showToast('Type something in Quick Capture before saving a preset', 'error');
+          return;
+        }
+        const suggestedName = (quickInput || `${draftType} preset`).trim().slice(0, 32) || 'Quick preset';
+        const presetName = window.prompt('Name this preset:', suggestedName);
+        if (!presetName || !presetName.trim()) return;
+        const inferredTargetMode = quickIsToday ? 'today' : ((activeJournalDate && quickTargetDate === activeJournalDate) ? 'active' : 'fixed');
+        const nextPreset = {
+          id: `action_preset_${Date.now()}`,
+          name: presetName.trim(),
+          quickSaveType: draftType,
+          quickInput: quickInput.trim(),
+          quickWalletType,
+          quickWalletCat,
+          quickWalletAmount: String(quickWalletAmount || '').trim(),
+          quickNotesStartMinutes,
+          targetMode: inferredTargetMode,
+          fixedTargetDate: inferredTargetMode === 'fixed' ? quickTargetDate : ''
+        };
+        setActionPresets(prev => [nextPreset, ...prev]);
+        showToast(`âœ… Preset "${presetName.trim()}" saved`);
+      }, [quickSaveType, quickWalletAmount, quickInput, quickIsToday, activeJournalDate, quickTargetDate, quickWalletType, quickWalletCat, quickNotesStartMinutes, showToast]);
+      const deleteActionPreset = useCallback((presetId) => {
+        setActionPresets(prev => prev.filter(preset => preset.id !== presetId));
+        showToast('ðŸ—‘ï¸ Preset deleted', 'success');
+      }, [showToast]);
+      const applyActionPreset = useCallback((preset) => {
+        if (!preset) return;
+        let walletAmount = String(preset.quickWalletAmount || '').trim();
+        if (preset.quickSaveType === 'wallet' && (!walletAmount || isNaN(walletAmount))) {
+          const prompted = window.prompt(`Enter the amount for "${preset.name}":`, walletAmount || '');
+          if (prompted === null) return;
+          walletAmount = String(prompted).trim();
+          if (!walletAmount || isNaN(walletAmount)) {
+            showToast('âš ï¸ Please enter a valid amount', 'error');
+            return;
+          }
+        }
+        const targetDate = getResolvedPresetTargetDate(preset.targetMode, preset.fixedTargetDate);
+        const confirmMessage = `Apply preset "${preset.name}"?\n\n${getActionPresetSummary({ ...preset, quickWalletAmount: walletAmount })}`;
+        if (!window.confirm(confirmMessage)) return;
+        const applied = executeQuickCaptureAction({
+          ...preset,
+          quickWalletAmount: walletAmount,
+          quickTargetDate: targetDate
+        }, { playClick: true });
+        if (applied) {
+          setShowPresetLibraryModal(false);
+          setIsPresetDeleteMode(false);
+        }
+      }, [executeQuickCaptureAction, getResolvedPresetTargetDate, getActionPresetSummary, showToast]);
+      const handleQuickCaptureSave = useCallback(() => {
+        executeQuickCaptureAction({
+          quickSaveType,
+          quickInput,
+          quickWalletType,
+          quickWalletCat,
+          quickWalletAmount,
+          quickTargetDate,
+          quickNotesStartMinutes
+        }, { closeQuickCapture: true, clearDraft: true, playClick: true });
+      }, [executeQuickCaptureAction, quickSaveType, quickInput, quickWalletType, quickWalletCat, quickWalletAmount, quickTargetDate, quickNotesStartMinutes]);
       // --- Chrono-Clone Handlers ---
       const handleCopyDay = (dateStr) => {
         playSound('click');
@@ -5122,6 +5306,7 @@
           noteStars,
           frozenDays,
           blueprintPresets,
+          actionPresets,
           walletTransactions,
           wallets,
           activeWalletId,
@@ -5163,7 +5348,7 @@
             journalModuleDate
           },
           exportedAt: new Date().toISOString(),
-          version: 14
+          version: 15
         };
         const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -5683,6 +5868,7 @@
               if (hasImportedField('noteStars')) setNoteStars(imported.noteStars || {});
               if (imported.frozenDays) setFrozenDays(imported.frozenDays);
               if (imported.blueprintPresets) setBlueprintPresets(imported.blueprintPresets);
+              if (hasImportedField('actionPresets')) { setActionPresets(imported.actionPresets || []); localStorage.setItem(LOCAL_ACTION_PRESETS_KEY, JSON.stringify(imported.actionPresets || [])); }
               if (imported.walletTransactions) { setWalletTransactions(imported.walletTransactions); localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(imported.walletTransactions)); }
               if (imported.wallets) updateWallets(imported.wallets);
               if (imported.activeWalletId) updateActiveWalletId(imported.activeWalletId);
@@ -5749,6 +5935,7 @@
               if (hasImportedField('noteStars')) localStorage.setItem(LOCAL_NOTE_STARS_KEY, JSON.stringify(imported.noteStars || {}));
               if (imported.frozenDays) localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(imported.frozenDays));
               if (imported.blueprintPresets) localStorage.setItem(LOCAL_BLUEPRINT_PRESETS_KEY, JSON.stringify(imported.blueprintPresets));
+              if (hasImportedField('actionPresets')) localStorage.setItem(LOCAL_ACTION_PRESETS_KEY, JSON.stringify(imported.actionPresets || []));
               playSound('success');
               showToast("âœ… Successfully uploaded! All data has been synchronized.");
             } else {
@@ -6556,49 +6743,36 @@
         { id: 'journal', label: 'Journal' },
         { id: 'wallet', label: 'Wallet' },
         { id: 'quick', label: 'Quick' },
+        { id: 'preset', label: 'Load Preset' },
         { id: 'search', label: 'Search' },
         { id: 'review', label: 'Review' },
         { id: 'stars', label: 'Stars' },
         { id: 'settings', label: 'Settings' },
-        { id: 'timer', label: 'Timer' }
+        { id: 'timer', label: 'Clock' }
       ];
       const normalizedBottomBarActionIds = (() => {
         const validIds = bottomBarActionChoices.map(choice => choice.id);
-        const source = Array.isArray(settingsDraft.defaultBottomBarActions) ? settingsDraft.defaultBottomBarActions : [];
-        const unique = [];
-        source.forEach(id => {
-          if (validIds.includes(id) && !unique.includes(id)) unique.push(id);
-        });
-        DEFAULT_SETTINGS.defaultBottomBarActions.forEach(id => {
-          if (validIds.includes(id) && !unique.includes(id)) unique.push(id);
-        });
-        validIds.forEach(id => {
-          if (!unique.includes(id)) unique.push(id);
-        });
-        return unique.slice(0, 4);
+        const normalized = normalizeActionIdList(settingsDraft.defaultBottomBarActions, validIds, DEFAULT_SETTINGS.defaultBottomBarActions);
+        return normalized.length ? normalized : [...DEFAULT_SETTINGS.defaultBottomBarActions];
       })();
-      const updateBottomBarActionSlot = (slotIndex, nextId) => {
+      const toggleBottomBarAction = (actionId) => {
         setSettingsDraft(prev => {
           const validIds = bottomBarActionChoices.map(choice => choice.id);
-          if (!validIds.includes(nextId)) return prev;
-          const current = Array.isArray(prev.defaultBottomBarActions) ? prev.defaultBottomBarActions : [];
-          const normalized = [];
-          current.forEach(id => {
-            if (validIds.includes(id) && !normalized.includes(id)) normalized.push(id);
-          });
-          DEFAULT_SETTINGS.defaultBottomBarActions.forEach(id => {
-            if (validIds.includes(id) && !normalized.includes(id)) normalized.push(id);
-          });
-          validIds.forEach(id => {
-            if (!normalized.includes(id)) normalized.push(id);
-          });
-          const next = normalized.slice(0, 4);
-          const swapIndex = next.indexOf(nextId);
-          if (swapIndex !== -1) {
-            [next[slotIndex], next[swapIndex]] = [next[swapIndex], next[slotIndex]];
+          if (!validIds.includes(actionId)) return prev;
+          const current = normalizeActionIdList(prev.defaultBottomBarActions, validIds, DEFAULT_SETTINGS.defaultBottomBarActions);
+          let next;
+          if (current.includes(actionId)) {
+            if (current.length <= 1) {
+              showToast('Keep at least one quick-access button on mobile', 'error');
+              return prev;
+            }
+            next = current.filter(id => id !== actionId);
           } else {
-            next[slotIndex] = nextId;
+            next = [...current, actionId];
           }
+          next = bottomBarActionChoices
+            .map(choice => choice.id)
+            .filter(id => next.includes(id));
           return { ...prev, defaultBottomBarActions: next };
         });
       };
@@ -6607,12 +6781,102 @@
         journal: { label: 'Journal', icon: FileText, color: 'text-amber-300', onClick: () => { openOnlySection('journal'); setJournalModuleDate(activeJournalDate || todayStr); setJournalFocusTick(t => t + 1); scrollToElementWithStickyOffset('journal-only-module'); } },
         wallet: { label: 'Wallet', icon: Wallet, color: 'text-emerald-300', onClick: () => { openOnlySection('wallet'); setWalletAmountFocusTick(t => t + 1); scrollToElementWithStickyOffset('section-wallet'); } },
         quick: { label: 'Quick', icon: Plus, color: 'text-fuchsia-300', onClick: () => { playSound('click'); setShowQuickCapture(true); } },
+        preset: { label: 'Preset', icon: Database, color: 'text-violet-300', onClick: () => { playSound('click'); setIsPresetDeleteMode(false); setShowPresetLibraryModal(true); } },
         search: { label: 'Search', icon: Search, color: 'text-sky-300', onClick: () => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); } },
         review: { label: 'Review', icon: BarChart3, color: 'text-amber-300', onClick: () => { openWeeklyReviewForDate(activeJournalDate || todayStr); } },
         stars: { label: 'Stars', icon: Star, color: 'text-amber-200', onClick: () => { playSound('click'); setShowStarredModal(true); } },
         settings: { label: 'Settings', icon: Settings2, color: 'text-slate-300', onClick: () => { playSound('click'); setShowSettingsModal(true); } },
-        timer: { label: 'Timer', icon: Clock, color: 'text-cyan-300', onClick: () => { playSound('click'); setShowTimer(v => !v); } }
+        timer: { label: 'Clock', icon: Clock, color: 'text-cyan-300', onClick: () => { playSound('click'); setShowTimer(v => !v); } }
       };
+      const renderPaletteControls = (orientation = 'vertical') => {
+        const isHorizontal = orientation === 'horizontal';
+        const panelClass = isHorizontal
+          ? 'flex items-center gap-2 overflow-x-auto custom-scrollbar'
+          : 'flex flex-col gap-1.5 md:gap-2 items-center justify-center';
+        const actionButtonClass = isHorizontal
+          ? 'w-10 h-10 flex-shrink-0'
+          : 'w-full';
+        const colorButtonClass = isHorizontal
+          ? 'w-8 h-8 rounded-xl flex-shrink-0'
+          : 'w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg';
+        const Divider = () => isHorizontal
+          ? <div className="h-8 w-px bg-white/10 mx-0.5 flex-shrink-0"></div>
+          : <div className="w-full h-px bg-white/10 my-1"></div>;
+        return (
+          <div className={panelClass}>
+            <button
+              onClick={() => {
+                playSound('click');
+                const newMode = !isBlueprintMode;
+                setIsBlueprintMode(newMode);
+                showToast(newMode ? 'ðŸ“ Plan Mode ON (hatched future planning)' : 'ðŸ“ Plan Mode OFF');
+              }}
+              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center text-xs font-black tracking-widest ${actionButtonClass} ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+              title={isBlueprintMode ? "Plan Mode ON â€” hatched future planning" : "Toggle Plan Mode"}
+            >
+              <Sparkles size={16} />
+            </button>
+            <button
+              onClick={() => {
+                playSound('click');
+                const newMode = !isDescriptionMode;
+                setIsDescriptionMode(newMode);
+                showToast(newMode ? 'ðŸ“ Notes Mode ON' : 'ðŸ“ Notes Mode OFF');
+              }}
+              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center ${actionButtonClass} ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+              title={isDescriptionMode ? "Notes Mode ON â€” click triangles to edit notes" : "Toggle Notes Mode"}
+            >
+              <FileText size={16} />
+            </button>
+            <button
+              onClick={() => {
+                playSound('click');
+                const newMode = !isFocusMode;
+                setIsFocusMode(newMode);
+                if (!newMode) setIsScissorMode(false);
+                showToast(newMode ? 'ðŸ” Focus Mode ON (today only)' : 'ðŸ” Focus Mode OFF');
+              }}
+              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center ${actionButtonClass} ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+              title={isFocusMode ? "Focus Mode ON â€” only today visible" : "Toggle Focus Mode (today only)"}
+            >
+              <Activity size={16} />
+            </button>
+            {isFocusMode && (
+              <button
+                onClick={() => {
+                  playSound('click');
+                  const nextMode = !isScissorMode;
+                  setIsScissorMode(nextMode);
+                  showToast(nextMode ? 'Cut Mode ON: tap to cycle 30m > 15m > 60m > 30m' : 'Cut Mode OFF');
+                }}
+                className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center ${actionButtonClass} ${isScissorMode ? 'border-rose-400 bg-rose-500/20 text-rose-200 shadow-[0_0_10px_rgba(251,113,133,0.35)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                title={isScissorMode ? 'Cut Mode ON - tap any segment to change size' : 'Toggle Cut Mode'}
+              >
+                <Scissors size={14} />
+              </button>
+            )}
+            <Divider />
+            <button
+              onClick={() => handleColorSelect('lock')}
+              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center ${actionButtonClass} ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100 shadow-[0_0_18px_rgba(239,68,68,0.45)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+              title="Lock"
+            >
+              <Lock size={14} />
+            </button>
+            <Divider />
+            {categories.map(cat => (
+              <button
+                key={`palette-${orientation}-${cat.id}`}
+                onClick={() => handleColorSelect(cat.id)}
+                className={`${colorButtonClass} border transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110 border-white/60' : 'border-white/20'}`}
+                style={getPaletteButtonStyle(cat, selectedColorId === cat.id)}
+                title={cat.name}
+              />
+            ))}
+          </div>
+        );
+      };
+      const presetContextDate = activeJournalDate || todayStr;
       const activeDayData = allData[activeJournalDate] || {};
       let activeDayTrackedHours = 0;
       let activeDayPoints = 0;
@@ -7745,7 +8009,8 @@
                         <li><strong>Auto-Logging:</strong> Finishing a focus session automatically writes a timestamped completion note directly into today's Journal.</li>
                         <li><strong>PDF Reporting:</strong> Export high-fidelity, beautifully formatted PDF reports for both your Weekly Journal/Grid and your Wallet Analytics.</li>
                         <li><strong>NEW - Weekly Review Screen:</strong> A dedicated review view auto-summarizes streaks, frozen days, spending, unfinished ToDos, and weekly wins, and now lets you pick the exact month and week to review.</li>
-                        <li><strong>NEW - Mobile Bottom Bar:</strong> Phones now get a compact 4-action bottom dock, and Settings lets you choose which four actions live there.</li>
+                        <li><strong>NEW - Mobile Quick Access Dock:</strong> Phones now get a configurable bottom dock. Settings lets you turn on as many quick buttons as you want, including Load Preset, Search, Clock, Wallet, Journal, and more.</li>
+                        <li><strong>NEW - Preset Hub:</strong> A dedicated Load Preset button opens one place for reusable quick-capture presets and full day/week grid colour presets, with confirmation before apply and a delete mode for cleanup.</li>
                         <li><strong>NEW - App Menu & Pinned Sections:</strong> The top-left menu now opens sections one at a time like a modern app, and you can pin sections to keep them on the default Grid home view.</li>
                         <li><strong>Theme Engine:</strong> 12 completely distinct visual modes, ranging from high-contrast dark modes (Cyber, Void, Neon) to eye-friendly light modes (Daylight, Light Mode).</li>
                         <li><strong>Global Mute:</strong> A master switch in the settings to disable all system audio cues (paint, erase, success, trash) for silent environments.</li>
@@ -7758,7 +8023,7 @@
                         <li><strong>Startup Defaults:</strong> Settings stores your preferred focus mode, default selected color/tool, default collapsed epochs, pomodoro length, and break length.</li>
                         <li><strong>Keep App Warm:</strong> The settings panel shows service worker, shell cache, and persistent storage status so you can judge how "ready" the app is on your device.</li>
                         <li><strong>App Menu + Pinned Sections:</strong> The top-left menu can open one major area at a time, while pinned sections keep your favorite modules visible on the main home view.</li>
-                        <li><strong>Mobile Bottom Bar Builder:</strong> On phones, you choose which four actions stay docked at the bottom for quick access.</li>
+                        <li><strong>Mobile Quick Access Builder:</strong> On phones, you choose which actions stay docked at the bottom, and you can switch the colour palette between a vertical sidebar or a horizontal strip above the dock.</li>
                         <li><strong>Theme + Audio Controls:</strong> Trackerbox includes multiple visual themes and a global mute system for silent environments.</li>
                       </ul>
                     </div>
@@ -8061,6 +8326,147 @@
                 </div>
               </div>
             )}
+            {showPresetLibraryModal && (
+              <div className="fixed inset-0 z-[520] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => { setShowPresetLibraryModal(false); setIsPresetDeleteMode(false); }}>
+                <div className="glass-panel w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-[32px] p-6 md:p-8 border-violet-400/40" onClick={e => e.stopPropagation()}>
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-[0.35em] text-violet-300 mb-2">Load Preset</div>
+                      <h3 className="text-2xl md:text-3xl font-black text-white leading-none">Preset Hub</h3>
+                      <p className="text-sm text-slate-400 mt-2">Apply saved quick actions instantly, or save and load full grid colour plans.</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setIsPresetDeleteMode(v => !v)}
+                        className={`px-4 py-3 rounded-2xl border font-black uppercase tracking-widest text-xs transition-all ${isPresetDeleteMode ? 'border-red-400/60 bg-red-500/15 text-red-200' : 'border-white/10 bg-white/5 text-slate-200 hover:bg-white/10'}`}
+                      >
+                        {isPresetDeleteMode ? 'Delete Mode On' : 'Delete Mode'}
+                      </button>
+                      <button onClick={() => { setShowPresetLibraryModal(false); setIsPresetDeleteMode(false); }} className="text-slate-400 hover:text-white">
+                        <X size={24} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-[1.15fr,0.85fr] gap-6">
+                    <div className="space-y-6">
+                      <div className="bg-white/5 border border-white/10 rounded-[28px] p-5">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                          <div>
+                            <div className="text-xs font-black uppercase tracking-widest text-cyan-300">Quick Presets</div>
+                            <div className="text-sm text-slate-400 mt-1">Reusable one-tap actions for ToDo, Journal, Wallet, and triangle Notes.</div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => { setShowPresetLibraryModal(false); setShowQuickCapture(true); }}
+                              className="px-4 py-3 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 text-cyan-200 font-black uppercase tracking-widest text-xs hover:bg-cyan-500/25 transition-all"
+                            >
+                              Open Builder
+                            </button>
+                            <button
+                              onClick={saveCurrentQuickCaptureAsPreset}
+                              className="px-4 py-3 rounded-2xl bg-violet-500/15 border border-violet-400/30 text-violet-200 font-black uppercase tracking-widest text-xs hover:bg-violet-500/25 transition-all"
+                            >
+                              Save Current Draft
+                            </button>
+                          </div>
+                        </div>
+                        {actionPresets.length === 0 ? (
+                          <div className="text-slate-400 italic text-center py-10">No quick presets yet. Open Quick Capture, set it up, and save one.</div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {actionPresets.map(preset => (
+                              <button
+                                key={preset.id}
+                                onClick={() => {
+                                  if (isPresetDeleteMode) {
+                                    if (window.confirm(`Delete preset "${preset.name}"?`)) deleteActionPreset(preset.id);
+                                    return;
+                                  }
+                                  applyActionPreset(preset);
+                                }}
+                                className={`text-left rounded-[24px] border p-4 transition-all ${isPresetDeleteMode ? 'border-red-400/30 bg-red-500/10 hover:bg-red-500/15' : 'border-white/10 bg-[#0b1120]/70 hover:bg-white/10'}`}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="font-black text-slate-100">{preset.name}</div>
+                                    <div className="text-[11px] uppercase tracking-widest text-violet-300 mt-1">{preset.quickSaveType}</div>
+                                  </div>
+                                  <div className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${isPresetDeleteMode ? 'bg-red-500/20 text-red-200' : 'bg-cyan-500/15 text-cyan-200'}`}>
+                                    {isPresetDeleteMode ? 'Delete' : 'Apply'}
+                                  </div>
+                                </div>
+                                <div className="text-sm text-slate-300 mt-3 break-words">{preset.quickInput || 'Uses the saved wallet / note setup'}</div>
+                                <div className="text-[11px] text-slate-400 mt-3">{getActionPresetSummary(preset)}</div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+
+                    <div className="space-y-6">
+                      <div className="bg-white/5 border border-white/10 rounded-[28px] p-5">
+                        <div className="text-xs font-black uppercase tracking-widest text-indigo-300 mb-1">Grid Colour Presets</div>
+                        <div className="text-sm text-slate-400 mb-4">Save the current day or week as a reusable colour plan, then load it back with one confirmation.</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <button
+                            onClick={() => saveDayBlueprintPreset(presetContextDate)}
+                            className="py-5 rounded-3xl border border-indigo-400/30 bg-indigo-500/10 text-indigo-100 font-black uppercase tracking-widest hover:bg-indigo-500/20 transition-all"
+                          >
+                            Save Day Grid
+                          </button>
+                          <button
+                            onClick={() => saveWeekBlueprintPreset(presetContextDate)}
+                            className="py-5 rounded-3xl border border-violet-400/30 bg-violet-500/10 text-violet-100 font-black uppercase tracking-widest hover:bg-violet-500/20 transition-all"
+                          >
+                            Save Week Grid
+                          </button>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-3">Current source date: {getDisplayDate(presetContextDate)}</div>
+                      </div>
+
+                      <div className="bg-white/5 border border-white/10 rounded-[28px] p-5">
+                        <div className="text-xs font-black uppercase tracking-widest text-indigo-300 mb-3">Saved Grid Presets</div>
+                        {blueprintPresets.length === 0 ? (
+                          <div className="text-slate-400 italic text-center py-10">No grid presets yet. Save today or this week to build your library.</div>
+                        ) : (
+                          <div className="space-y-3">
+                            {blueprintPresets.map(preset => (
+                              <button
+                                key={preset.id}
+                                onClick={() => {
+                                  if (isPresetDeleteMode) {
+                                    if (window.confirm(`Delete grid preset "${preset.name}"?`)) deleteBlueprintPreset(preset.id);
+                                    return;
+                                  }
+                                  if (!window.confirm(`Apply grid preset "${preset.name}" to the current view?`)) return;
+                                  loadBlueprintPreset(preset);
+                                  setShowPresetLibraryModal(false);
+                                  setIsPresetDeleteMode(false);
+                                }}
+                                className={`w-full text-left rounded-[24px] border p-4 transition-all ${isPresetDeleteMode ? 'border-red-400/30 bg-red-500/10 hover:bg-red-500/15' : 'border-indigo-400/20 bg-[#0b1120]/70 hover:bg-white/10'}`}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <div className="font-black text-indigo-100">{preset.name}</div>
+                                    <div className="text-[11px] text-slate-400 mt-1">Saved {getDisplayDate(preset.savedDate)} • {preset.type.toUpperCase()}</div>
+                                  </div>
+                                  <div className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${isPresetDeleteMode ? 'bg-red-500/20 text-red-200' : 'bg-indigo-500/20 text-indigo-200'}`}>
+                                    {isPresetDeleteMode ? 'Delete' : 'Apply'}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* === QUICK-CAPTURE REWORKED MODAL === */}
             {showQuickCapture && (
               <div className="fixed inset-0 z-[500] bg-black/70 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowQuickCapture(false)}>
@@ -8190,6 +8596,12 @@
                       </select>
                     </div>
                   )}
+                  <button
+                    onClick={saveCurrentQuickCaptureAsPreset}
+                    className="mt-6 w-full py-3 rounded-3xl border border-violet-400/30 bg-violet-500/10 text-violet-200 font-black uppercase tracking-widest text-xs hover:bg-violet-500/20 transition-all"
+                  >
+                    Save As Preset
+                  </button>
                   <div className="mt-8 flex gap-3">
                     <button
                       onClick={() => { setShowQuickCapture(false); }}
@@ -8496,23 +8908,47 @@
                       </label>
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
-                      <div className="font-bold uppercase tracking-widest text-xs text-cyan-300 mb-1">Mobile Bottom Bar</div>
-                      <p className="text-xs text-slate-400 mb-3">Pick the 4 actions shown on phones. Choosing one already in another slot swaps them.</p>
+                      <div className="font-bold uppercase tracking-widest text-xs text-cyan-300 mb-1">Mobile Palette Toolbar</div>
+                      <p className="text-xs text-slate-400 mb-3">Phones can keep the colour toolbar vertical inside the grid or dock it horizontally above the quick-access bar.</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {normalizedBottomBarActionIds.map((actionId, idx) => (
-                          <label key={`bottom-bar-slot-${idx}`} className="flex flex-col gap-2 bg-[#0b1120] border border-white/10 rounded-2xl p-4">
-                            <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Slot {idx + 1}</span>
-                            <select
-                              value={actionId}
-                              onChange={(e) => updateBottomBarActionSlot(idx, e.target.value)}
-                              className="bg-black/20 text-slate-200 rounded-xl border border-white/10 px-3 py-2 outline-none"
-                            >
-                              {bottomBarActionChoices.map(choice => (
-                                <option key={choice.id} value={choice.id}>{choice.label}</option>
-                              ))}
-                            </select>
-                          </label>
-                        ))}
+                        <button
+                          onClick={() => setSettingsDraft(prev => ({ ...prev, mobilePaletteLayout: 'horizontal' }))}
+                          className={`rounded-2xl border px-4 py-4 text-left transition-all ${mobilePaletteLayout === 'horizontal' ? 'border-cyan-400/60 bg-cyan-500/10 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.14)]' : 'border-white/10 bg-[#0b1120] text-slate-300 hover:bg-white/5'}`}
+                        >
+                          <div className="text-xs font-black uppercase tracking-widest mb-1">Horizontal</div>
+                          <div className="text-[11px] text-slate-400">Shows as a floating strip above the mobile quick-access dock.</div>
+                        </button>
+                        <button
+                          onClick={() => setSettingsDraft(prev => ({ ...prev, mobilePaletteLayout: 'vertical' }))}
+                          className={`rounded-2xl border px-4 py-4 text-left transition-all ${mobilePaletteLayout === 'vertical' ? 'border-cyan-400/60 bg-cyan-500/10 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.14)]' : 'border-white/10 bg-[#0b1120] text-slate-300 hover:bg-white/5'}`}
+                        >
+                          <div className="text-xs font-black uppercase tracking-widest mb-1">Vertical</div>
+                          <div className="text-[11px] text-slate-400">Keeps the classic sidebar palette inside the grid area.</div>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
+                      <div className="font-bold uppercase tracking-widest text-xs text-cyan-300 mb-1">Mobile Bottom Bar</div>
+                      <p className="text-xs text-slate-400 mb-3">Turn on as many mobile quick-access buttons as you want. They appear in the dock in the order shown below.</p>
+                      <div className="text-[11px] text-cyan-200 mb-3">{normalizedBottomBarActionIds.length} action{normalizedBottomBarActionIds.length === 1 ? '' : 's'} active</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {bottomBarActionChoices.map(choice => {
+                          const isActive = normalizedBottomBarActionIds.includes(choice.id);
+                          return (
+                            <label key={`bottom-bar-choice-${choice.id}`} className={`flex items-start gap-3 rounded-2xl p-4 border transition-all cursor-pointer ${isActive ? 'border-cyan-400/40 bg-cyan-500/10' : 'border-white/10 bg-[#0b1120]'}`}>
+                              <input
+                                type="checkbox"
+                                checked={isActive}
+                                onChange={() => toggleBottomBarAction(choice.id)}
+                                className="mt-1 accent-cyan-400"
+                              />
+                              <span className="flex-1">
+                                <span className="block text-sm font-bold text-slate-100">{choice.label}</span>
+                                <span className="block text-[11px] text-slate-400">{isActive ? 'Visible in the phone dock' : 'Hidden from the phone dock'}</span>
+                              </span>
+                            </label>
+                          );
+                        })}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3 justify-end">
@@ -9300,6 +9736,14 @@
                       <span className="text-3xl font-black leading-none">+</span>
                     </button>
                   )}
+                  <button
+                    onClick={() => { playSound('click'); setIsPresetDeleteMode(false); setShowPresetLibraryModal(true); }}
+                    className="top-chip flex items-center gap-2 bg-violet-500/10 border border-violet-400/40 px-3 py-2 rounded-xl shadow-[0_0_12px_rgba(167,139,250,0.18)] h-[44px] cursor-pointer active:scale-95 transition-transform"
+                    title="Load Preset"
+                  >
+                    <Database size={18} className="text-violet-300" />
+                    <span className="hidden md:inline font-black uppercase tracking-wider text-xs text-violet-200">Preset</span>
+                  </button>
                   {showHeaderWalletShortcut && (
                     <button
                       onClick={() => navigateToSection('wallet')}
@@ -9533,80 +9977,9 @@
                                   {!collapsedEpochs[section.id] ? (
                                     <div className="p-3 md:p-4 bg-[#05070e]/40">
                                       <div className="flex items-start gap-2">
-                                        <div className="shrink-0 w-10 md:w-12">
-                                          <div className="sticky top-20 flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
-                                            {/* Compact Plan Toggle (P) */}
-                                            <button
-                                              onClick={() => {
-                                                playSound('click');
-                                                const newMode = !isBlueprintMode;
-                                                setIsBlueprintMode(newMode);
-                                                showToast(newMode ? 'ðŸ“ Plan Mode ON (hatched future planning)' : 'ðŸ“ Plan Mode OFF');
-                                              }}
-                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full text-xs font-black tracking-widest ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                              title={isBlueprintMode ? "Plan Mode ON â€” hatched future planning" : "Toggle Plan Mode"}
-                                            >
-                                              <Sparkles size={16} />
-                                            </button>
-                                            {/* Compact Notes Toggle â€“ N */}
-                                            <button
-                                              onClick={() => {
-                                                playSound('click');
-                                                const newMode = !isDescriptionMode;
-                                                setIsDescriptionMode(newMode);
-                                                showToast(newMode ? 'ðŸ“ Notes Mode ON' : 'ðŸ“ Notes Mode OFF');
-                                              }}
-                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                              title={isDescriptionMode ? "Notes Mode ON â€” click triangles to edit notes" : "Toggle Notes Mode"}
-                                            >
-                                              <FileText size={16} />
-                                            </button>
-                                            {/* FOCUS MODE TOGGLE (F button in palette) */}
-                                            <button
-                                              onClick={() => {
-                                                playSound('click');
-                                                const newMode = !isFocusMode;
-                                                setIsFocusMode(newMode);
-                                                if (!newMode) setIsScissorMode(false);
-                                                showToast(newMode ? 'ðŸ” Focus Mode ON (today only)' : 'ðŸ” Focus Mode OFF');
-                                              }}
-                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                              title={isFocusMode ? "Focus Mode ON â€” only today visible" : "Toggle Focus Mode (today only)"}
-                                            >
-                                              <Activity size={16} />
-                                            </button>
-                                            {isFocusMode && (
-                                              <button
-                                                onClick={() => {
-                                                  playSound('click');
-                                                  const nextMode = !isScissorMode;
-                                                  setIsScissorMode(nextMode);
-                                                  showToast(nextMode ? 'Cut Mode ON: tap to cycle 30m > 15m > 60m > 30m' : 'Cut Mode OFF');
-                                                }}
-                                                className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isScissorMode ? 'border-rose-400 bg-rose-500/20 text-rose-200 shadow-[0_0_10px_rgba(251,113,133,0.35)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                                title={isScissorMode ? "Cut Mode ON - tap any segment to change size" : "Toggle Cut Mode"}
-                                              >
-                                                <Scissors size={14} />
-                                              </button>
-                                            )}
-                                            <div className="w-full h-px bg-white/10 my-1"></div>
-                                            <button
-                                              onClick={() => handleColorSelect('lock')}
-                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100 shadow-[0_0_18px_rgba(239,68,68,0.45)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                              title="Lock"
-                                            >
-                                              <Lock size={14} />
-                                            </button>
-                                            <div className="w-full h-px bg-white/10 my-1"></div>
-                                            {categories.map(cat => (
-                                              <button
-                                                key={cat.id}
-                                                onClick={() => handleColorSelect(cat.id)}
-                                                className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110 border-white/60' : 'border-white/20'}`}
-                                                style={getPaletteButtonStyle(cat, selectedColorId === cat.id)}
-                                                title={cat.name}
-                                              />
-                                            ))}
+                                        <div className={`shrink-0 w-10 md:w-12 ${mobilePaletteLayout === 'horizontal' ? 'hidden md:block' : ''}`}>
+                                          <div className="sticky top-20 bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
+                                            {renderPaletteControls('vertical')}
                                           </div>
                                         </div>
                                         <div className="flex-1 space-y-2">
@@ -9878,65 +10251,9 @@
                                   section.hours.map((hour, idx) => (
                                     <tr key={hour} className="group">
                                       {idx === 0 && (
-                                        <td rowSpan={6} className="align-middle sticky left-0 z-40 w-[45px] md:w-[60px] p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}>
-                                          <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
-                                            {/* Compact Plan Toggle (P) */}
-                                            <button
-                                              onClick={() => {
-                                                playSound('click');
-                                                const newMode = !isBlueprintMode;
-                                                setIsBlueprintMode(newMode);
-                                                showToast(newMode ? 'ðŸ“ Plan Mode ON (hatched future planning)' : 'ðŸ“ Plan Mode OFF');
-                                              }}
-                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full text-xs font-black tracking-widest ${isBlueprintMode ? 'border-sky-400 bg-sky-500/20 text-sky-300 shadow-[0_0_10px_rgba(14,165,233,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                              title={isBlueprintMode ? "Plan Mode ON â€” hatched future planning" : "Toggle Plan Mode"}
-                                            >
-                                              <Sparkles size={16} />
-                                            </button>
-                                            {/* Compact Notes Toggle â€“ N */}
-                                            <button
-                                              onClick={() => {
-                                                playSound('click');
-                                                const newMode = !isDescriptionMode;
-                                                setIsDescriptionMode(newMode);
-                                                showToast(newMode ? 'ðŸ“ Notes Mode ON' : 'ðŸ“ Notes Mode OFF');
-                                              }}
-                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isDescriptionMode ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                              title={isDescriptionMode ? "Notes Mode ON â€” click triangles to edit notes" : "Toggle Notes Mode"}
-                                            >
-                                              <FileText size={16} />
-                                            </button>
-                                            {/* FOCUS MODE TOGGLE (F button in palette) */}
-                                            <button
-                                              onClick={() => {
-                                                playSound('click');
-                                                const newMode = !isFocusMode;
-                                                setIsFocusMode(newMode);
-                                                showToast(newMode ? 'ðŸ” Focus Mode ON (today only)' : 'ðŸ” Focus Mode OFF');
-                                              }}
-                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                              title={isFocusMode ? "Focus Mode ON â€” only today visible" : "Toggle Focus Mode (today only)"}
-                                            >
-                                              <Activity size={16} />
-                                            </button>
-                                            <div className="w-full h-px bg-white/10 my-1"></div>
-                                            <button
-                                              onClick={() => handleColorSelect('lock')}
-                                              className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${selectedColorId === 'lock' ? 'border-red-300 bg-red-500/25 text-red-100 shadow-[0_0_18px_rgba(239,68,68,0.45)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
-                                              title="Lock"
-                                            >
-                                              <Lock size={14} />
-                                            </button>
-                                            <div className="w-full h-px bg-white/10 my-1"></div>
-                                            {categories.map(cat => (
-                                              <button
-                                                key={cat.id}
-                                                onClick={() => handleColorSelect(cat.id)}
-                                                className={`w-4 h-4 md:w-6 md:h-6 rounded-md md:rounded-lg border transition-all hover:scale-110 ${selectedColorId === cat.id ? 'scale-110 border-white/60' : 'border-white/20'}`}
-                                                style={getPaletteButtonStyle(cat, selectedColorId === cat.id)}
-                                                title={cat.name}
-                                              />
-                                            ))}
+                                        <td rowSpan={6} className={`align-middle sticky left-0 z-40 w-[45px] md:w-[60px] p-0 border-none sticky-bg-override ${mobilePaletteLayout === 'horizontal' ? 'hidden md:table-cell' : ''}`} style={{backgroundColor: 'var(--sticky-bg)'}}>
+                                          <div className="bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
+                                            {renderPaletteControls('vertical')}
                                           </div>
                                         </td>
                                       )}
@@ -11352,9 +11669,16 @@
               </section>
               )}
             </main>
+            {mobilePaletteLayout === 'horizontal' && (
+              <div className="md:hidden fixed bottom-[84px] left-1/2 -translate-x-1/2 z-[121] w-[calc(100vw-24px)] max-w-sm">
+                <div className="glass-panel rounded-[24px] border border-cyan-400/20 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.42)]">
+                  {renderPaletteControls('horizontal')}
+                </div>
+              </div>
+            )}
             <div className="md:hidden fixed bottom-3 left-1/2 -translate-x-1/2 z-[120] w-[calc(100vw-24px)] max-w-sm">
               <div className="glass-panel rounded-[24px] border border-white/10 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.45)]">
-                <div className="grid grid-cols-4 gap-2">
+                <div className="flex gap-2 overflow-x-auto custom-scrollbar">
                   {normalizedBottomBarActionIds.map(actionId => {
                     const action = mobileBottomBarActions[actionId];
                     if (!action) return null;
@@ -11363,7 +11687,7 @@
                       <button
                         key={`mobile-bottom-${actionId}`}
                         onClick={action.onClick}
-                        className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-slate-200"
+                        className="min-w-[72px] flex-shrink-0 flex flex-col items-center justify-center gap-1 rounded-2xl py-2 px-2 text-slate-200"
                         title={action.label}
                       >
                         <Icon size={18} className={action.color} />
