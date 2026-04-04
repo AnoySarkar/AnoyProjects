@@ -11064,8 +11064,8 @@
                         <table className="w-full border-collapse">
                           <thead>
                             <tr>
-                              <th className="w-[45px] md:w-[60px] sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
-                              <th className="w-[50px] md:w-[65px] sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></th>
+                              <th className={`w-[45px] md:w-[60px] sticky left-0 z-40 p-0 border-none sticky-bg-override ${mobilePaletteLayout === 'horizontal' ? 'hidden md:table-cell' : ''}`} style={{backgroundColor: 'var(--sticky-bg)'}}></th>
+                              <th className={`w-[50px] md:w-[65px] sticky ${mobilePaletteLayout === 'horizontal' ? 'left-0 md:left-[60px]' : 'left-[45px] md:left-[60px]'} z-30 p-0 border-none sticky-bg-override`} style={{backgroundColor: 'var(--sticky-bg)'}}></th>
                               {displayDates.map((dateStr, idx) => {
                                 const isToday = dateStr === todayStr;
                                 const isCryo = frozenDays[dateStr];
@@ -11193,8 +11193,8 @@
                               <Fragment key={section.id}>
                                 {/* Epoch Header â€“ now clickable toggle */}
                                 <tr>
-                                  <td className="sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
-                                  <td className="sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
+                                  <td className={`sticky left-0 z-40 p-0 border-none sticky-bg-override ${mobilePaletteLayout === 'horizontal' ? 'hidden md:table-cell' : ''}`} style={{backgroundColor: 'var(--sticky-bg)'}}></td>
+                                  <td className={`sticky ${mobilePaletteLayout === 'horizontal' ? 'left-0 md:left-[60px]' : 'left-[45px] md:left-[60px]'} z-30 p-0 border-none sticky-bg-override`} style={{backgroundColor: 'var(--sticky-bg)'}}></td>
                                   <td colSpan={displayDates.length} className="pt-4 pb-2 text-center relative z-10 border-none">
                                     <div
                                       onClick={() => toggleEpoch(section.id)}
@@ -11220,7 +11220,7 @@
                                           </div>
                                         </td>
                                       )}
-                                      <td className="text-right pr-1 md:pr-2 align-middle sticky left-[45px] md:left-[60px] z-30 w-[50px] md:w-[65px] p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}>
+                                      <td className={`text-right pr-1 md:pr-2 align-middle sticky ${mobilePaletteLayout === 'horizontal' ? 'left-0 md:left-[60px]' : 'left-[45px] md:left-[60px]'} z-30 w-[50px] md:w-[65px] p-0 border-none sticky-bg-override`} style={{backgroundColor: 'var(--sticky-bg)'}}>
                                         <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap bg-white/5 px-1 md:px-1.5 py-1.5 rounded-lg md:rounded-xl border border-transparent group-hover:border-white/20 transition-colors inline-block">
                                           {formatHourLabel(hour)}
                                         </span>
@@ -11323,8 +11323,8 @@
                                 ) : (
                                   /* Collapsed thin row â€“ minimal line only (no repeated text) */
                                   <tr className="collapsed-row">
-                                    <td className="sticky left-0 z-40 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
-                                    <td className="sticky left-[45px] md:left-[60px] z-30 p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}></td>
+                                    <td className={`sticky left-0 z-40 p-0 border-none sticky-bg-override ${mobilePaletteLayout === 'horizontal' ? 'hidden md:table-cell' : ''}`} style={{backgroundColor: 'var(--sticky-bg)'}}></td>
+                                    <td className={`sticky ${mobilePaletteLayout === 'horizontal' ? 'left-0 md:left-[60px]' : 'left-[45px] md:left-[60px]'} z-30 p-0 border-none sticky-bg-override`} style={{backgroundColor: 'var(--sticky-bg)'}}></td>
                                     {displayDates.map(dateStr => (
                                       <td key={dateStr} className="p-0 align-middle">
                                         <div className="h-px bg-white/20 w-full"></div>
