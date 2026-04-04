@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
   <title>Trackerbox</title>
   <link rel="manifest" href="./manifest.json">
+  <link rel="icon" type="image/png" href="./icon-192.png">
   <meta name="theme-color" content="#05070e">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -899,6 +900,29 @@
     const LOCAL_RESUME_STATE_KEY = 'trackerbox_resume_state_v1';
     const LOCAL_CUSTOM_SOFT_REMINDERS_KEY = 'trackerbox_custom_soft_reminders_v1';
     const LOCAL_DISMISSED_REMINDERS_KEY = 'trackerbox_dismissed_reminders_v1';
+    const LOCAL_WALLET_ANALYTICS_PERIOD_KEY = 'trackerbox_wallet_analytics_period_v1';
+    const LOCAL_WALLET_ANALYTICS_DAY_KEY = 'trackerbox_wallet_analytics_day_v1';
+    const LOCAL_WALLET_ANALYTICS_MONTH_KEY = 'trackerbox_wallet_analytics_month_v1';
+    const LOCAL_WALLET_ANALYTICS_YEAR_KEY = 'trackerbox_wallet_analytics_year_v1';
+    const LOCAL_WALLET_ANALYTICS_WEEK_MONTH_KEY = 'trackerbox_wallet_analytics_week_month_v1';
+    const LOCAL_WALLET_ANALYTICS_WEEK_INDEX_KEY = 'trackerbox_wallet_analytics_week_index_v1';
+    const LOCAL_SELECTED_MONTH_KEY = 'trackerbox_selected_month_v1';
+    const LOCAL_SELECTED_WEEK_INDEX_KEY = 'trackerbox_selected_week_index_v1';
+    const LOCAL_STAT_DATE_KEY = 'trackerbox_stat_date_v1';
+    const LOCAL_STAT_WEEK_MONTH_KEY = 'trackerbox_stat_week_month_v1';
+    const LOCAL_STAT_WEEK_INDEX_KEY = 'trackerbox_stat_week_index_v1';
+    const LOCAL_STAT_MONTH_KEY = 'trackerbox_stat_month_v1';
+    const LOCAL_STAT_YEAR_KEY = 'trackerbox_stat_year_v1';
+    const LOCAL_JOURNAL_MODULE_DATE_KEY = 'trackerbox_journal_module_date_v1';
+    const LOCAL_WALLET_FILTER_PERIOD_KEY = 'trackerbox_wallet_filter_period_v1';
+    const LOCAL_WALLET_FILTER_DAY_KEY = 'trackerbox_wallet_filter_day_v1';
+    const LOCAL_WALLET_FILTER_WEEK_KEY = 'trackerbox_wallet_filter_week_v1';
+    const LOCAL_WALLET_FILTER_MONTH_KEY = 'trackerbox_wallet_filter_month_v1';
+    const LOCAL_WALLET_FILTER_YEAR_KEY = 'trackerbox_wallet_filter_year_v1';
+    const LOCAL_WALLET_FILTER_CATEGORY_KEY = 'trackerbox_wallet_filter_category_v1';
+    const LOCAL_WALLET_FILTER_TYPE_KEY = 'trackerbox_wallet_filter_type_v1';
+    const TRACKERBOX_CACHE_PREFIX = 'trackerbox-shell-';
+    const TRACKERBOX_CACHE_NAME = `${TRACKERBOX_CACHE_PREFIX}v4`;
     const AUTO_BACKUP_LIMIT = 5;
     const getIsMobileViewport = () => {
       try {
@@ -942,6 +966,18 @@
       const [hh, mm] = value.split(':').map(part => parseInt(part, 10));
       if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
       return hh * 60 + mm;
+    };
+    const getIsoWeekString = (date = new Date()) => {
+      const target = new Date(date.valueOf());
+      const dayNr = (target.getDay() + 6) % 7;
+      target.setDate(target.getDate() - dayNr + 3);
+      const firstThursday = target.valueOf();
+      target.setMonth(0, 1);
+      if (target.getDay() !== 4) {
+        target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+      }
+      const weekNumber = 1 + Math.ceil((firstThursday - target) / (7 * 24 * 60 * 60 * 1000));
+      return `${date.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
     };
     const DEFAULT_ACTION_PRESETS = [
       {
@@ -1849,34 +1885,32 @@
         setWalletCurrency(val);
         try { localStorage.setItem(LOCAL_CURRENCY_KEY, val); } catch (e) {}
       };
-      const [walletFilterPeriod, setWalletFilterPeriod] = useState('all');
+      const [walletFilterPeriod, setWalletFilterPeriod] = useState(() => {
+        try { const saved = localStorage.getItem(LOCAL_WALLET_FILTER_PERIOD_KEY); return saved || 'all'; } catch (e) { return 'all'; }
+      });
       const [walletFilterDay, setWalletFilterDay] = useState(() => {
-        const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        const fallback = formatDateString(new Date());
+        try { const saved = localStorage.getItem(LOCAL_WALLET_FILTER_DAY_KEY); return saved || fallback; } catch (e) { return fallback; }
       });
       const [walletFilterWeek, setWalletFilterWeek] = useState(() => {
-        const d = new Date();
-        const isoWeek = (date) => {
-          const target  = new Date(date.valueOf());
-          const dayNr   = (date.getDay() + 6) % 7;
-          target.setDate(target.getDate() - dayNr + 3);
-          const firstThursday = target.valueOf();
-          target.setMonth(0, 1);
-          if (target.getDay() !== 4) {
-            target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
-          }
-          const weekNumber = 1 + Math.ceil((firstThursday - target) /  (7 * 24 * 60 * 60 * 1000));
-          return `${date.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
-        };
-        return isoWeek(d);
+        const fallback = getIsoWeekString(new Date());
+        try { const saved = localStorage.getItem(LOCAL_WALLET_FILTER_WEEK_KEY); return saved || fallback; } catch (e) { return fallback; }
       });
       const [walletFilterMonth, setWalletFilterMonth] = useState(() => {
         const d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        const fallback = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        try { const saved = localStorage.getItem(LOCAL_WALLET_FILTER_MONTH_KEY); return saved || fallback; } catch (e) { return fallback; }
       });
-      const [walletFilterYear, setWalletFilterYear] = useState(() => new Date().getFullYear().toString());
-      const [walletCategoryFilter, setWalletCategoryFilter] = useState('all');
-      const [walletTypeFilter, setWalletTypeFilter] = useState('all'); // 'all', 'income', 'expense'
+      const [walletFilterYear, setWalletFilterYear] = useState(() => {
+        const fallback = new Date().getFullYear().toString();
+        try { const saved = localStorage.getItem(LOCAL_WALLET_FILTER_YEAR_KEY); return saved || fallback; } catch (e) { return fallback; }
+      });
+      const [walletCategoryFilter, setWalletCategoryFilter] = useState(() => {
+        try { const saved = localStorage.getItem(LOCAL_WALLET_FILTER_CATEGORY_KEY); return saved || 'all'; } catch (e) { return 'all'; }
+      });
+      const [walletTypeFilter, setWalletTypeFilter] = useState(() => {
+        try { const saved = localStorage.getItem(LOCAL_WALLET_FILTER_TYPE_KEY); return saved || 'all'; } catch (e) { return 'all'; }
+      }); // 'all', 'income', 'expense'
       const [walletAnalyticsPeriod, setWalletAnalyticsPeriod] = useState(() => {
         try { const saved = localStorage.getItem(LOCAL_WALLET_ANALYTICS_PERIOD_KEY); return saved || 'week'; } catch (e) { return 'week'; }
       });
@@ -1983,12 +2017,20 @@
             timerBreakDuration: L.timer && L.timer.breakDuration,
             timerMode: L.timer && L.timer.mode,
             isFocusMode: L.isFocusMode,
+            isPrivacyMode: L.isPrivacyMode,
             isScissorMode: L.isScissorMode,
             isBlueprintMode: L.isBlueprintMode,
             isDescriptionMode: L.isDescriptionMode,
             collapsedEpochs: L.collapsedEpochs,
             sectionsOpen: L.sectionsOpen,
             selectedColorId: L.selectedColorId,
+            walletFilterPeriod: L.walletFilterPeriod,
+            walletFilterDay: L.walletFilterDay,
+            walletFilterWeek: L.walletFilterWeek,
+            walletFilterMonth: L.walletFilterMonth,
+            walletFilterYear: L.walletFilterYear,
+            walletCategoryFilter: L.walletCategoryFilter,
+            walletTypeFilter: L.walletTypeFilter,
             walletAnalyticsPeriod: L.walletAnalyticsPeriod,
             walletAnalyticsDay: L.walletAnalyticsDay,
             walletAnalyticsMonth: L.walletAnalyticsMonth,
@@ -2005,7 +2047,7 @@
             journalModuleDate: L.journalModuleDate
           },
           exportedAt: new Date().toISOString(),
-          version: 17
+          version: 18
         };
         const json = JSON.stringify(payload);
         const blob = new Blob([json], { type: 'application/json' });
@@ -2209,6 +2251,23 @@
       useEffect(() => {
         try { localStorage.setItem(LOCAL_DISMISSED_REMINDERS_KEY, JSON.stringify(dismissedReminderKeys)); } catch (e) {}
       }, [dismissedReminderKeys]);
+      useEffect(() => {
+        setDismissedReminderKeys(prev => {
+          const validKeys = new Set([
+            `system-unlogged-hours::${todayStr}`,
+            `system-unfinished-yesterday::${todayStr}`,
+            `system-subscription-due::${todayStr}`,
+            ...customSoftReminders.map(reminder => `custom-${reminder.id}::${reminder.date}`)
+          ]);
+          let changed = false;
+          const next = {};
+          Object.keys(prev).forEach(key => {
+            if (validKeys.has(key)) next[key] = prev[key];
+            else changed = true;
+          });
+          return changed ? next : prev;
+        });
+      }, [todayStr, customSoftReminders]);
       // NEW: Toast notifications (non-blocking success messages)
       const [toasts, setToasts] = useState([]);
       const [keepWarmStatus, setKeepWarmStatus] = useState({ serviceWorker: 'idle', persistence: 'idle', cache: 'idle' });
@@ -2364,21 +2423,32 @@
           setToasts(prev => prev.filter(t => t.id !== id));
         }, duration);
       }, []);
+      const clearTrackerboxShellCaches = useCallback(async () => {
+        try {
+          if (typeof window === 'undefined' || !('caches' in window)) return;
+          const keys = await caches.keys();
+          await Promise.all(keys.filter(key => key.startsWith(TRACKERBOX_CACHE_PREFIX)).map(key => caches.delete(key)));
+        } catch (e) {}
+      }, []);
+      const unregisterTrackerboxServiceWorker = useCallback(async () => {
+        try {
+          if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+          const trackerboxSwUrl = new URL('./sw.js', window.location.href).href;
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(async registration => {
+            const activeUrl = registration.active?.scriptURL || registration.waiting?.scriptURL || registration.installing?.scriptURL || '';
+            if (activeUrl === trackerboxSwUrl) {
+              await registration.unregister();
+            }
+          }));
+        } catch (e) {}
+      }, []);
       useEffect(() => {
         let cancelled = false;
         const warmApp = async () => {
           if (!settingsDraft.keepAppWarm) {
-            try {
-              if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-                const registration = await navigator.serviceWorker.getRegistration('./');
-                if (registration) await registration.unregister();
-              }
-            } catch (e) {}
-            try {
-              if (typeof window !== 'undefined' && 'caches' in window) {
-                await caches.delete('trackerbox-shell-v1');
-              }
-            } catch (e) {}
+            await unregisterTrackerboxServiceWorker();
+            await clearTrackerboxShellCaches();
             if (!cancelled) setKeepWarmStatus({ serviceWorker: 'off', persistence: 'off', cache: 'off' });
             return;
           }
@@ -2406,8 +2476,8 @@
           }
           try {
             if (typeof window !== 'undefined' && 'caches' in window) {
-              const cache = await caches.open('trackerbox-shell-v1');
-              await cache.addAll(['./', './trackerbox.html', './sw.js']);
+              const cache = await caches.open(TRACKERBOX_CACHE_NAME);
+              await cache.addAll(['./', './trackerbox.html', './sw.js', './manifest.json', './icon-192.png', './icon-512.png']);
               nextStatus.cache = 'ready';
             }
           } catch (e) {
@@ -2417,7 +2487,7 @@
         };
         warmApp();
         return () => { cancelled = true; };
-      }, [settingsDraft.keepAppWarm]);
+      }, [settingsDraft.keepAppWarm, clearTrackerboxShellCaches, unregisterTrackerboxServiceWorker]);
       // --- Lightweight Markdown (safe subset) ---
       const escapeHtml = (s) => String(s)
         .replace(/&/g, '&amp;')
@@ -3110,6 +3180,34 @@
 
       useEffect(() => {
         if (!hasPersistedDatePrefs.current) return;
+        try { localStorage.setItem(LOCAL_WALLET_FILTER_PERIOD_KEY, walletFilterPeriod); } catch (e) {}
+      }, [walletFilterPeriod]);
+      useEffect(() => {
+        if (!hasPersistedDatePrefs.current) return;
+        try { localStorage.setItem(LOCAL_WALLET_FILTER_DAY_KEY, walletFilterDay); } catch (e) {}
+      }, [walletFilterDay]);
+      useEffect(() => {
+        if (!hasPersistedDatePrefs.current) return;
+        try { localStorage.setItem(LOCAL_WALLET_FILTER_WEEK_KEY, walletFilterWeek); } catch (e) {}
+      }, [walletFilterWeek]);
+      useEffect(() => {
+        if (!hasPersistedDatePrefs.current) return;
+        try { localStorage.setItem(LOCAL_WALLET_FILTER_MONTH_KEY, walletFilterMonth); } catch (e) {}
+      }, [walletFilterMonth]);
+      useEffect(() => {
+        if (!hasPersistedDatePrefs.current) return;
+        try { localStorage.setItem(LOCAL_WALLET_FILTER_YEAR_KEY, walletFilterYear); } catch (e) {}
+      }, [walletFilterYear]);
+      useEffect(() => {
+        if (!hasPersistedDatePrefs.current) return;
+        try { localStorage.setItem(LOCAL_WALLET_FILTER_CATEGORY_KEY, walletCategoryFilter); } catch (e) {}
+      }, [walletCategoryFilter]);
+      useEffect(() => {
+        if (!hasPersistedDatePrefs.current) return;
+        try { localStorage.setItem(LOCAL_WALLET_FILTER_TYPE_KEY, walletTypeFilter); } catch (e) {}
+      }, [walletTypeFilter]);
+      useEffect(() => {
+        if (!hasPersistedDatePrefs.current) return;
         try { localStorage.setItem(LOCAL_WALLET_ANALYTICS_PERIOD_KEY, walletAnalyticsPeriod); } catch (e) {}
       }, [walletAnalyticsPeriod]);
       useEffect(() => {
@@ -3379,6 +3477,14 @@
           settingsDraft,
           resumeState: readResumeState(),
           lastExportTime,
+          isPrivacyMode,
+          walletFilterPeriod,
+          walletFilterDay,
+          walletFilterWeek,
+          walletFilterMonth,
+          walletFilterYear,
+          walletCategoryFilter,
+          walletTypeFilter,
           categories,
           currentTheme,
           isMuted,
@@ -3425,7 +3531,7 @@
             flushAutoBackupToFolder(snap);
           }, 650);
         };
-}, [allData, journalData, journalStars, todosData, habitsConfig, habitLogs, sysConfig, descriptions, noteStars, frozenDays, blueprintPresets, actionPresets, customSoftReminders, dismissedReminderKeys, settingsDraft, lastExportTime, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
+}, [allData, journalData, journalStars, todosData, habitsConfig, habitLogs, sysConfig, descriptions, noteStars, frozenDays, blueprintPresets, actionPresets, customSoftReminders, dismissedReminderKeys, settingsDraft, lastExportTime, isPrivacyMode, walletFilterPeriod, walletFilterDay, walletFilterWeek, walletFilterMonth, walletFilterYear, walletCategoryFilter, walletTypeFilter, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
       useEffect(() => () => {
         clearTimeout(autoBackupTimerRef.current);
       }, []);
@@ -5569,12 +5675,20 @@
             timerBreakDuration: timer.breakDuration,
             timerMode: timer.mode,
             isFocusMode,
+            isPrivacyMode,
             isScissorMode,
             isBlueprintMode,
             isDescriptionMode,
             collapsedEpochs,
             sectionsOpen,
             selectedColorId,
+            walletFilterPeriod,
+            walletFilterDay,
+            walletFilterWeek,
+            walletFilterMonth,
+            walletFilterYear,
+            walletCategoryFilter,
+            walletTypeFilter,
             walletAnalyticsPeriod,
             walletAnalyticsDay,
             walletAnalyticsMonth,
@@ -5591,7 +5705,7 @@
             journalModuleDate
           },
           exportedAt: new Date().toISOString(),
-          version: 17
+          version: 18
         };
         const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -6185,12 +6299,23 @@
                   mode: u.timerMode || prev.mode
                 }));
                 if (typeof u.isFocusMode === 'boolean') setIsFocusMode(u.isFocusMode);
+                if (typeof u.isPrivacyMode === 'boolean') {
+                  setIsPrivacyMode(u.isPrivacyMode);
+                  localStorage.setItem(LOCAL_PRIVACY_MODE_KEY, String(u.isPrivacyMode));
+                }
                 if (typeof u.isScissorMode === 'boolean') setIsScissorMode(u.isScissorMode);
                 if (typeof u.isBlueprintMode === 'boolean') setIsBlueprintMode(u.isBlueprintMode);
                 if (typeof u.isDescriptionMode === 'boolean') setIsDescriptionMode(u.isDescriptionMode);
                 if (u.collapsedEpochs && typeof u.collapsedEpochs === 'object') setCollapsedEpochs(ce => ({ ...ce, ...u.collapsedEpochs }));
                 if (u.sectionsOpen && typeof u.sectionsOpen === 'object') setSectionsOpen(so => ({ ...so, ...u.sectionsOpen }));
                 if (u.selectedColorId) setSelectedColorId(u.selectedColorId);
+                if (u.walletFilterPeriod) setWalletFilterPeriod(u.walletFilterPeriod);
+                if (u.walletFilterDay) setWalletFilterDay(u.walletFilterDay);
+                if (u.walletFilterWeek) setWalletFilterWeek(u.walletFilterWeek);
+                if (u.walletFilterMonth) setWalletFilterMonth(u.walletFilterMonth);
+                if (u.walletFilterYear) setWalletFilterYear(u.walletFilterYear);
+                if (u.walletCategoryFilter) setWalletCategoryFilter(u.walletCategoryFilter);
+                if (u.walletTypeFilter) setWalletTypeFilter(u.walletTypeFilter);
                 if (u.walletAnalyticsPeriod) setWalletAnalyticsPeriod(u.walletAnalyticsPeriod);
                 if (u.walletAnalyticsDay) setWalletAnalyticsDay(u.walletAnalyticsDay);
                 if (u.walletAnalyticsMonth) setWalletAnalyticsMonth(u.walletAnalyticsMonth);
@@ -8630,8 +8755,9 @@
                       <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">6. System Integrity (Data & Safety)</h3>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
                         <li><strong>Local-First:</strong> All data lives in your browser&apos;s LocalStorage.</li>
-                        <li><strong>Manual Backups:</strong> Download/Upload full system snapshots that include your settings, presets, reminders, and resume memory so a restore can bring the app back exactly as it was.</li>
+                        <li><strong>Manual Backups:</strong> Download/Upload full system snapshots that include your settings, presets, reminders, privacy mode, wallet filters, and resume memory so a restore can bring the app back exactly as it was.</li>
                         <li><strong>Automated Rolling Backups:</strong> Link a local folder to the system; Trackerbox will automatically save a timestamped data file every time a 6-hour block is completed, keeping a rolling history of the newest 5 saves.</li>
+                        <li><strong>Scoped Factory Reset:</strong> Full reset clears Trackerbox data and its warm caches without wiping unrelated storage from other tools on the same origin.</li>
                         <li><strong>Undo/Redo:</strong> 30-step history buffer for grid painting, journal edits, todo changes, and wallet changes.</li>
                       </ul>
                     </div>
@@ -8644,6 +8770,7 @@
                         <li><strong>NEW - Starred Hub:</strong> Star journal entries, note cells, and wallet transactions, then open one top-bar hub to revisit every starred item later.</li>
                         <li><strong>NEW - Resume Memory:</strong> Refreshing the app restores your last open section, the selected Captain&apos;s Log day, and your previous scroll position so you can continue right where you stopped.</li>
                         <li><strong>NEW - Soft Reminders:</strong> Gentle in-app reminder cards surface things like unlogged hours, unfinished todos from yesterday, subscriptions due today, and your own custom reminders created from the top-bar bell with a date, remind time, and active window; inactive reminder space stays hidden until something needs attention.</li>
+                        <li><strong>NEW - Wallet View Memory:</strong> Wallet filters, privacy mode, analytics selectors, and date pickers now persist properly through refresh, export/import, and auto-backup restore.</li>
                         <li><strong>Sticky Offsets:</strong> Clicking navigation buttons automatically scrolls sections perfectly into view just beneath the sticky header.</li>
                         <li><strong>Toast Notifications:</strong> Non-blocking, auto-dismissing visual confirmations for saves, updates, and errors so your workflow isn't interrupted by popups.</li>
                       </ul>
@@ -10304,8 +10431,8 @@
                   >
                     <Menu3 size={20} className="mx-auto" />
                   </button>
-                  <div className="relative flex items-center justify-center shrink-0 alive-pulse">
-                    <img src="./icon-5125.png" alt="Trackerbox Icon" className="w-12 h-12 md:w-14 md:h-14 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)] rounded-lg" />
+                  <div className="relative flex items-center justify-center shrink-0">
+                    <img src="./icon-5125.png" alt="Trackerbox Icon" className="w-12 h-12 md:w-14 md:h-14 rounded-lg" />
                   </div>
                   <div className="flex flex-col min-w-0">
                     <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] leading-none truncate whitespace-nowrap">
@@ -12369,12 +12496,18 @@
                           <h3 className="font-bold uppercase text-red-400 border-b border-red-500/20 pb-2">Factory Reset</h3>
                           <p className="text-xs text-slate-400 flex-1">Delete <strong>EVERYTHING</strong> and start completely fresh with default categories and empty logs.</p>
                           <button
-                            onClick={() => {
+                            onClick={async () => {
                               playSound('click');
                               if (confirm('âš ï¸ FULL FACTORY RESET\n\nThis will permanently delete ALL your data and restore Trackerbox to its original default state.\n\nAre you sure you want to proceed?')) {
                                 showToast('âš ï¸ Factory reset complete. Reloading with fresh defaults...');
-                                localStorage.clear();
-                                window.location.reload();
+                                try {
+                                  Object.keys(localStorage)
+                                    .filter(key => key.startsWith('trackerbox_'))
+                                    .forEach(key => localStorage.removeItem(key));
+                                } catch (e) {}
+                                await clearTrackerboxShellCaches();
+                                await unregisterTrackerboxServiceWorker();
+                                window.setTimeout(() => window.location.reload(), 180);
                               }
                             }}
                             className="mt-auto bg-red-600 text-white font-black py-3 rounded-2xl border border-red-400 hover:bg-red-500 transition-all"

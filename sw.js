@@ -1,5 +1,5 @@
-const CACHE_NAME = 'trackerbox-shell-v3';
-const APP_SHELL = ['./', './trackerbox.html', './sw.js', './manifest.json'];
+const CACHE_NAME = 'trackerbox-shell-v4';
+const APP_SHELL = ['./', './trackerbox.html', './sw.js', './manifest.json', './icon-192.png', './icon-512.png'];
 const REMOTE_STARTUP_ASSETS = [
   'https://cdn.tailwindcss.com',
   'https://unpkg.com/react@18/umd/react.production.min.js',
