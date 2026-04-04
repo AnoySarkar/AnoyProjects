@@ -3249,6 +3249,8 @@
         try { const saved = localStorage.getItem(LOCAL_SELECTED_MONTH_KEY); return saved || initialMonthStr; } catch (e) { return initialMonthStr; }
       });
       const availableWeeks = useMemo(() => getWeeksInMonth(selectedMonthStr), [selectedMonthStr]);
+      const walletPdfAvailableWeeks = useMemo(() => getWeeksInMonth(walletPdfMonth), [walletPdfMonth]);
+      const journalPdfAvailableWeeks = useMemo(() => getWeeksInMonth(journalPdfMonth), [journalPdfMonth]);
       const [selectedWeekIndex, setSelectedWeekIndex] = useState(() => {
         try { const saved = localStorage.getItem(LOCAL_SELECTED_WEEK_INDEX_KEY); return saved !== null ? Number(saved) : 0; } catch (e) { return 0; }
       });
@@ -5919,9 +5921,19 @@
         showToast('âœ… Data downloaded successfully');
       };
       // --- PDF Export Functions ---
-      const handleDownloadWalletPdf = async () => {
+      const openWalletPdfPicker = useCallback((contextDateStr = todayStr) => {
+        const targetDate = contextDateStr || todayStr;
+        const targetMonth = String(targetDate).slice(0, 7);
+        const weeks = getWeeksInMonth(targetMonth);
+        const weekIndex = Math.max(0, weeks.findIndex(w => (w.dates || []).includes(targetDate)));
         playSound('click');
+        setWalletPdfMonth(targetMonth);
+        setWalletPdfWeekIndex(weekIndex === -1 ? 0 : weekIndex);
         setShowPdfModal('wallet');
+      }, [todayStr]);
+
+      const handleDownloadWalletPdf = async () => {
+        openWalletPdfPicker(todayStr);
       };
 
       const executeWalletPdfDownload = async () => {
@@ -5930,9 +5942,19 @@
           setShowPdfModal(null);
           showToast('â³ Generating Wallet PDF, please wait...','info', 6000);
 
-          const datesToExport = availableWeeks[walletPdfWeekIndex]?.dates || [];
+          let datesToExport = [];
+          if (walletPdfPeriod === 'week' && walletPdfAvailableWeeks[walletPdfWeekIndex]) {
+            datesToExport = walletPdfAvailableWeeks[walletPdfWeekIndex].dates;
+          } else if (walletPdfPeriod === 'month') {
+            const [year, month] = walletPdfMonth.split('-');
+            const firstDay = new Date(parseInt(year), parseInt(month) - 1, 1);
+            const lastDay = new Date(parseInt(year), parseInt(month), 0);
+            for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+              datesToExport.push(formatDateString(d));
+            }
+          }
           if (!datesToExport.length) {
-            showToast('âŒ No week selected to export', 'error');
+            showToast('âŒ No dates selected to export', 'error');
             return;
           }
 
@@ -5946,7 +5968,7 @@
               .replace(/'/g, '&#039;');
           };
 
-          const periodTitle = 'Weekly Wallet Report';
+          const periodTitle = walletPdfPeriod === 'week' ? 'Weekly Wallet Report' : 'Monthly Wallet Report';
           const container = document.createElement('div');
           container.style.background = '#ffffff';
           container.style.color = '#0f172a';
@@ -6056,7 +6078,7 @@
           document.body.appendChild(container);
           const opt = {
             margin: 8,
-            filename: `trackerbox_wallet_report_${datesToExport[0]}_to_${datesToExport[datesToExport.length - 1]}.pdf`,
+            filename: `trackerbox_wallet_${walletPdfPeriod}_report_${datesToExport[0]}_to_${datesToExport[datesToExport.length - 1]}.pdf`,
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true, logging: false, letterRendering: true, backgroundColor: '#ffffff' },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
@@ -6072,9 +6094,19 @@
         }
       };
 
-      const handleDownloadWeekJournalPdf = async () => {
+      const openJournalPdfPicker = useCallback((contextDateStr = activeJournalDate || journalModuleDate || todayStr) => {
+        const targetDate = contextDateStr || todayStr;
+        const targetMonth = String(targetDate).slice(0, 7);
+        const weeks = getWeeksInMonth(targetMonth);
+        const weekIndex = Math.max(0, weeks.findIndex(w => (w.dates || []).includes(targetDate)));
         playSound('click');
+        setJournalPdfMonth(targetMonth);
+        setJournalPdfWeekIndex(weekIndex === -1 ? 0 : weekIndex);
         setShowPdfModal('journal');
+      }, [activeJournalDate, journalModuleDate, todayStr]);
+
+      const handleDownloadWeekJournalPdf = async () => {
+        openJournalPdfPicker(activeJournalDate || journalModuleDate || todayStr);
       };
 
       const executeJournalPdfDownload = async () => {
@@ -6085,8 +6117,8 @@
 
           let datesToExport = [];
           
-          if (journalPdfPeriod === 'week' && availableWeeks[journalPdfWeekIndex]) {
-            datesToExport = availableWeeks[journalPdfWeekIndex].dates;
+          if (journalPdfPeriod === 'week' && journalPdfAvailableWeeks[journalPdfWeekIndex]) {
+            datesToExport = journalPdfAvailableWeeks[journalPdfWeekIndex].dates;
           } else if (journalPdfPeriod === 'month') {
             // Get all dates in the selected month
             const [year, month] = journalPdfMonth.split('-');
@@ -8063,7 +8095,7 @@
                          <span>Migrate Yesterday</span>
                        </button>
                        <button
-                         onClick={() => { playSound('click'); handleDownloadWeekJournalPdf(); }}
+                         onClick={() => openJournalPdfPicker(activeJournalDate)}
                          className="text-xs px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl font-bold uppercase tracking-widest transition-all flex items-center gap-2 border border-white/10"
                          title="Download full week's journal as PDF"
                        >
@@ -9716,7 +9748,44 @@
                   </h2>
                   
                   <div className="space-y-4">
-                    {/* Week Selector */}
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-bold">Export Range</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => showPdfModal === 'wallet' ? setWalletPdfPeriod('week') : setJournalPdfPeriod('week')}
+                          className={`rounded-xl border px-3 py-2 text-xs font-black uppercase tracking-widest transition-all ${(showPdfModal === 'wallet' ? walletPdfPeriod : journalPdfPeriod) === 'week' ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200' : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10'}`}
+                        >
+                          Week
+                        </button>
+                        <button
+                          onClick={() => showPdfModal === 'wallet' ? setWalletPdfPeriod('month') : setJournalPdfPeriod('month')}
+                          className={`rounded-xl border px-3 py-2 text-xs font-black uppercase tracking-widest transition-all ${(showPdfModal === 'wallet' ? walletPdfPeriod : journalPdfPeriod) === 'month' ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200' : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10'}`}
+                        >
+                          Month
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-bold">Select Month</label>
+                      <input
+                        type="month"
+                        value={showPdfModal === 'wallet' ? walletPdfMonth : journalPdfMonth}
+                        onChange={(e) => {
+                          const nextMonth = e.target.value;
+                          if (showPdfModal === 'wallet') {
+                            setWalletPdfMonth(nextMonth);
+                            setWalletPdfWeekIndex(0);
+                          } else {
+                            setJournalPdfMonth(nextMonth);
+                            setJournalPdfWeekIndex(0);
+                          }
+                        }}
+                        className="w-full bg-[#0b1120] border border-white/10 rounded-xl px-3 py-2 text-white outline-none text-sm"
+                      />
+                    </div>
+
+                    {(showPdfModal === 'wallet' ? walletPdfPeriod : journalPdfPeriod) === 'week' && (
                     <div>
                       <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-2 font-bold">Select Week</label>
                       <select
@@ -9724,11 +9793,12 @@
                         onChange={(e) => showPdfModal === 'wallet' ? setWalletPdfWeekIndex(Number(e.target.value)) : setJournalPdfWeekIndex(Number(e.target.value))}
                         className="w-full bg-[#0b1120] border border-white/10 rounded-xl px-3 py-2 text-white outline-none text-sm"
                       >
-                        {availableWeeks.map((w, i) => (
+                        {(showPdfModal === 'wallet' ? walletPdfAvailableWeeks : journalPdfAvailableWeeks).map((w, i) => (
                           <option key={w.id} value={i}>{w.label}</option>
                         ))}
                       </select>
                     </div>
+                    )}
 
                     {/* Action Buttons */}
                     <div className="flex gap-3 mt-6">
@@ -12528,7 +12598,7 @@
                           Migrate Yesterday
                         </button>
                         <button
-                          onClick={() => { playSound('click'); handleDownloadWeekJournalPdf(); }}
+                          onClick={() => openJournalPdfPicker(journalModuleDate)}
                           className="text-[10px] px-3 py-2 bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl font-bold uppercase tracking-widest transition-all border border-white/10"
                           title="Download full week's journal as PDF"
                         >
@@ -12539,41 +12609,6 @@
                         </div>
                       </div>
                     </div>
-
-                    <div className="mb-5 rounded-3xl border border-white/10 bg-white/5 p-4">
-                      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                            <span>Tasks: <strong className="text-white">{journalModuleCompletedDisplay}/{journalModuleTotalTasks}</strong></span>
-                            <span>Time: <strong className="text-white">{journalModuleTrackedHours}h</strong></span>
-                            <span>Points: <strong className="text-lime-300">{Math.round(journalModulePoints)}</strong></span>
-                          </div>
-                          <div className="w-full h-1.5 bg-[#0b1120] rounded-full overflow-hidden border border-white/10 shadow-inner mt-3">
-                            <div className="h-full bg-gradient-to-r from-cyan-500 to-green-400 transition-all duration-500" style={{width: `${journalModuleCompletionRate}%`}}></div>
-                          </div>
-                        </div>
-                        <span className="text-sm font-black text-cyan-400">{Math.round(journalModuleCompletionRate)}%</span>
-                      </div>
-                      {Object.values(journalModuleCategoryHours).some(h => h > 0) && (
-                        <div className="mt-4 pt-4 border-t border-white/10">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Category Analysis</span>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-xs">
-                            {categories.map(cat => {
-                              const hrs = journalModuleCategoryHours[cat.id] || 0;
-                              if (hrs === 0) return null;
-                              return (
-                                <div key={`journal-module-cat-${cat.id}`} className="flex items-center gap-3">
-                                  <div className="w-3 h-3 rounded-md" style={{backgroundColor: cat.color}}></div>
-                                  <span className="flex-1 text-slate-200 truncate">{cat.name}</span>
-                                  <span className="font-black text-white text-sm">{hrs.toFixed(1)}h</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
                     {journalSectionTab === 'todos' && (
                       <div className="border border-cyan-500/25 rounded-3xl bg-[#0b1120] overflow-hidden">
                         <div className="bg-cyan-500/10 px-4 py-3 border-b border-cyan-500/25 space-y-3">
@@ -12787,7 +12822,7 @@
                             <span>Time</span>
                           </button>
                           <button
-                            onClick={() => { playSound('click'); handleDownloadWeekJournalPdf(); }}
+                            onClick={() => openJournalPdfPicker(journalModuleDate)}
                             className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap"
                             title="Download full week's journal as PDF"
                           >
@@ -12882,6 +12917,40 @@
                         </div>
                       </div>
                     )}
+
+                    <div className="mt-5 rounded-3xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            <span>Tasks: <strong className="text-white">{journalModuleCompletedDisplay}/{journalModuleTotalTasks}</strong></span>
+                            <span>Time: <strong className="text-white">{journalModuleTrackedHours}h</strong></span>
+                            <span>Points: <strong className="text-lime-300">{Math.round(journalModulePoints)}</strong></span>
+                          </div>
+                          <div className="w-full h-1.5 bg-[#0b1120] rounded-full overflow-hidden border border-white/10 shadow-inner mt-3">
+                            <div className="h-full bg-gradient-to-r from-cyan-500 to-green-400 transition-all duration-500" style={{width: `${journalModuleCompletionRate}%`}}></div>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black text-cyan-400">{Math.round(journalModuleCompletionRate)}%</span>
+                      </div>
+                      {Object.values(journalModuleCategoryHours).some(h => h > 0) && (
+                        <div className="mt-4 pt-4 border-t border-white/10">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Category Analysis</span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+                            {categories.map(cat => {
+                              const hrs = journalModuleCategoryHours[cat.id] || 0;
+                              if (hrs === 0) return null;
+                              return (
+                                <div key={`journal-module-cat-${cat.id}`} className="flex items-center gap-3">
+                                  <div className="w-3 h-3 rounded-md" style={{backgroundColor: cat.color}}></div>
+                                  <span className="flex-1 text-slate-200 truncate">{cat.name}</span>
+                                  <span className="font-black text-white text-sm">{hrs.toFixed(1)}h</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </section>
