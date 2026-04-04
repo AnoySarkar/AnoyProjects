@@ -439,6 +439,7 @@
     const LOCAL_COLLAPSED_EPOCHS_KEY = 'trackerbox_collapsed_epochs_v1';
     const LOCAL_FOCUS_MODE_KEY = 'trackerbox_focus_mode_v1';
     const LOCAL_FROZEN_DAYS_KEY = 'trackerbox_frozen_days_v1';
+    const LOCAL_SCISSOR_MODE_KEY = 'trackerbox_scissor_mode_v1';
     const LOCAL_SETTINGS_KEY = 'trackerbox_settings_v1';
     const LOCAL_BLUEPRINT_PRESETS_KEY = 'trackerbox_blueprint_presets_v3'; // v3 = real colors + blueprints + fixed load
     const LOCAL_WALLET_KEY = 'trackerbox_wallet_v1';
@@ -448,7 +449,9 @@
     const LOCAL_SUBSCRIPTIONS_KEY = 'trackerbox_subscriptions_v1';
     const LOCAL_TEMPLATES_KEY = 'trackerbox_wallet_templates_v1';
     const LOCAL_SAVINGS_GOALS_KEY = 'trackerbox_savings_goals_v1';
+    const LOCAL_TODO_TEMPLATES_KEY = 'trackerbox_todo_templates_v1';
     const LOCAL_PRIVACY_MODE_KEY = 'trackerbox_privacy_mode_v1';
+    const AUTO_BACKUP_LIMIT = 5;
     const DEFAULT_SETTINGS = {
       defaultFocusMode: false,
       defaultCollapsedEpochs: { night: true, morning: false, afternoon: false, evening: false },
@@ -501,6 +504,33 @@
     const getDisplayDate = (dateString) => {
       const date = new Date(dateString);
       return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
+    const createClientId = (prefix = 'id') => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const cloneTodoFromTemplate = (todo) => ({
+      id: createClientId('todo'),
+      text: String(todo?.text || '').trim(),
+      status: 'red',
+      done: false,
+      remark: '',
+      progress: 0,
+      subtasks: Array.isArray(todo?.subtasks)
+        ? todo.subtasks
+            .map(sub => ({
+              id: createClientId('sub'),
+              text: String(sub?.text || '').trim(),
+              done: false
+            }))
+            .filter(sub => sub.text)
+        : []
+    });
+    const getTriangleValue = (cellData, triangleId) => {
+      if (!cellData || typeof cellData !== 'object') return null;
+      if (triangleId === 'box') return cellData.t1 || cellData.t2 || null;
+      return cellData[triangleId] || null;
+    };
+    const getMergedCellValue = (cellData, fallback = null) => {
+      if (!cellData || typeof cellData !== 'object') return fallback;
+      return cellData.t1 || cellData.t2 || cellData.q1 || cellData.q2 || cellData.q3 || cellData.q4 || fallback;
     };
     const getWeeksInMonth = (yearMonthStr) => {
       if(!yearMonthStr) return [];
@@ -636,7 +666,6 @@
         for (let b = 0; b < 4; b++) {
           if (!isSixHourBlockComplete(prevDay, b) && isSixHourBlockComplete(nextDay, b)) return true;
         }
-        if (!hasFullActivity(prevDay) && hasFullActivity(nextDay)) return true;
       }
       return false;
     };
@@ -807,6 +836,9 @@
       useEffect(() => {
         try { localStorage.setItem(LOCAL_FOCUS_MODE_KEY, String(isFocusMode)); } catch (e) {}
       }, [isFocusMode]);
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_SCISSOR_MODE_KEY, String(isScissorMode)); } catch (e) {}
+      }, [isScissorMode]);
 
       useEffect(() => {
         try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(walletTransactions)); } catch (e) {}
@@ -829,6 +861,9 @@
       useEffect(() => {
         try { localStorage.setItem(LOCAL_SAVINGS_GOALS_KEY, JSON.stringify(savingsGoals)); } catch (e) {}
       }, [savingsGoals]);
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_TODO_TEMPLATES_KEY, JSON.stringify(todoTemplates)); } catch (e) {}
+      }, [todoTemplates]);
       useEffect(() => {
         try { localStorage.setItem(LOCAL_CATEGORIES_KEY + '_wallet', JSON.stringify(walletCategories)); } catch (e) {}
       }, [walletCategories]);
@@ -974,9 +1009,23 @@
           return next;
         });
       };
+      const [todoTemplates, setTodoTemplates] = useState(() => {
+        try {
+          const saved = localStorage.getItem(LOCAL_TODO_TEMPLATES_KEY);
+          return saved ? JSON.parse(saved) : [];
+        } catch (e) { return []; }
+      });
+      const updateTodoTemplates = (updater) => {
+        setTodoTemplates(prev => {
+          const next = typeof updater === 'function' ? updater(prev) : updater;
+          try { localStorage.setItem(LOCAL_TODO_TEMPLATES_KEY, JSON.stringify(next)); } catch (e) {}
+          return next;
+        });
+      };
 
       const [showSavingsGoalModal, setShowSavingsGoalModal] = useState(false);
       const [savingsGoalDraft, setSavingsGoalDraft] = useState({ id: '', name: '', targetAmount: '', currentAmount: 0, active: true });
+      const [selectedTodoTemplateId, setSelectedTodoTemplateId] = useState('');
 
       const [walletCategories, setWalletCategories] = useState(() => {
         try {
@@ -1121,6 +1170,8 @@
           debts: L.debts,
           subscriptions: L.subscriptions,
           walletTemplates: L.walletTemplates,
+          savingsGoals: L.savingsGoals,
+          todoTemplates: L.todoTemplates,
           walletCategories: L.walletCategories,
           walletCurrency: L.walletCurrency,
           uiPreferences: {
@@ -1132,6 +1183,7 @@
             timerBreakDuration: L.timer && L.timer.breakDuration,
             timerMode: L.timer && L.timer.mode,
             isFocusMode: L.isFocusMode,
+            isScissorMode: L.isScissorMode,
             isBlueprintMode: L.isBlueprintMode,
             isDescriptionMode: L.isDescriptionMode,
             collapsedEpochs: L.collapsedEpochs,
@@ -1153,7 +1205,7 @@
             journalModuleDate: L.journalModuleDate
           },
           exportedAt: new Date().toISOString(),
-          version: 12
+          version: 13
         };
         const json = JSON.stringify(payload);
         const blob = new Blob([json], { type: 'application/json' });
@@ -1165,8 +1217,8 @@
           const writable = await fileHandle.createWritable();
           await writable.write(blob);
           await writable.close();
-          await enforceAutoBackupRolling(dir, 'trackerbox_auto_', 10);
-          showToast('✅ AutoSave completed (rolling last 10 backups)', 'success');
+          await enforceAutoBackupRolling(dir, 'trackerbox_auto_', AUTO_BACKUP_LIMIT);
+          showToast(`Backup saved to ${backupFolderName || 'linked folder'} (${AUTO_BACKUP_LIMIT} kept)`, 'success');
         } catch (e) {
           console.warn('Auto-backup failed (permission may have expired)', e);
         }
@@ -1238,7 +1290,12 @@
       // NEW: Description Mode + Descriptions storage
       const [isDescriptionMode, setIsDescriptionMode] = useState(false);
       // NEW: Scissor mode (splits only when enabled)
-      const [isScissorMode, setIsScissorMode] = useState(false);
+      const [isScissorMode, setIsScissorMode] = useState(() => {
+        try {
+          const saved = localStorage.getItem(LOCAL_SCISSOR_MODE_KEY);
+          return saved === 'true';
+        } catch (e) { return false; }
+      });
       const [descriptions, setDescriptions] = useState(() => {
         const saved = localStorage.getItem(LOCAL_DESCRIPTIONS_KEY);
         return saved ? JSON.parse(saved) : {};
@@ -1405,6 +1462,18 @@
       useEffect(() => {
         localStorage.setItem(LOCAL_BLUEPRINT_PRESETS_KEY, JSON.stringify(blueprintPresets));
       }, [blueprintPresets]);
+      useEffect(() => {
+        if (!todoTemplates.length) {
+          if (selectedTodoTemplateId) setSelectedTodoTemplateId('');
+          return;
+        }
+        if (!todoTemplates.some(t => t.id === selectedTodoTemplateId)) {
+          setSelectedTodoTemplateId(todoTemplates[0].id);
+        }
+      }, [todoTemplates, selectedTodoTemplateId]);
+      useEffect(() => {
+        if (!isFocusMode && isScissorMode) setIsScissorMode(false);
+      }, [isFocusMode, isScissorMode]);
       // --- NEW: Live Current Hour for Visual Anchor (updates every minute) ---
       useEffect(() => {
         const updateCurrentHour = () => {
@@ -2248,6 +2317,7 @@
           pointsPeriod,
           timer,
           isFocusMode,
+          isScissorMode,
           isBlueprintMode,
           isDescriptionMode,
           collapsedEpochs,
@@ -2259,6 +2329,8 @@
           debts,
           subscriptions,
           walletTemplates,
+          savingsGoals,
+          todoTemplates,
           walletCategories,
           walletCurrency,
           walletAnalyticsPeriod,
@@ -2285,11 +2357,12 @@
             flushAutoBackupToFolder(snap);
           }, 650);
         };
-      }, [allData, journalData, todosData, habitsConfig, habitLogs, sysConfig, descriptions, frozenDays, blueprintPresets, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
+      }, [allData, journalData, todosData, habitsConfig, habitLogs, sysConfig, descriptions, frozenDays, blueprintPresets, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
       useEffect(() => () => {
         clearTimeout(autoBackupTimerRef.current);
       }, []);
       const getActiveTrianglesForHour = useCallback((cellData) => {
+        if (cellData?.merged) return ['box'];
         const top = cellData?.split1 ? ['q1', 'q2'] : ['t1'];
         const bottom = cellData?.split2 ? ['q3', 'q4'] : ['t2'];
         return [...top, ...bottom];
@@ -2303,15 +2376,15 @@
       const getFirstNonColoredTriangle = useCallback((dateStr) => {
         const dayData = allData[dateStr] || {};
         for (let hour = 0; hour < 24; hour++) {
-          const cell = dayData[hour] || { split1: false, split2: false };
+          const cell = dayData[hour] || { split1: false, split2: false, merged: false };
           const keys = getActiveTrianglesForHour(cell);
           for (const key of keys) {
-            if (!cell[key]) {
+            if (!getTriangleValue(cell, key)) {
               return { dateStr, hour, triangleId: key };
             }
           }
         }
-        const fallbackCell = dayData[0] || { split1: false, split2: false };
+        const fallbackCell = dayData[0] || { split1: false, split2: false, merged: false };
         return { dateStr, hour: 0, triangleId: getActiveTrianglesForHour(fallbackCell)[0] || 't1' };
       }, [allData, getActiveTrianglesForHour]);
       const moveKeyboardCursor = useCallback((direction) => {
@@ -2330,7 +2403,7 @@
           const seq = [];
           const dayData = allData[initial.dateStr] || {};
           for (let h = 0; h < 24; h++) {
-            const c = dayData[h] || { split1: false, split2: false };
+            const c = dayData[h] || { split1: false, split2: false, merged: false };
             getActiveTrianglesForHour(c).forEach(k => seq.push({ dateStr: initial.dateStr, hour: h, triangleId: k }));
           }
           let idx = seq.findIndex(s => s.hour === initial.hour && s.triangleId === initial.triangleId);
@@ -2343,7 +2416,7 @@
             const nextDate = dates[idx + (direction === 'right' ? 1 : -1)];
             if (nextDate) {
               const dayData = allData[nextDate] || {};
-              const c = dayData[initial.hour] || { split1: false, split2: false };
+              const c = dayData[initial.hour] || { split1: false, split2: false, merged: false };
               const keys = getActiveTrianglesForHour(c);
               const tri = keys.includes(initial.triangleId) ? initial.triangleId : keys[0];
               next = { dateStr: nextDate, hour: initial.hour, triangleId: tri };
@@ -2816,7 +2889,7 @@
           
           // Fill each hour
           magicFillHours.forEach(hour => {
-            const hourData = dayData[hour] || { split1: false, split2: false, t1: null, t2: null, q1: null, q2: null, q3: null, q4: null };
+            const hourData = dayData[hour] || { split1: false, split2: false, merged: false, t1: null, t2: null, q1: null, q2: null, q3: null, q4: null };
             const newHourData = { ...hourData };
             
             // Fill t1 (top triangle)
@@ -2889,7 +2962,8 @@
           if (!hData) return;
           const bpHour = {
             split1: !!hData.split1,
-            split2: !!hData.split2
+            split2: !!hData.split2,
+            merged: !!hData.merged
           };
           ['t1','t2','q1','q2','q3','q4'].forEach(key => {
             if (hData[key]) {
@@ -2934,7 +3008,8 @@
             if (!hData) return;
             const bpHour = {
               split1: !!hData.split1,
-              split2: !!hData.split2
+              split2: !!hData.split2,
+              merged: !!hData.merged
             };
             ['t1','t2','q1','q2','q3','q4'].forEach(key => {
               if (hData[key]) {
@@ -2986,6 +3061,7 @@
               const newHour = {
                 split1: !!pHour.split1,
                 split2: !!pHour.split2,
+                merged: !!pHour.merged,
                 t1: null, t2: null, q1: null, q2: null, q3: null, q4: null
               };
               ['t1','t2','q1','q2','q3','q4'].forEach(key => {
@@ -3018,6 +3094,7 @@
                 const newHour = {
                   split1: !!pHour.split1,
                   split2: !!pHour.split2,
+                  merged: !!pHour.merged,
                   t1: null, t2: null, q1: null, q2: null, q3: null, q4: null
                 };
                 ['t1','t2','q1','q2','q3','q4'].forEach(key => {
@@ -3368,9 +3445,12 @@
       const getTriangleForMinutes = (dateStr, totalMinutes) => {
         const hour = Math.floor(totalMinutes / 60);
         const minInHour = totalMinutes % 60;
-        const cellData = allDataRef.current?.[dateStr]?.[hour] || { split1: false, split2: false };
+        const cellData = allDataRef.current?.[dateStr]?.[hour] || { split1: false, split2: false, merged: false };
         const split1 = !!cellData.split1;
         const split2 = !!cellData.split2;
+        if (cellData.merged) {
+          return { hour, triangleId: 'box' };
+        }
 
         if (minInHour < 30) {
           // Upper half: 00-30
@@ -3392,7 +3472,7 @@
 
       const getMinutesForTriangleId = (hour, triangleId) => {
         // Map each triangle to its start minute offset in the hour.
-        const offsetMap = { t1: 0, q1: 0, q2: 15, t2: 30, q3: 30, q4: 45 };
+        const offsetMap = { box: 0, t1: 0, q1: 0, q2: 15, t2: 30, q3: 30, q4: 45 };
         const offset = offsetMap[triangleId] ?? 0;
         return (hour * 60) + offset;
       };
@@ -3511,6 +3591,68 @@
           });
         }
       };
+      const handleSaveTodoTemplate = useCallback((dateStr) => {
+        const dayTodos = (todosData[dateStr] || []).filter(todo => String(todo?.text || '').trim());
+        if (!dayTodos.length) {
+          showToast('No todos available to save as a template', 'error');
+          return;
+        }
+        const suggestedName = selectedTodoTemplate?.name || `ToDo ${getDisplayDate(dateStr)}`;
+        const templateName = prompt('Save this day as which ToDo template?', suggestedName);
+        if (!templateName || !templateName.trim()) return;
+        const cleanName = templateName.trim();
+        let nextSelectedId = '';
+        updateTodoTemplates(prev => {
+          const existing = prev.find(t => String(t.name || '').toLowerCase() === cleanName.toLowerCase());
+          const record = {
+            id: existing?.id || createClientId('todo_tpl'),
+            name: cleanName,
+            todos: dayTodos.map(todo => ({
+              text: String(todo?.text || '').trim(),
+              subtasks: Array.isArray(todo?.subtasks)
+                ? todo.subtasks.map(sub => ({ text: String(sub?.text || '').trim() })).filter(sub => sub.text)
+                : []
+            })),
+            createdAt: existing?.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          nextSelectedId = record.id;
+          if (existing) return prev.map(t => t.id === record.id ? record : t);
+          return [record, ...prev];
+        });
+        if (nextSelectedId) setSelectedTodoTemplateId(nextSelectedId);
+        showToast(`Saved ${dayTodos.length} todos into "${cleanName}"`, 'success');
+      }, [todosData, selectedTodoTemplate, updateTodoTemplates]);
+      const handleRestoreTodoTemplate = useCallback((templateId, dateStr, mode = 'append') => {
+        const template = todoTemplates.find(t => t.id === templateId);
+        if (!template) {
+          showToast('Choose a ToDo template first', 'error');
+          return;
+        }
+        const templateTodos = Array.isArray(template.todos) ? template.todos.map(cloneTodoFromTemplate).filter(todo => todo.text) : [];
+        if (!templateTodos.length) {
+          showToast('This template is empty', 'error');
+          return;
+        }
+        setTodosData(prev => {
+          const currentDayTodos = prev[dateStr] || [];
+          const updated = {
+            ...prev,
+            [dateStr]: mode === 'replace' ? templateTodos : [...currentDayTodos, ...templateTodos]
+          };
+          localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
+          return updated;
+        });
+        showToast(`${mode === 'replace' ? 'Replaced' : 'Restored'} ${templateTodos.length} todos on ${getDisplayDate(dateStr)}`, 'success');
+      }, [todoTemplates]);
+      const handleDeleteTodoTemplate = useCallback((templateId) => {
+        const template = todoTemplates.find(t => t.id === templateId);
+        if (!template) return;
+        if (!confirm(`Delete the template "${template.name}"?`)) return;
+        updateTodoTemplates(prev => prev.filter(t => t.id !== templateId));
+        if (selectedTodoTemplateId === templateId) setSelectedTodoTemplateId('');
+        showToast(`Deleted template "${template.name}"`, 'success');
+      }, [todoTemplates, selectedTodoTemplateId, updateTodoTemplates]);
       const handleAddTodo = (dateStr, text) => {
         if (!text.trim()) return;
         playSound('click');
@@ -3835,6 +3977,7 @@
         }
         return streak;
       }, [allData, frozenDays]);
+      const frozenDaysCount = useMemo(() => Object.values(frozenDays || {}).filter(Boolean).length, [frozenDays]);
       // NEW: Full streak details for modal (also updated for Cryo)
       const streakDetails = useMemo(() => {
         const fullActivityDates = Object.keys(allData)
@@ -4004,6 +4147,8 @@
           debts,
           subscriptions,
           walletTemplates,
+          savingsGoals,
+          todoTemplates,
           walletCategories,
           walletCurrency,
           uiPreferences: {
@@ -4015,6 +4160,7 @@
             timerBreakDuration: timer.breakDuration,
             timerMode: timer.mode,
             isFocusMode,
+            isScissorMode,
             isBlueprintMode,
             isDescriptionMode,
             collapsedEpochs,
@@ -4036,7 +4182,7 @@
             journalModuleDate
           },
           exportedAt: new Date().toISOString(),
-          version: 12
+          version: 13
         };
         const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -4563,6 +4709,7 @@
           try {
             const imported = JSON.parse(event.target.result);
             if (imported.data && imported.categories) {
+              const hasImportedField = (key) => Object.prototype.hasOwnProperty.call(imported, key);
               setAllData(imported.data);
               setCategories(imported.categories);
               if (imported.journal) setJournalData(imported.journal);
@@ -4579,6 +4726,8 @@
               if (imported.debts) { setDebts(imported.debts); localStorage.setItem(LOCAL_DEBTS_KEY, JSON.stringify(imported.debts)); }
               if (imported.subscriptions) { setSubscriptions(imported.subscriptions); localStorage.setItem(LOCAL_SUBSCRIPTIONS_KEY, JSON.stringify(imported.subscriptions)); }
               if (imported.walletTemplates) { setWalletTemplates(imported.walletTemplates); localStorage.setItem(LOCAL_TEMPLATES_KEY, JSON.stringify(imported.walletTemplates)); }
+              if (hasImportedField('savingsGoals')) { setSavingsGoals(imported.savingsGoals || []); localStorage.setItem(LOCAL_SAVINGS_GOALS_KEY, JSON.stringify(imported.savingsGoals || [])); }
+              if (hasImportedField('todoTemplates')) { setTodoTemplates(imported.todoTemplates || []); localStorage.setItem(LOCAL_TODO_TEMPLATES_KEY, JSON.stringify(imported.todoTemplates || [])); }
               if (imported.walletCategories) updateWalletCategories(imported.walletCategories);
               if (imported.walletCurrency) updateWalletCurrency(imported.walletCurrency);
               if (imported.uiPreferences && typeof imported.uiPreferences === 'object') {
@@ -4604,6 +4753,7 @@
                   mode: u.timerMode || prev.mode
                 }));
                 if (typeof u.isFocusMode === 'boolean') setIsFocusMode(u.isFocusMode);
+                if (typeof u.isScissorMode === 'boolean') setIsScissorMode(u.isScissorMode);
                 if (typeof u.isBlueprintMode === 'boolean') setIsBlueprintMode(u.isBlueprintMode);
                 if (typeof u.isDescriptionMode === 'boolean') setIsDescriptionMode(u.isDescriptionMode);
                 if (u.collapsedEpochs && typeof u.collapsedEpochs === 'object') setCollapsedEpochs(ce => ({ ...ce, ...u.collapsedEpochs }));
@@ -4684,12 +4834,25 @@
       const handleUpdateSegment = useCallback((dateStr, hourIndex, triangleId, finalValue) => {
         setAllData(prev => {
           const dayData = prev[dateStr] || {};
-          const hourData = dayData[hourIndex] || { t1: null, t2: null, split1: false, split2: false };
-          const prevValue = hourData[triangleId];
+          const hourData = dayData[hourIndex] || { t1: null, t2: null, split1: false, split2: false, merged: false };
+          const prevValue = getTriangleValue(hourData, triangleId);
           if (prevValue === finalValue) return prev;
           const isErase = finalValue === null;
           playSound(isErase ? 'erase' : 'paint');
-          const newHourData = { ...hourData, [triangleId]: finalValue };
+          const newHourData = { ...hourData };
+          if (triangleId === 'box') {
+            newHourData.merged = true;
+            newHourData.split1 = false;
+            newHourData.split2 = false;
+            newHourData.t1 = finalValue;
+            newHourData.t2 = finalValue;
+            delete newHourData.q1;
+            delete newHourData.q2;
+            delete newHourData.q3;
+            delete newHourData.q4;
+          } else {
+            newHourData[triangleId] = finalValue;
+          }
           const newData = {
             ...prev,
             [dateStr]: { ...dayData, [hourIndex]: newHourData }
@@ -4699,6 +4862,55 @@
           return newData;
         });
       }, []);
+      const handleCycleCutState = useCallback((dateStr, hourIndex, triangleId) => {
+        if (frozenDays[dateStr]) return;
+        saveHistoryState();
+        playSound('click');
+        setAllData(prev => {
+          const dayData = prev[dateStr] || {};
+          const hourData = dayData[hourIndex] || { t1: null, t2: null, split1: false, split2: false, merged: false };
+          const nextHourData = { ...hourData };
+          const clickedValue = getTriangleValue(hourData, triangleId) || getMergedCellValue(hourData, null);
+          if (nextHourData.merged || triangleId === 'box') {
+            nextHourData.merged = false;
+            nextHourData.split1 = false;
+            nextHourData.split2 = false;
+            nextHourData.t1 = clickedValue;
+            nextHourData.t2 = clickedValue;
+            delete nextHourData.q1;
+            delete nextHourData.q2;
+            delete nextHourData.q3;
+            delete nextHourData.q4;
+          } else if (['q1', 'q2', 'q3', 'q4'].includes(triangleId)) {
+            nextHourData.merged = true;
+            nextHourData.split1 = false;
+            nextHourData.split2 = false;
+            nextHourData.t1 = clickedValue;
+            nextHourData.t2 = clickedValue;
+            delete nextHourData.q1;
+            delete nextHourData.q2;
+            delete nextHourData.q3;
+            delete nextHourData.q4;
+          } else if (['t1', 'q1', 'q2'].includes(triangleId)) {
+            nextHourData.merged = false;
+            nextHourData.split1 = true;
+            nextHourData.q1 = clickedValue;
+            nextHourData.q2 = clickedValue;
+          } else {
+            nextHourData.merged = false;
+            nextHourData.split2 = true;
+            nextHourData.q3 = clickedValue;
+            nextHourData.q4 = clickedValue;
+          }
+          const next = {
+            ...prev,
+            [dateStr]: { ...dayData, [hourIndex]: nextHourData }
+          };
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next));
+          if (scheduleGridBackupRef.current) scheduleGridBackupRef.current(prev, next, [dateStr]);
+          return next;
+        });
+      }, [frozenDays, saveHistoryState]);
       // --- Pointer Handlers (Blueprint-aware + Description Mode + CRYO DISABLE) ---
       const handlePointerDown = useCallback((dateStr, hourIndex, triangleId, e) => {
         if (e.button !== 0) return;
@@ -4707,6 +4919,11 @@
         if (isDescriptionMode) {
           e.preventDefault();
           openDescription(dateStr, hourIndex, triangleId);
+          return;
+        }
+        if (isFocusMode && isScissorMode) {
+          e.preventDefault();
+          handleCycleCutState(dateStr, hourIndex, triangleId);
           return;
         }
         if (isFocusMode && !isScissorMode) {
@@ -4721,15 +4938,15 @@
         if (selectedColorId === 'lock') return;
         saveHistoryState();
         const hourData = allData[dateStr]?.[hourIndex] || {};
-        const currentValue = hourData[triangleId];
+        const currentValue = getTriangleValue(hourData, triangleId);
         const targetValue = getTargetValue(currentValue, selectedColorId, isBlueprintMode);
         handleUpdateSegment(dateStr, hourIndex, triangleId, targetValue);
         setIsDragging(true);
-      }, [isDescriptionMode, selectedColorId, isBlueprintMode, saveHistoryState, getTargetValue, handleUpdateSegment, allData, openDescription, frozenDays, isFocusMode, isScissorMode, handleSplitToggle]);
+      }, [isDescriptionMode, selectedColorId, isBlueprintMode, saveHistoryState, getTargetValue, handleUpdateSegment, allData, openDescription, frozenDays, isFocusMode, isScissorMode, handleSplitToggle, handleCycleCutState]);
       const handlePointerEnter = useCallback((dateStr, hourIndex, triangleId) => {
         if (!isDragging || selectedColorId === 'lock' || isDescriptionMode || frozenDays[dateStr]) return;
         const hourData = allData[dateStr]?.[hourIndex] || {};
-        const currentValue = hourData[triangleId];
+        const currentValue = getTriangleValue(hourData, triangleId);
         const targetValue = getTargetValue(currentValue, selectedColorId, isBlueprintMode);
         handleUpdateSegment(dateStr, hourIndex, triangleId, targetValue);
       }, [isDragging, selectedColorId, isDescriptionMode, isBlueprintMode, getTargetValue, handleUpdateSegment, allData, frozenDays]);
@@ -4743,9 +4960,10 @@
         playSound('click');
         setAllData(prev => {
             const dayData = prev[dateStr] || {};
-            const hourData = dayData[hour] || { t1: null, t2: null };
+            const hourData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false, merged: false };
             const newData = { ...prev };
             const newHourData = { ...hourData };
+            newHourData.merged = false;
             if (half === 'half1') {
                 if (newHourData.split1) {
                     newHourData.split1 = false;
@@ -5165,6 +5383,7 @@
       // --- Compute Active Day Progress Header ---
       const activeDayTodosRaw = todosData[activeJournalDate] || [];
       const activeDayHabitsRaw = (habitLogs[activeJournalDate] || []).filter(h => !h.deleted);
+      const selectedTodoTemplate = todoTemplates.find(t => t.id === selectedTodoTemplateId) || null;
 
       // NEW: Green ticked habits/todos go to the very bottom automatically.
       const activeDayTodos = [...activeDayTodosRaw].sort((a, b) => {
@@ -5516,9 +5735,58 @@
                    <div className="flex flex-col lg:flex-row gap-4 md:gap-6 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar pb-2">
                      {/* ToDo List (renamed) */}
                     <div className="order-1 flex flex-col flex-1 border border-cyan-500/30 rounded-2xl bg-[#0b1120] overflow-hidden min-h-[300px] lg:min-h-0 shrink-0 lg:shrink">
-                       <div className="bg-cyan-500/10 p-3 border-b border-cyan-500/30 flex justify-between items-center">
-                         <span className="font-bold text-cyan-400 uppercase tracking-widest text-xs">ToDo List</span>
-                       </div>
+                      <div className="bg-cyan-500/10 p-3 border-b border-cyan-500/30 space-y-3">
+                        <div className="flex justify-between items-center gap-3">
+                          <span className="font-bold text-cyan-400 uppercase tracking-widest text-xs">ToDo List</span>
+                          <button
+                            onClick={() => handleSaveTodoTemplate(activeJournalDate)}
+                            className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/30 text-cyan-200 text-[10px] font-black uppercase tracking-widest transition-all"
+                          >
+                            Save Day Template
+                          </button>
+                        </div>
+                        <div className="flex flex-col md:flex-row gap-2">
+                          <select
+                            value={selectedTodoTemplateId}
+                            onChange={e => setSelectedTodoTemplateId(e.target.value)}
+                            className="flex-1 bg-[#05070e] border border-cyan-500/20 rounded-xl px-3 py-2 text-[11px] text-slate-200 font-bold outline-none"
+                          >
+                            {!todoTemplates.length && <option value="">No templates yet</option>}
+                            {todoTemplates.map(template => (
+                              <option key={template.id} value={template.id}>
+                                {template.name} ({Array.isArray(template.todos) ? template.todos.length : 0})
+                              </option>
+                            ))}
+                          </select>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleRestoreTodoTemplate(selectedTodoTemplateId, activeJournalDate, 'append')}
+                              disabled={!selectedTodoTemplateId}
+                              className="px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-400/20 text-emerald-200 text-[10px] font-black uppercase tracking-widest transition-all"
+                            >
+                              Append
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (!selectedTodoTemplateId) return;
+                                if (!confirm(`Replace all todos on ${getDisplayDate(activeJournalDate)} with "${selectedTodoTemplate?.name || 'this template'}"?`)) return;
+                                handleRestoreTodoTemplate(selectedTodoTemplateId, activeJournalDate, 'replace');
+                              }}
+                              disabled={!selectedTodoTemplateId}
+                              className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-amber-400/20 text-amber-200 text-[10px] font-black uppercase tracking-widest transition-all"
+                            >
+                              Replace
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTodoTemplate(selectedTodoTemplateId)}
+                              disabled={!selectedTodoTemplateId}
+                              className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-40 disabled:cursor-not-allowed border border-rose-400/20 text-rose-200 text-[10px] font-black uppercase tracking-widest transition-all"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                          {activeDayTodos.map(todo => {
                            const status = todo.status || (todo.done ? 'green' : 'red');
@@ -6978,6 +7246,22 @@
                       />
                     </div>
                     <div className="flex justify-between items-center gap-3">
+                      {subscriptionDraft.id ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!confirm(`Delete subscription "${subscriptionDraft.name}"?`)) return;
+                            updateSubscriptions(prev => prev.filter(s => s.id !== subscriptionDraft.id));
+                            setShowSubscriptionModal(false);
+                            setSubscriptionDraft({ id: '', name: '', amount: '', paymentDate: formatDateString(new Date()), categoryId: getDefaultSubscriptionCategoryId(), note: '' });
+                            playSound('trash');
+                            showToast('Subscription deleted', 'success');
+                          }}
+                          className="px-5 py-3 text-rose-400 hover:text-rose-300 font-black uppercase tracking-widest text-xs transition-all"
+                        >
+                          Delete
+                        </button>
+                      ) : <span></span>}
                       <button
                         type="button"
                         onClick={() => {
@@ -7303,6 +7587,11 @@
                       {currentStreak} <span className="hidden sm:inline">Streak</span>
                     </span>
                   </div>
+                  <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/40 px-3 py-2 md:px-4 rounded-xl shadow-[0_0_10px_rgba(34,211,238,0.18)] h-[44px]">
+                    <span className="font-black uppercase tracking-wider text-xs md:text-sm text-cyan-300">
+                      Frozen {frozenDaysCount}
+                    </span>
+                  </div>
                   {/* QUICK CAPTURE BUTTON (Shift + T) */}
                   <button
                     onClick={() => { playSound('click'); setShowQuickCapture(true); }}
@@ -7550,6 +7839,7 @@
                                                 playSound('click');
                                                 const newMode = !isFocusMode;
                                                 setIsFocusMode(newMode);
+                                                if (!newMode) setIsScissorMode(false);
                                                 showToast(newMode ? '🔍 Focus Mode ON (today only)' : '🔍 Focus Mode OFF');
                                               }}
                                               className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isFocusMode ? 'border-lime-400 bg-lime-500/20 text-lime-300 shadow-[0_0_10px_rgba(163,230,53,0.4)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
@@ -7557,6 +7847,20 @@
                                             >
                                               <Activity size={16} />
                                             </button>
+                                            {isFocusMode && (
+                                              <button
+                                                onClick={() => {
+                                                  playSound('click');
+                                                  const nextMode = !isScissorMode;
+                                                  setIsScissorMode(nextMode);
+                                                  showToast(nextMode ? 'Cut Mode ON: tap to cycle 30m > 15m > 60m > 30m' : 'Cut Mode OFF');
+                                                }}
+                                                className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 flex items-center justify-center w-full ${isScissorMode ? 'border-rose-400 bg-rose-500/20 text-rose-200 shadow-[0_0_10px_rgba(251,113,133,0.35)]' : 'border-white/10 bg-transparent text-slate-400 hover:bg-white/10'}`}
+                                                title={isScissorMode ? "Cut Mode ON - tap any segment to change size" : "Toggle Cut Mode"}
+                                              >
+                                                <span className="text-[10px] font-black uppercase tracking-widest">Cut</span>
+                                              </button>
+                                            )}
                                             <div className="w-full h-px bg-white/10 my-1"></div>
                                             <button
                                               onClick={() => handleColorSelect('lock')}
@@ -7581,11 +7885,12 @@
                                       {section.hours.map((hour) => {
                                         const dateStr = focusModeDate;
                                         const dayData = allData[dateStr] || {};
-                                        const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
+                                        const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false, merged: false };
                                         const isFrozenDay = !!frozenDays[dateStr];
 
                                         const isSplit1 = cellData.split1;
                                         const isSplit2 = cellData.split2;
+                                        const isMergedCell = !!cellData.merged;
 
                                         const t1Fill = getSegmentFill(cellData.t1);
                                         const t2Fill = getSegmentFill(cellData.t2);
@@ -7593,8 +7898,9 @@
                                         const q2Fill = getSegmentFill(cellData.q2);
                                         const q3Fill = getSegmentFill(cellData.q3);
                                         const q4Fill = getSegmentFill(cellData.q4);
+                                        const boxFill = getSegmentFill(getMergedCellValue(cellData));
 
-                                        const activeColorId = cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2;
+                                        const activeColorId = isMergedCell ? getMergedCellValue(cellData) : (cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2);
                                         const baseActiveId = activeColorId && activeColorId.startsWith('bp_') ? activeColorId.slice(3) : activeColorId;
                                         const glowColorHex = baseActiveId ? categories.find(c => c.id === baseActiveId)?.color : 'transparent';
                                         const cellStyle = activeColorId ? { boxShadow: `0 0 15px ${glowColorHex}20, inset 0 0 10px ${glowColorHex}10` } : {};
@@ -7602,6 +7908,7 @@
                                         const dayDescs = descriptions?.[dateStr]?.[hour] || {};
                                         const hasUpperNote = ['t1', 'q1', 'q2'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
                                         const hasLowerNote = ['t2', 'q3', 'q4'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
+                                        const hasBoxNote = !!String(dayDescs.box || '').trim();
 
                                         return (
                                           <div key={hour} className="flex items-center gap-2">
@@ -7639,7 +7946,7 @@
                                                       <line x1="0" y1="0" x2="50" y2="50" stroke="var(--sticky-bg)" strokeWidth="4" className="pointer-events-none" />
                                                     </>
                                                   ) : (
-                                                    <polygon points="0,100 0,0 100,0" fill={t1Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't1')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 't1' }); return; } handleSplitToggle(dateStr, hour, 'half1', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['t1'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['t1'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                    <polygon points="0,100 0,0 100,0" fill={isMergedCell ? boxFill : t1Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, isMergedCell ? 'box' : 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, isMergedCell ? 'box' : 't1')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: isMergedCell ? 'box' : 't1' }); return; } handleSplitToggle(dateStr, hour, 'half1', e); }} onMouseEnter={(e) => { const noteText = isMergedCell ? (descriptions?.[dateStr]?.[hour]?.['box'] || '') : (descriptions?.[dateStr]?.[hour]?.['t1'] || ''); if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = isMergedCell ? (descriptions?.[dateStr]?.[hour]?.['box'] || '') : (descriptions?.[dateStr]?.[hour]?.['t1'] || ''); if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
                                                   )}
                                                   {isSplit2 ? (
                                                     <>
@@ -7648,12 +7955,13 @@
                                                       <line x1="100" y1="100" x2="50" y2="50" stroke="var(--sticky-bg)" strokeWidth="4" className="pointer-events-none" />
                                                     </>
                                                   ) : (
-                                                    <polygon points="0,100 100,100 100,0" fill={t2Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't2')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 't2' }); return; } handleSplitToggle(dateStr, hour, 'half2', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['t2'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['t2'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                    <polygon points="0,100 100,100 100,0" fill={isMergedCell ? boxFill : t2Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, isMergedCell ? 'box' : 't2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, isMergedCell ? 'box' : 't2')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: isMergedCell ? 'box' : 't2' }); return; } handleSplitToggle(dateStr, hour, 'half2', e); }} onMouseEnter={(e) => { const noteText = isMergedCell ? (descriptions?.[dateStr]?.[hour]?.['box'] || '') : (descriptions?.[dateStr]?.[hour]?.['t2'] || ''); if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = isMergedCell ? (descriptions?.[dateStr]?.[hour]?.['box'] || '') : (descriptions?.[dateStr]?.[hour]?.['t2'] || ''); if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
                                                   )}
-                                                  <line x1="0" y1="100" x2="100" y2="0" stroke="var(--sticky-bg)" strokeWidth="6" className="pointer-events-none" />
+                                                  {!isMergedCell && <line x1="0" y1="100" x2="100" y2="0" stroke="var(--sticky-bg)" strokeWidth="6" className="pointer-events-none" />}
                                                   {keyboardCursor && keyboardCursor.dateStr === dateStr && keyboardCursor.hour === hour && (
                                                     <polygon
                                                       points={{
+                                                        box: '0,0 100,0 100,100 0,100',
                                                         t1: '0,100 0,0 100,0',
                                                         t2: '0,100 100,100 100,0',
                                                         q1: '0,0 100,0 50,50',
@@ -7891,27 +8199,30 @@
                                       </td>
                                       {displayDates.map(dateStr => {
                                         const dayData = allData[dateStr] || {};
-                                        const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false };
+                                        const cellData = dayData[hour] || { t1: null, t2: null, split1: false, split2: false, merged: false };
                                         const isFrozenDay = !!frozenDays[dateStr];
-        
+
                                         const isSplit1 = cellData.split1;
                                         const isSplit2 = cellData.split2;
-        
+                                        const isMergedCell = !!cellData.merged;
+
                                         const t1Fill = getSegmentFill(cellData.t1);
                                         const t2Fill = getSegmentFill(cellData.t2);
                                         const q1Fill = getSegmentFill(cellData.q1);
                                         const q2Fill = getSegmentFill(cellData.q2);
                                         const q3Fill = getSegmentFill(cellData.q3);
                                         const q4Fill = getSegmentFill(cellData.q4);
-        
-                                        const activeColorId = cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2;
+                                        const boxFill = getSegmentFill(getMergedCellValue(cellData));
+
+                                        const activeColorId = isMergedCell ? getMergedCellValue(cellData) : (cellData.q1 || cellData.q2 || cellData.t1 || cellData.q3 || cellData.q4 || cellData.t2);
                                         const baseActiveId = activeColorId && activeColorId.startsWith('bp_') ? activeColorId.slice(3) : activeColorId;
                                         const glowColorHex = baseActiveId ? categories.find(c => c.id === baseActiveId)?.color : 'transparent';
                                         const cellStyle = activeColorId ? { boxShadow: `0 0 15px ${glowColorHex}20, inset 0 0 10px ${glowColorHex}10` } : {};
-                
+
                                         const dayDescs = descriptions?.[dateStr]?.[hour] || {};
                                         const hasUpperNote = ['t1', 'q1', 'q2'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
                                         const hasLowerNote = ['t2', 'q3', 'q4'].some(tid => dayDescs[tid] && dayDescs[tid].trim() !== '');
+                                        const hasBoxNote = !!String(dayDescs.box || '').trim();
         
                                         return (
                                           <td key={`${dateStr}-${hour}`} className="align-middle p-1 md:p-1.5 border-none">
@@ -7943,7 +8254,7 @@
                                                      <line x1="0" y1="0" x2="50" y2="50" stroke="var(--sticky-bg)" strokeWidth="4" className="pointer-events-none" />
                                                    </>
                                                 ) : (
-                                                   <polygon points="0,100 0,0 100,0" fill={t1Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't1')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); const rect = e.currentTarget.getBoundingClientRect(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 't1' }); return; } handleSplitToggle(dateStr, hour, 'half1', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['t1'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['t1'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                   <polygon points="0,100 0,0 100,0" fill={isMergedCell ? boxFill : t1Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, isMergedCell ? 'box' : 't1', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, isMergedCell ? 'box' : 't1')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); const rect = e.currentTarget.getBoundingClientRect(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: isMergedCell ? 'box' : 't1' }); return; } handleSplitToggle(dateStr, hour, 'half1', e); }} onMouseEnter={(e) => { const noteText = isMergedCell ? (descriptions?.[dateStr]?.[hour]?.['box'] || '') : (descriptions?.[dateStr]?.[hour]?.['t1'] || ''); if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = isMergedCell ? (descriptions?.[dateStr]?.[hour]?.['box'] || '') : (descriptions?.[dateStr]?.[hour]?.['t1'] || ''); if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
                                                 )}
                                                 {isSplit2 ? (
                                                    <>
@@ -7952,12 +8263,13 @@
                                                      <line x1="100" y1="100" x2="50" y2="50" stroke="var(--sticky-bg)" strokeWidth="4" className="pointer-events-none" />
                                                    </>
                                                 ) : (
-                                                   <polygon points="0,100 100,100 100,0" fill={t2Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, 't2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, 't2')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); const rect = e.currentTarget.getBoundingClientRect(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: 't2' }); return; } handleSplitToggle(dateStr, hour, 'half2', e); }} onMouseEnter={(e) => { const noteText = descriptions?.[dateStr]?.[hour]?.['t2'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = descriptions?.[dateStr]?.[hour]?.['t2'] || ''; if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
+                                                   <polygon points="0,100 100,100 100,0" fill={isMergedCell ? boxFill : t2Fill} onPointerDown={(e) => { e.preventDefault(); handlePointerDown(dateStr, hour, isMergedCell ? 'box' : 't2', e); }} onPointerEnter={() => handlePointerEnter(dateStr, hour, isMergedCell ? 'box' : 't2')} onContextMenu={(e) => { if (isDescriptionMode) { e.preventDefault(); const rect = e.currentTarget.getBoundingClientRect(); setContextMenu({ x: e.clientX, y: e.clientY, dateStr, hour, triangleId: isMergedCell ? 'box' : 't2' }); return; } handleSplitToggle(dateStr, hour, 'half2', e); }} onMouseEnter={(e) => { const noteText = isMergedCell ? (descriptions?.[dateStr]?.[hour]?.['box'] || '') : (descriptions?.[dateStr]?.[hour]?.['t2'] || ''); if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); } }} onMouseLeave={() => setTooltip(null)} onTouchStart={(e) => { if (isDescriptionMode) return; const noteText = isMergedCell ? (descriptions?.[dateStr]?.[hour]?.['box'] || '') : (descriptions?.[dateStr]?.[hour]?.['t2'] || ''); if (noteText.trim()) { const rect = e.currentTarget.getBoundingClientRect(); setTooltip({ x: rect.right + 8, y: rect.top + rect.height / 2 - 20, text: noteText.trim() }); setTimeout(() => setTooltip(null), 1800); } }} className="cursor-pointer transition-opacity hover:opacity-80" />
                                                 )}
-                                                <line x1="0" y1="100" x2="100" y2="0" stroke="var(--sticky-bg)" strokeWidth="6" className="pointer-events-none" />
+                                                {!isMergedCell && <line x1="0" y1="100" x2="100" y2="0" stroke="var(--sticky-bg)" strokeWidth="6" className="pointer-events-none" />}
                                                 {keyboardCursor && keyboardCursor.dateStr === dateStr && keyboardCursor.hour === hour && (
                                                   <polygon
                                                     points={{
+                                                      box: '0,0 100,0 100,100 0,100',
                                                       t1: '0,100 0,0 100,0',
                                                       t2: '0,100 100,100 100,0',
                                                       q1: '0,0 100,0 50,50',
@@ -8338,9 +8650,24 @@
                             const percent = Math.min(100, Math.round((goal.currentAmount / goal.targetAmount) * 100));
                             return (
                               <div key={goal.id} className="space-y-2 group cursor-pointer" onClick={() => { setSavingsGoalDraft(goal); setShowSavingsGoalModal(true); }}>
-                                <div className="flex justify-between items-center text-[10px] font-bold uppercase">
+                                <div className="flex justify-between items-center text-[10px] font-bold uppercase gap-2">
                                   <span className="text-slate-200 group-hover:text-cyan-400 transition-colors">{goal.name}</span>
-                                  <span className="text-cyan-400">{percent}%</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-cyan-400">{percent}%</span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (!confirm(`Delete goal "${goal.name}"?`)) return;
+                                        updateSavingsGoals(prev => prev.filter(g => g.id !== goal.id));
+                                        playSound('trash');
+                                        showToast('Savings goal deleted', 'success');
+                                      }}
+                                      className="text-rose-400/80 hover:text-rose-300 transition-colors"
+                                      title="Delete goal"
+                                    >
+                                      <Trash2 size={14}/>
+                                    </button>
+                                  </div>
                                 </div>
                                 <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
                                   <div className="h-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.6)] transition-all duration-1000" style={{ width: `${percent}%` }}></div>
@@ -8465,6 +8792,17 @@
                                   className="text-slate-500 hover:text-cyan-400"
                                   title="Edit subscription"
                                 ><Info size={14}/></button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!confirm(`Delete subscription "${sub.name}"?`)) return;
+                                    updateSubscriptions(prev => prev.filter(s => s.id !== sub.id));
+                                    playSound('trash');
+                                    showToast('Subscription deleted', 'success');
+                                  }}
+                                  className="text-slate-500 hover:text-rose-400"
+                                  title="Delete subscription"
+                                ><Trash2 size={14}/></button>
                                 <button onClick={(e) => { e.stopPropagation(); if (confirm(`Mark ${sub.name} as paid?`)) {
                                     const catId = walletCategories.find(c => c.id === sub.categoryId)?.id || walletCategories.find(c => c.name.toLowerCase() === 'food')?.id || walletCategories.find(c => c.type === 'expense')?.id || 'others';
                                     addWalletTransaction('expense', catId, sub.amount, `Subscription: ${sub.name}`, todayStr, activeWalletId);
@@ -9127,7 +9465,7 @@
                           <h3 className="font-black uppercase tracking-widest text-emerald-400 text-sm">Automated File Backup</h3>
                         </div>
                         <p className="text-xs text-slate-300 leading-relaxed">
-                          For maximum security, you can link a local folder. A full data backup will be written automatically whenever you complete a 6-hour block or finish your day. Use Download Data to download the full app snapshot, Upload Data to restore data, or Link Backup Folder for rolling auto backups.
+                          For maximum security, you can link a local folder. A fresh JSON backup will be written automatically each time any 6-hour block becomes fully filled, and Trackerbox will keep the newest 5 backups by replacing the oldest one. Use Download Data to download the full app snapshot or Upload Data to restore it.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3 mt-auto">
                           <button
