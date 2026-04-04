@@ -584,6 +584,44 @@
     .top-chip:active {
       transform: translateY(0) scale(0.98);
     }
+    @media (max-width: 767px) {
+      header.sticky .tb-header-shell {
+        padding: 0.7rem 0.8rem;
+        gap: 0.75rem;
+      }
+      header.sticky .tb-header-brand {
+        gap: 0.7rem;
+      }
+      header.sticky .tb-header-actions {
+        gap: 0.5rem;
+        margin-top: 0;
+      }
+      header.sticky .tb-header-iconbtn,
+      header.sticky .app-shortcut {
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 14px !important;
+      }
+      header.sticky .tb-header-logo {
+        width: 40px;
+        height: 40px;
+      }
+      header.sticky .tb-header-title {
+        font-size: 1.6rem;
+      }
+      header.sticky .tb-header-credit {
+        font-size: 9px;
+        margin-top: 0.1rem;
+      }
+      header.sticky .top-chip {
+        min-height: 40px;
+        padding: 0.45rem 0.65rem !important;
+        border-radius: 14px !important;
+      }
+      header.sticky .tb-header-icon-group {
+        gap: 0.4rem;
+      }
+    }
     .neon-text { text-shadow: 0 0 15px currentColor; }
     @keyframes heartbeat {
       0%, 100% { transform: scale(1); }
@@ -992,7 +1030,7 @@
       wallet: 'entry',
       analytics: 'heatmap',
       graph: 'graph',
-      journal: 'editor',
+      journal: 'todos',
       modules: 'categories',
       storage: 'backup'
     });
@@ -1417,6 +1455,7 @@
       });
       const [showNameSetupModal, setShowNameSetupModal] = useState(() => !((window.__trackerboxInitialDisplayName || '').trim()));
       const trimmedUserDisplayName = (settingsDraft.userDisplayName || '').trim().replace(/\s+/g, ' ');
+      const [isMobileViewport, setIsMobileViewport] = useState(() => getIsMobileViewport());
       const mobilePaletteLayout = settingsDraft.mobilePaletteLayout === 'vertical' ? 'vertical' : 'horizontal';
       const showHeaderQuickShortcut = settingsDraft.showHeaderQuickShortcut !== false;
       const showHeaderWalletShortcut = settingsDraft.showHeaderWalletShortcut !== false;
@@ -1578,7 +1617,7 @@
       };
       const renderSectionIconTabs = (sectionId, tabs, className = '') => (
         <div className={`mb-6 overflow-x-auto custom-scrollbar ${className}`.trim()}>
-          <div className="inline-flex min-w-full justify-start md:justify-center gap-2 rounded-[20px] border border-white/10 bg-[#05070e]/55 p-2 backdrop-blur-md">
+          <div className="flex w-max min-w-full mx-auto justify-center gap-2 rounded-[20px] border border-white/10 bg-[#05070e]/55 p-2 backdrop-blur-md">
             {tabs.map(tab => {
               const Icon = tab.icon;
               const isActive = sectionTabs[sectionId] === tab.id;
@@ -1657,17 +1696,26 @@
            const header = document.querySelector('header.sticky');
            const headerHeight = header ? header.offsetHeight : 80;
            const top = el.getBoundingClientRect().top + window.scrollY - headerHeight - 12;
-           window.scrollTo({ top, behavior: 'smooth' });
+          window.scrollTo({ top, behavior: 'smooth' });
          }, 10);
       };
-      const scrollElementToViewportCenter = (elementId, delay = 80) => {
-         window.setTimeout(() => {
+      const scrollElementToViewportCenter = (elementId, delay = 80, attempts = 8) => {
+         const tryScroll = (remaining) => {
            const el = document.getElementById(elementId);
-           if (!el) return;
-           const rect = el.getBoundingClientRect();
-           const targetTop = rect.top + window.scrollY - Math.max(0, (window.innerHeight - rect.height) / 2);
-           window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
-         }, delay);
+           if (!el) {
+             if (remaining > 0) window.setTimeout(() => tryScroll(remaining - 1), 90);
+             return;
+           }
+           try {
+             el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+           } catch (e) {}
+           window.setTimeout(() => {
+             const rect = el.getBoundingClientRect();
+             const targetTop = rect.top + window.scrollY - Math.max(0, (window.innerHeight - rect.height) / 2);
+             window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+           }, 40);
+         };
+         window.setTimeout(() => tryScroll(attempts), delay);
       };
       const toggleEpoch = (id) => {
         playSound('click');
@@ -1684,8 +1732,33 @@
         try { localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settingsDraft)); } catch (e) {}
       }, [settingsDraft]);
       useEffect(() => {
+        const handleViewportChange = () => setIsMobileViewport(getIsMobileViewport());
+        handleViewportChange();
+        try {
+          const mq = window.matchMedia('(max-width: 767px)');
+          if (mq.addEventListener) {
+            mq.addEventListener('change', handleViewportChange);
+            return () => mq.removeEventListener('change', handleViewportChange);
+          }
+          if (mq.addListener) {
+            mq.addListener(handleViewportChange);
+            return () => mq.removeListener(handleViewportChange);
+          }
+        } catch (e) {}
+        window.addEventListener('resize', handleViewportChange);
+        return () => window.removeEventListener('resize', handleViewportChange);
+      }, []);
+      useEffect(() => {
         try { localStorage.setItem(LOCAL_SECTION_TAB_STATE_KEY, JSON.stringify(sectionTabs)); } catch (e) {}
       }, [sectionTabs]);
+      useEffect(() => {
+        if (sectionTabs.modules === 'categories' || sectionTabs.modules === 'habits') return;
+        setSectionTabs(prev => ({ ...prev, modules: 'categories' }));
+      }, [sectionTabs.modules]);
+      useEffect(() => {
+        if (sectionTabs.journal === 'todos' || sectionTabs.journal === 'journal' || sectionTabs.journal === 'habits') return;
+        setSectionTabs(prev => ({ ...prev, journal: prev.journal === 'editor' ? 'journal' : 'todos' }));
+      }, [sectionTabs.journal]);
       useEffect(() => {
         writeResumeState({
           activeMenuSection,
@@ -3336,6 +3409,7 @@
       const [journalSavePulseTick, setJournalSavePulseTick] = useState(0);
       const [transientJournalMarkers, setTransientJournalMarkers] = useState({ captain: null, module: null });
       const [todoInput, setTodoInput] = useState('');
+      const [journalModuleTodoInput, setJournalModuleTodoInput] = useState('');
       const [todoSubtaskDrafts, setTodoSubtaskDrafts] = useState({});
       const [dragTodoId, setDragTodoId] = useState(null);
       const [dragHabitId, setDragHabitId] = useState(null);
@@ -3617,6 +3691,12 @@
           setCollapsedEpochs(prev => (prev[section.id] ? { ...prev, [section.id]: false } : prev));
         }
       }, []);
+      const jumpToWalletVaultPanel = useCallback((panelId) => {
+        setSectionTab('wallet', 'vault');
+        openOnlySection('wallet');
+        scrollToElementWithStickyOffset('section-wallet');
+        scrollElementToViewportCenter(panelId, 220, 10);
+      }, [openOnlySection, scrollToElementWithStickyOffset, scrollElementToViewportCenter]);
       const getFirstNonColoredTriangle = useCallback((dateStr) => {
         const dayData = allData[dateStr] || {};
         for (let hour = 0; hour < 24; hour++) {
@@ -3631,6 +3711,31 @@
         const fallbackCell = dayData[0] || { split1: false, split2: false, merged: false };
         return { dateStr, hour: 0, triangleId: getActiveTrianglesForHour(fallbackCell)[0] || 't1' };
       }, [allData, getActiveTrianglesForHour]);
+      const jumpToTrackerHour = useCallback((dateStr) => {
+        const targetDate = dateStr || todayStr;
+        const targetDateObj = new Date(`${targetDate}T00:00:00`);
+        const targetMonth = `${targetDateObj.getFullYear()}-${String(targetDateObj.getMonth() + 1).padStart(2, '0')}`;
+        const targetWeeks = getWeeksInMonth(targetMonth);
+        const rawWeekIndex = targetWeeks.findIndex(week => week.dates.includes(targetDate));
+        const targetWeekIndex = rawWeekIndex >= 0 ? rawWeekIndex : 0;
+        setSelectedMonthStr(targetMonth);
+        setSelectedWeekIndex(targetWeekIndex);
+        setFocusModeDate(targetDate);
+        openOnlySection('tracker');
+        const first = getFirstNonColoredTriangle(targetDate);
+        if (!first) {
+          requestAnimationFrame(() => scrollToElementWithStickyOffset('section-tracker'));
+          return;
+        }
+        const targetSection = SECTIONS.find(section => section.hours.includes(first.hour));
+        if (targetSection) {
+          setCollapsedEpochs(prev => (prev[targetSection.id] ? { ...prev, [targetSection.id]: false } : prev));
+          if (isMobileViewport && isFocusMode) setSectionTab('trackerFocus', targetSection.id);
+        }
+        setKeyboardCursor(first);
+        scrollToElementWithStickyOffset('section-tracker');
+        scrollElementToViewportCenter(`kbdcell-${targetDate}-${first.hour}`, isFocusMode ? 260 : 220, 10);
+      }, [todayStr, openOnlySection, getFirstNonColoredTriangle, scrollToElementWithStickyOffset, scrollElementToViewportCenter, isMobileViewport, isFocusMode]);
       const moveKeyboardCursor = useCallback((direction) => {
         const dates = currentWeekDates.length > 0 ? currentWeekDates : [todayStr];
         if (!keyboardCursor) {
@@ -3908,7 +4013,8 @@
       const activeFocusSection = SECTIONS.find(section => section.id === sectionTabs.trackerFocus) || SECTIONS[0];
       const walletSectionTab = sectionTabs.wallet || 'entry';
       const analyticsSectionTab = sectionTabs.analytics || 'heatmap';
-      const modulesSectionTab = sectionTabs.modules || 'categories';
+      const journalSectionTab = sectionTabs.journal === 'journal' || sectionTabs.journal === 'habits' ? sectionTabs.journal : 'todos';
+      const modulesSectionTab = sectionTabs.modules === 'habits' ? 'habits' : 'categories';
       const storageSectionTab = sectionTabs.storage || 'backup';
       const habitZoneDates = useMemo(() => {
         if (habitZoneMode === 'week') return habitZoneAvailableWeeks[habitZoneWeekIndex]?.dates || [];
@@ -3942,20 +4048,23 @@
         if (!day) return null;
         return day.status || 'red';
       }, [habitLogs]);
-      const moveTodoInActiveDay = useCallback((sourceId, targetId) => {
-        if (!activeJournalDate || !sourceId || !targetId || sourceId === targetId) return;
+      const moveTodoInDay = useCallback((dateStr, sourceId, targetId) => {
+        if (!dateStr || !sourceId || !targetId || sourceId === targetId) return;
         setTodosData(prev => {
-          const day = [...(prev[activeJournalDate] || [])];
+          const day = [...(prev[dateStr] || [])];
           const from = day.findIndex(t => t.id === sourceId);
           const to = day.findIndex(t => t.id === targetId);
           if (from === -1 || to === -1) return prev;
           const [item] = day.splice(from, 1);
           day.splice(to, 0, item);
-          const updated = { ...prev, [activeJournalDate]: day };
+          const updated = { ...prev, [dateStr]: day };
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
           return updated;
         });
-      }, [activeJournalDate]);
+      }, []);
+      const moveTodoInActiveDay = useCallback((sourceId, targetId) => {
+        moveTodoInDay(activeJournalDate, sourceId, targetId);
+      }, [activeJournalDate, moveTodoInDay]);
       const moveHabitConfig = useCallback((sourceId, targetId) => {
         if (!sourceId || !targetId || sourceId === targetId) return;
         setHabitsConfig(prev => {
@@ -4033,51 +4142,60 @@
         localStorage.setItem(LOCAL_MUTE_KEY, JSON.stringify(isMuted));
         isMutedGlobal = isMuted;
       }, [isMuted]);
+      const syncHabitLogsForDate = useCallback((dateStr) => {
+        if (!dateStr) return;
+        const dateObj = new Date(dateStr);
+        const dayOfWeek = dateObj.getDay();
+        const applicableHabits = habitsConfig.filter(h => h.days.includes(dayOfWeek));
+        const currentTodayStr = formatDateString(new Date());
+        const isPast = dateStr < currentTodayStr;
+        setHabitLogs(prev => {
+          const currentLogs = prev[dateStr] || [];
+          let hasChanges = false;
+          let newLogs = [...currentLogs];
+          if (isPast && currentLogs.length > 0) {
+            newLogs = currentLogs.map(log => {
+              const conf = habitsConfig.find(h => h.id === log.id);
+              if (conf && conf.name !== log.name) {
+                hasChanges = true;
+                return { ...log, name: conf.name };
+              }
+              return log;
+            });
+          } else {
+            newLogs = applicableHabits.map(h => {
+              const existing = currentLogs.find(log => log.id === h.id);
+              if (existing) {
+                if (existing.name !== h.name) hasChanges = true;
+                return { ...existing, name: h.name };
+              }
+              hasChanges = true;
+              return { id: h.id, name: h.name, status: 'red', remark: '', progress: 0 };
+            });
+            if (currentLogs.length !== newLogs.length) hasChanges = true;
+          }
+          if (hasChanges) {
+            const updated = { ...prev, [dateStr]: newLogs };
+            localStorage.setItem(LOCAL_HABIT_LOGS_KEY, JSON.stringify(updated));
+            return updated;
+          }
+          return prev;
+        });
+      }, [habitsConfig]);
       // --- Robust Habit Synchronization Engine ---
       useEffect(() => {
-        if (activeJournalDate) {
-          const dateObj = new Date(activeJournalDate);
-          const dayOfWeek = dateObj.getDay();
-          const applicableHabits = habitsConfig.filter(h => h.days.includes(dayOfWeek));
-          const currentTodayStr = formatDateString(new Date());
-          const isPast = activeJournalDate < currentTodayStr;
-          setHabitLogs(prev => {
-            const currentLogs = prev[activeJournalDate] || [];
-            let hasChanges = false;
-            let newLogs = [...currentLogs];
-            if (isPast && currentLogs.length > 0) {
-               newLogs = currentLogs.map(log => {
-                  const conf = habitsConfig.find(h => h.id === log.id);
-                  if (conf && conf.name !== log.name) {
-                     hasChanges = true;
-                     return { ...log, name: conf.name };
-                  }
-                  return log;
-               });
-            } else {
-               newLogs = applicableHabits.map(h => {
-                 const existing = currentLogs.find(log => log.id === h.id);
-                 if (existing) {
-                   if (existing.name !== h.name) hasChanges = true;
-                   return { ...existing, name: h.name };
-                 }
-                 hasChanges = true;
-                 return { id: h.id, name: h.name, status: 'red', remark: '', progress: 0 };
-               });
-               if (currentLogs.length !== newLogs.length) hasChanges = true;
-            }
-            if (hasChanges) {
-              const updated = { ...prev, [activeJournalDate] : newLogs };
-              localStorage.setItem(LOCAL_HABIT_LOGS_KEY, JSON.stringify(updated));
-              return updated;
-            }
-            return prev;
-          });
-        }
-      }, [activeJournalDate, habitsConfig]);
+        syncHabitLogsForDate(activeJournalDate);
+      }, [activeJournalDate, syncHabitLogsForDate]);
+      useEffect(() => {
+        if (journalModuleDate === activeJournalDate) return;
+        syncHabitLogsForDate(journalModuleDate);
+      }, [journalModuleDate, activeJournalDate, syncHabitLogsForDate]);
       useEffect(() => {
         if (activeJournalDate) setTodoInput('');
       }, [activeJournalDate]);
+      useEffect(() => {
+        if (journalModuleDate) setJournalModuleTodoInput('');
+      }, [journalModuleDate]);
       // NEW: Auto-focus description textarea
       useEffect(() => {
         if (editingDescription && descriptionTextareaRef.current) {
@@ -5284,26 +5402,29 @@
       };
       // --- NEW: Sweep Completed (now works on BOTH todos AND habits) ---
       // --- NEW: Migrate Unfinished Tasks from yesterday (now from top of Captain's Log â€“ affects ToDo List) ---
-      const handleMigrateUnfinishedTasks = () => {
-        if (!activeJournalDate) return;
+      const handleMigrateUnfinishedTasksForDate = useCallback((dateStr) => {
+        if (!dateStr) return;
         playSound('click');
-        const yesterdayDate = new Date(activeJournalDate);
+        const yesterdayDate = new Date(dateStr);
         yesterdayDate.setDate(yesterdayDate.getDate() - 1);
         const yestStr = formatDateString(yesterdayDate);
         const yestTodos = todosData[yestStr] || [];
         const unfinished = yestTodos.filter(t => t.status === 'red' || t.status === 'yellow');
         if (unfinished.length === 0) return;
         setTodosData(prev => {
-          const todayTodos = [...(prev[activeJournalDate] || [])];
+          const todayTodos = [...(prev[dateStr] || [])];
           const migrated = unfinished.map(t => ({
             ...t,
             id: 'mig_' + Date.now() + Math.random().toString(36)
           }));
-          const newData = { ...prev, [activeJournalDate]: [...todayTodos, ...migrated] };
+          const newData = { ...prev, [dateStr]: [...todayTodos, ...migrated] };
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
         showToast('âœ… Unfinished tasks migrated');
+      }, [todosData, showToast]);
+      const handleMigrateUnfinishedTasks = () => {
+        handleMigrateUnfinishedTasksForDate(activeJournalDate);
       };
       // --- Habit & Sys Config Handlers ---
       const addHabitConfig = () => {
@@ -7321,17 +7442,7 @@
             title: `You have ${formattedUnloggedHours} unlogged hour${roundedUnloggedHours === 1 ? '' : 's'} today`,
             body: 'A few grid fills will bring today back into focus.',
             actionLabel: 'Open Grid',
-            onClick: () => {
-              openOnlySection('tracker');
-              const first = getFirstNonColoredTriangle(todayStr);
-              if (first) {
-                expandSectionForHour(first.hour);
-                setKeyboardCursor(first);
-                scrollElementToViewportCenter(`kbdcell-${todayStr}-${first.hour}`, 180);
-              } else {
-                requestAnimationFrame(() => scrollToElementWithStickyOffset('section-tracker'));
-              }
-            }
+            onClick: () => jumpToTrackerHour(todayStr)
           });
         }
 
@@ -7367,23 +7478,7 @@
             title: dueTodaySubscriptions.length === 1 ? `${firstName} is due today` : `${dueTodaySubscriptions.length} subscriptions are due today`,
             body: dueTodaySubscriptions.length === 1 ? 'Log it once and keep the wallet timeline clean.' : 'Open Wallet to log or review your recurring payments.',
             actionLabel: 'Open Wallet',
-            onClick: () => {
-              openOnlySection('wallet');
-              setWalletAmountFocusTick(t => t + 1);
-              scrollElementToViewportCenter('wallet-subscriptions-panel', 140);
-              if (firstDueSubscription && dueTodaySubscriptions.length === 1) {
-                setSubscriptionDraft({
-                  id: firstDueSubscription.id,
-                  name: firstDueSubscription.name,
-                  amount: firstDueSubscription.amount,
-                  paymentDate: firstDueSubscription.paymentDate || todayStr,
-                  categoryId: firstDueSubscription.categoryId || getDefaultSubscriptionCategoryId(),
-                  note: firstDueSubscription.note || '',
-                  lastPaidOn: firstDueSubscription.lastPaidOn || ''
-                });
-                setShowSubscriptionModal(true);
-              }
-            }
+            onClick: () => jumpToWalletVaultPanel('wallet-subscriptions-panel')
           });
         }
         customSoftReminders.forEach(reminder => {
@@ -7412,7 +7507,7 @@
         return reminders
           .filter(reminder => !dismissedReminderKeys[reminder.reminderKey])
           .slice(0, 6);
-      }, [allData, todayStr, todosData, subscriptions, playSound, customSoftReminders, dismissedReminderKeys, openOnlySection, scrollToElementWithStickyOffset, scrollElementToViewportCenter, getFirstNonColoredTriangle, expandSectionForHour, getDefaultSubscriptionCategoryId]);
+      }, [allData, todayStr, todosData, subscriptions, playSound, customSoftReminders, dismissedReminderKeys, jumpToTrackerHour, jumpToWalletVaultPanel]);
       const openLinkedRecord = useCallback((record) => {
         if (!record) return;
         playSound('click');
@@ -7466,6 +7561,26 @@
       const activeCompletedTasks = activeDayTodos.reduce((sum, todo) => sum + getTodoCompletionFraction(todo), 0) + activeDayHabits.reduce((sum, habit) => sum + getHabitCompletionFraction(habit), 0);
       const activeCompletionRate = activeTotalTasks > 0 ? (activeCompletedTasks / activeTotalTasks) * 100 : 0;
       const activeCompletedTasksDisplay = Number.isInteger(activeCompletedTasks) ? activeCompletedTasks : activeCompletedTasks.toFixed(1);
+      const journalModuleDayTodosRaw = todosData[journalModuleDate] || [];
+      const journalModuleDayHabitsRaw = (habitLogs[journalModuleDate] || []).filter(h => !h.deleted);
+      const journalModuleDayTodos = [...journalModuleDayTodosRaw].sort((a, b) => {
+        const statusA = a.status || (a.done ? 'green' : 'red');
+        const statusB = b.status || (b.done ? 'green' : 'red');
+        if (statusA === 'green' && statusB !== 'green') return 1;
+        if (statusA !== 'green' && statusB === 'green') return -1;
+        return 0;
+      });
+      const journalModuleDayHabits = [...journalModuleDayHabitsRaw].sort((a, b) => {
+        const statusA = a.status || 'red';
+        const statusB = b.status || 'red';
+        if (statusA === 'green' && statusB !== 'green') return 1;
+        if (statusA !== 'green' && statusB === 'green') return -1;
+        return 0;
+      });
+      const journalModuleTotalTasks = journalModuleDayTodos.length + journalModuleDayHabits.length;
+      const journalModuleCompletedTasks = journalModuleDayTodos.reduce((sum, todo) => sum + getTodoCompletionFraction(todo), 0) + journalModuleDayHabits.reduce((sum, habit) => sum + getHabitCompletionFraction(habit), 0);
+      const journalModuleCompletionRate = journalModuleTotalTasks > 0 ? (journalModuleCompletedTasks / journalModuleTotalTasks) * 100 : 0;
+      const journalModuleCompletedDisplay = Number.isInteger(journalModuleCompletedTasks) ? journalModuleCompletedTasks : journalModuleCompletedTasks.toFixed(1);
       const canUniversalUndo = entityPast.length > 0 || past.length > 0;
       const canUniversalRedo = entityFuture.length > 0 || future.length > 0;
       const bottomBarActionChoices = [
@@ -7646,6 +7761,46 @@
         } else if (hLog.status === 'yellow' && hLog.progress !== undefined) {
           const hConf = habitsConfig.find(hc => hc.id === hLog.id);
           if (hConf) activeDayPoints += (parseFloat(hConf.points) || 0) * (hLog.progress / 100);
+        }
+      });
+      const journalModuleDayData = allData[journalModuleDate] || {};
+      let journalModuleTrackedHours = 0;
+      let journalModulePoints = 0;
+      const journalModuleCategoryHours = categories.reduce((acc, cat) => {
+        acc[cat.id] = 0;
+        return acc;
+      }, {});
+      Object.values(journalModuleDayData).forEach(h => {
+        const processSeg = (id, dur) => {
+          if (id && !id.startsWith('bp_')) {
+            journalModuleTrackedHours += dur;
+            const cat = categories.find(c => c.id === id);
+            if (cat) {
+              journalModulePoints += (parseFloat(cat.pointsPerHour) || 0) * dur;
+              journalModuleCategoryHours[cat.id] += dur;
+            }
+          }
+        };
+        if (h.split1) {
+          processSeg(h.q1, 0.25);
+          processSeg(h.q2, 0.25);
+        } else {
+          processSeg(h.t1, 0.5);
+        }
+        if (h.split2) {
+          processSeg(h.q3, 0.25);
+          processSeg(h.q4, 0.25);
+        } else {
+          processSeg(h.t2, 0.5);
+        }
+      });
+      journalModuleDayHabits.forEach(hLog => {
+        if (hLog.status === 'green') {
+          const hConf = habitsConfig.find(hc => hc.id === hLog.id);
+          if (hConf) journalModulePoints += (parseFloat(hConf.points) || 0);
+        } else if (hLog.status === 'yellow' && hLog.progress !== undefined) {
+          const hConf = habitsConfig.find(hc => hc.id === hLog.id);
+          if (hConf) journalModulePoints += (parseFloat(hConf.points) || 0) * (hLog.progress / 100);
         }
       });
       // NEW: Days since last export for backup reminder
@@ -10563,38 +10718,38 @@
 
             {/* Header */}
             <header className="glass-panel sticky top-0 z-50 border-b border-white/10 rounded-none shadow-none">
-              <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="tb-header-shell max-w-[1400px] mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 {/* Logo Section */}
-                <div className="flex items-center gap-4 min-w-0">
+                <div className="tb-header-brand flex items-center gap-4 min-w-0">
                   <button
                     onClick={() => {
                       playSound('click');
                       setShowAppMenu(true);
                     }}
-                    className="w-11 h-11 rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 transition-all shrink-0"
+                    className="tb-header-iconbtn w-11 h-11 rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 transition-all shrink-0"
                     title="Open app menu"
                   >
                     <Menu3 size={20} className="mx-auto" />
                   </button>
                   <div className="relative flex items-center justify-center shrink-0">
-                    <img src="./icon-5125.png" alt="Trackerbox Icon" className="w-12 h-12 md:w-14 md:h-14 rounded-lg" />
+                    <img src="./icon-5125.png" alt="Trackerbox Icon" className="tb-header-logo w-12 h-12 md:w-14 md:h-14 rounded-lg" />
                   </div>
                   <div className="flex flex-col min-w-0">
-                    <h1 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tight uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] leading-none truncate whitespace-nowrap">
+                    <h1 className="tb-header-title text-2xl sm:text-3xl md:text-4xl font-black tracking-tight uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] leading-none truncate whitespace-nowrap">
                       Trackerbox<sup className="text-lg font-black ml-1 text-cyan-400 drop-shadow-none">(C)</sup>
                     </h1>
                     <a
                       href="https://anoysarkar.github.io/AnoyProjects/"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[10px] md:text-xs text-cyan-400/80 font-bold tracking-widest uppercase mt-1 truncate whitespace-nowrap hover:text-cyan-300 hover:underline transition-colors"
+                      className="tb-header-credit text-[10px] md:text-xs text-cyan-400/80 font-bold tracking-widest uppercase mt-1 truncate whitespace-nowrap hover:text-cyan-300 hover:underline transition-colors"
                     >
                       Designed And Created by Avijit Sarkar
                     </a>
                   </div>
                 </div>
                 {/* Main Toolbar & Stats â€” + QUICK CAPTURE NOW INTEGRATED HERE */}
-                <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 mt-2 md:mt-0">
+                <div className="tb-header-actions flex flex-wrap items-center justify-start md:justify-end gap-3 mt-2 md:mt-0">
                   {/* Gamification Display */}
                   <div className="top-chip flex items-center bg-[#0b1120] border border-white/10 rounded-2xl overflow-hidden shadow-[0_0_10px_rgba(0,0,0,0.5)] h-[44px]">
                     <div className="bg-gradient-to-r from-purple-500/20 to-transparent px-3 py-2 border-r border-white/10 flex items-center justify-center text-purple-400" title="Current Rank">
@@ -10705,7 +10860,7 @@
                       <CalendarIcon size={20} />
                     </button>
                   )}
-                  <div className="flex gap-2">
+                  <div className="tb-header-icon-group flex gap-2">
                     <button
                       onClick={handleUniversalUndo}
                       disabled={!canUniversalUndo}
@@ -11003,14 +11158,22 @@
                             </div>
                             <div className="flex items-start gap-3 md:gap-4">
                               <div className="flex-1 min-w-0">
-                            {renderSectionIconTabs('trackerFocus', SECTIONS.map(section => ({
-                              id: section.id,
-                              label: section.label,
-                              icon: section.icon,
-                              activeClassName: 'border-lime-400/60 bg-lime-500/15 text-lime-200 shadow-[0_0_16px_rgba(163,230,53,0.18)]'
-                            })), 'mb-4 md:mb-5')}
-                            <div className="grid grid-cols-1 gap-4 md:gap-5">
-                              {[activeFocusSection].map((section) => (
+                            {isMobileViewport && renderSectionIconTabs('trackerFocus', [
+                              {
+                                id: 'all',
+                                label: 'Show All',
+                                icon: Menu3,
+                                activeClassName: 'border-lime-400/60 bg-lime-500/15 text-lime-200 shadow-[0_0_16px_rgba(163,230,53,0.18)]'
+                              },
+                              ...SECTIONS.map(section => ({
+                                id: section.id,
+                                label: section.label,
+                                icon: section.icon,
+                                activeClassName: 'border-lime-400/60 bg-lime-500/15 text-lime-200 shadow-[0_0_16px_rgba(163,230,53,0.18)]'
+                              }))
+                            ], 'mb-4 md:mb-5')}
+                            <div className={`grid ${isMobileViewport ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4'} gap-4 md:gap-5`}>
+                              {((isMobileViewport && sectionTabs.trackerFocus !== 'all') ? [activeFocusSection] : SECTIONS).map((section) => (
                                 <div id={`tb-section-${section.id}`} key={section.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm">
                                   <button
                                     onClick={() => toggleEpoch(section.id)}
@@ -11677,7 +11840,16 @@
                       <div className={`order-4 lg:order-4 ${walletSectionTab === 'breakdown' ? 'lg:col-span-12' : 'hidden'} space-y-6`}>
                         <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
                           <h3 className="font-bold text-purple-400 uppercase tracking-widest text-xs mb-5 border-b border-purple-500/30 pb-3">Monthly Breakdown</h3>
-                          <WalletMonthlyStats transactions={walletTransactions} categories={walletCategories} currency={walletCurrency} walletId={activeWalletId} />
+                          <WalletMonthlyStats
+                            transactions={walletTransactions}
+                            categories={walletCategories}
+                            currency={walletCurrency}
+                            walletId={activeWalletId}
+                            onOpenBudgetManager={() => {
+                              setShowWalletCategoriesManager(true);
+                              playSound('click');
+                            }}
+                          />
                         </div>
                       </div>
                     </div>
@@ -11761,7 +11933,7 @@
                     {/* NEW: Extra Wallet Modules */}
                     <div className={walletSectionTab === 'vault' ? 'mt-2 grid grid-cols-1 lg:grid-cols-3 gap-6' : 'hidden'}>
                       {/* Savings Goals */}
-                      <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
+                      <div id="wallet-debts-panel" className="bg-white/5 border border-white/10 rounded-3xl p-6">
                         <div className="flex justify-between items-center mb-5 border-b border-cyan-500/30 pb-3">
                           <h3 className="font-bold text-cyan-400 uppercase tracking-widest text-xs">Savings Goals</h3>
                           <button onClick={() => {
@@ -12302,65 +12474,414 @@
                 {sectionsOpen.journal && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
                     {renderSectionIconTabs('journal', [
-                      { id: 'editor', label: 'Journal Editor', icon: FileText, activeClassName: 'border-amber-400/60 bg-amber-500/15 text-amber-200 shadow-[0_0_16px_rgba(245,158,11,0.18)]' }
+                      { id: 'todos', label: 'ToDo List', icon: CheckSquare, activeClassName: 'border-cyan-400/60 bg-cyan-500/15 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.18)]' },
+                      { id: 'journal', label: 'Journal Editor', icon: FileText, activeClassName: 'border-amber-400/60 bg-amber-500/15 text-amber-200 shadow-[0_0_16px_rgba(245,158,11,0.18)]' },
+                      { id: 'habits', label: 'Habit List', icon: CalendarIcon, activeClassName: 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.18)]' }
                     ])}
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                       <div className="flex items-center gap-3">
                         <span className="text-xs font-bold text-amber-300 uppercase tracking-widest">TARGET DAY</span>
+                        <button
+                          onClick={() => {
+                            playSound('click');
+                            const prevDate = new Date(journalModuleDate);
+                            prevDate.setDate(prevDate.getDate() - 1);
+                            setJournalModuleDate(formatDateString(prevDate));
+                          }}
+                          className="px-2 py-1 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-black transition-all"
+                          title="Previous day"
+                        >
+                          &lt;
+                        </button>
                         <input
                           type="date"
                           value={journalModuleDate}
                           onChange={(e) => setJournalModuleDate(e.target.value)}
                           className="bg-[#0b1120] border border-amber-400/30 text-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-amber-400"
                         />
-                      </div>
-                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => toggleJournalStar(journalModuleDate)}
-                          className={`px-3 py-2 border rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-2 ${journalStars?.[journalModuleDate] ? 'bg-amber-500/15 border-amber-400/40 text-amber-200' : 'bg-white/5 hover:bg-white/10 border-white/10'}`}
-                          title="Star this journal entry"
+                          onClick={() => {
+                            playSound('click');
+                            const nextDate = new Date(journalModuleDate);
+                            nextDate.setDate(nextDate.getDate() + 1);
+                            setJournalModuleDate(formatDateString(nextDate));
+                          }}
+                          className="px-2 py-1 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-black transition-all"
+                          title="Next day"
                         >
-                          <Star size={14} className={journalStars?.[journalModuleDate] ? 'fill-current' : ''} />
-                          <span>Star</span>
+                          &gt;
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => openWeeklyReviewForDate(journalModuleDate)}
+                          className="text-[10px] px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-2xl font-bold uppercase tracking-widest transition-all flex items-center gap-2 border border-amber-400/20"
+                          title="Open weekly review for this date"
+                        >
+                          <BarChart3 size={13} />
+                          <span>Weekly Review</span>
                         </button>
                         <button
-                          onClick={() => insertTimestampIntoTextarea(journalModuleDate, journalOnlyTextareaRef.current)}
-                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-2"
-                          title="Insert current local time at cursor (Ctrl+T)"
+                          onClick={() => handleMigrateUnfinishedTasksForDate(journalModuleDate)}
+                          className="text-[10px] px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-2xl font-bold uppercase tracking-widest transition-all"
                         >
-                          <Clock size={14} />
-                          <span>Time</span>
+                          Migrate Yesterday
                         </button>
                         <button
                           onClick={() => { playSound('click'); handleDownloadWeekJournalPdf(); }}
-                          className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap"
+                          className="text-[10px] px-3 py-2 bg-white/5 hover:bg-white/10 text-slate-200 rounded-2xl font-bold uppercase tracking-widest transition-all border border-white/10"
                           title="Download full week's journal as PDF"
                         >
-                          Download Week PDF
+                          Download PDF
                         </button>
+                        <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                          {getDisplayDate(journalModuleDate)}
+                        </div>
                       </div>
                     </div>
 
-                    <textarea
-                      ref={journalOnlyTextareaRef}
-                      className="w-full bg-transparent p-4 text-slate-200 font-mono text-sm focus:outline-none resize-none overflow-y-auto"
-                      placeholder="Write your journal for the selected day..."
-                      value={getJournalTextareaValue(journalModuleDate, 'module')}
-                      onChange={(e) => {
-                        clearTransientJournalMarker('module', journalModuleDate);
-                        handleJournalSave(journalModuleDate, e.target.value);
-                        requestAnimationFrame(() => autoResizeJournalTextarea(journalOnlyTextareaRef.current));
-                      }}
-                      onKeyDown={(e) => autoFormatJournalLineOnSpace(journalOnlyTextareaRef, journalModuleDate, e)}
-                      onKeyUp={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
-                      onMouseUp={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
-                      onSelect={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
-                      onBlur={() => clearTransientJournalMarker('module', journalModuleDate)}
-                    />
-
-                    <div className="mt-3 text-[11px] text-slate-400">
-                      Tip: write like <span className="text-amber-300 font-bold">7am (did this)</span> or <span className="text-amber-300 font-bold">22.3 (note)</span> to auto-fill triangle notes.
+                    <div className="mb-5 rounded-3xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            <span>Tasks: <strong className="text-white">{journalModuleCompletedDisplay}/{journalModuleTotalTasks}</strong></span>
+                            <span>Time: <strong className="text-white">{journalModuleTrackedHours}h</strong></span>
+                            <span>Points: <strong className="text-lime-300">{Math.round(journalModulePoints)}</strong></span>
+                          </div>
+                          <div className="w-full h-1.5 bg-[#0b1120] rounded-full overflow-hidden border border-white/10 shadow-inner mt-3">
+                            <div className="h-full bg-gradient-to-r from-cyan-500 to-green-400 transition-all duration-500" style={{width: `${journalModuleCompletionRate}%`}}></div>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black text-cyan-400">{Math.round(journalModuleCompletionRate)}%</span>
+                      </div>
+                      {Object.values(journalModuleCategoryHours).some(h => h > 0) && (
+                        <div className="mt-4 pt-4 border-t border-white/10">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Category Analysis</span>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+                            {categories.map(cat => {
+                              const hrs = journalModuleCategoryHours[cat.id] || 0;
+                              if (hrs === 0) return null;
+                              return (
+                                <div key={`journal-module-cat-${cat.id}`} className="flex items-center gap-3">
+                                  <div className="w-3 h-3 rounded-md" style={{backgroundColor: cat.color}}></div>
+                                  <span className="flex-1 text-slate-200 truncate">{cat.name}</span>
+                                  <span className="font-black text-white text-sm">{hrs.toFixed(1)}h</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
+
+                    {journalSectionTab === 'todos' && (
+                      <div className="border border-cyan-500/25 rounded-3xl bg-[#0b1120] overflow-hidden">
+                        <div className="bg-cyan-500/10 px-4 py-3 border-b border-cyan-500/25 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-bold text-cyan-300 uppercase tracking-widest text-xs">ToDo List</span>
+                            <button
+                              onClick={() => handleSaveTodoTemplate(journalModuleDate)}
+                              className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/30 text-cyan-200 text-[10px] font-black uppercase tracking-widest transition-all"
+                            >
+                              Save Day Template
+                            </button>
+                          </div>
+                          <div className="flex flex-col md:flex-row gap-2">
+                            <select
+                              value={selectedTodoTemplateId}
+                              onChange={e => setSelectedTodoTemplateId(e.target.value)}
+                              className="flex-1 bg-[#05070e] border border-cyan-500/20 rounded-xl px-3 py-2 text-[11px] text-slate-200 font-bold outline-none"
+                            >
+                              {!todoTemplates.length && <option value="">No templates yet</option>}
+                              {todoTemplates.map(template => (
+                                <option key={template.id} value={template.id}>
+                                  {template.name} ({Array.isArray(template.todos) ? template.todos.length : 0})
+                                </option>
+                              ))}
+                            </select>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleRestoreTodoTemplate(selectedTodoTemplateId, journalModuleDate, 'append')}
+                                disabled={!selectedTodoTemplateId}
+                                className="px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-emerald-400/20 text-emerald-200 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center"
+                                title="Append template todos"
+                              >
+                                <Plus size={14} />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (!selectedTodoTemplateId) return;
+                                  if (!confirm(`Replace all todos on ${getDisplayDate(journalModuleDate)} with "${selectedTodoTemplate?.name || 'this template'}"?`)) return;
+                                  handleRestoreTodoTemplate(selectedTodoTemplateId, journalModuleDate, 'replace');
+                                }}
+                                disabled={!selectedTodoTemplateId}
+                                className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed border border-amber-400/20 text-amber-200 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center"
+                                title="Replace todos with template"
+                              >
+                                <Copy size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTodoTemplate(selectedTodoTemplateId)}
+                                disabled={!selectedTodoTemplateId}
+                                className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-40 disabled:cursor-not-allowed border border-rose-400/20 text-rose-200 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center"
+                                title="Delete template"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="p-4 space-y-4 max-h-[560px] overflow-y-auto custom-scrollbar">
+                          {journalModuleDayTodos.map(todo => {
+                            const status = todo.status || (todo.done ? 'green' : 'red');
+                            let Icon = Square;
+                            let iconClass = 'text-red-500 hover:text-red-400';
+                            let textClass = 'text-slate-200';
+                            if (status === 'yellow') {
+                              Icon = MinusSquare;
+                              iconClass = 'text-yellow-400 hover:text-yellow-300';
+                              textClass = 'text-yellow-100/80';
+                            } else if (status === 'green') {
+                              Icon = CheckSquare;
+                              iconClass = 'text-green-500 hover:text-green-400';
+                              textClass = 'line-through text-slate-500';
+                            }
+                            return (
+                              <div
+                                key={todo.id}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={() => { moveTodoInDay(journalModuleDate, dragTodoId, todo.id); setDragTodoId(null); }}
+                                className={`flex flex-col gap-1 group rounded-lg transition-colors ${dragTodoId === todo.id ? 'bg-cyan-500/10' : ''}`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <button
+                                    draggable
+                                    onDragStart={() => setDragTodoId(todo.id)}
+                                    onDragEnd={() => setDragTodoId(null)}
+                                    className="mt-0.5 shrink-0 text-slate-500 hover:text-cyan-300 cursor-grab active:cursor-grabbing"
+                                    title="Drag to reorder"
+                                  >
+                                    ::
+                                  </button>
+                                  <button onClick={() => handleToggleTodo(journalModuleDate, todo.id)} className={`mt-0.5 shrink-0 ${iconClass} transition-colors`}>
+                                    <Icon size={18}/>
+                                  </button>
+                                  <span className={`flex-1 text-sm ${textClass} transition-colors`}>{todo.text}</span>
+                                  <button
+                                    onClick={() => handleSnoozeTodo(journalModuleDate, todo.id)}
+                                    className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-amber-400 hover:text-amber-300 transition-opacity"
+                                    title="Snooze to tomorrow"
+                                  >
+                                    <Moon size={16} />
+                                  </button>
+                                  <button onClick={() => handleDeleteTodo(journalModuleDate, todo.id)} className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-red-500 hover:text-red-400 transition-opacity">
+                                    <Trash2 size={16}/>
+                                  </button>
+                                </div>
+                                {status === 'yellow' && (
+                                  <div className="pl-8 pr-6 w-full flex items-center gap-3">
+                                    <div className="flex-1">
+                                      <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        value={todo.progress || 0}
+                                        onChange={e => handleUpdateTodoProgress(journalModuleDate, todo.id, e.target.value)}
+                                        className="w-full accent-yellow-400"
+                                      />
+                                    </div>
+                                    <span className="text-yellow-300 font-bold text-xs w-10 text-right">{Math.round(todo.progress || 0)}%</span>
+                                    <input
+                                      type="text"
+                                      value={todo.remark || ''}
+                                      onChange={e => handleUpdateTodoRemark(journalModuleDate, todo.id, e.target.value)}
+                                      placeholder="Note..."
+                                      className="w-24 bg-yellow-500/10 border border-yellow-500/30 text-yellow-200/80 text-xs rounded px-2 py-1 outline-none focus:border-yellow-400/50"
+                                    />
+                                  </div>
+                                )}
+                                <div className="pl-8 pr-4 mt-1">
+                                  {Array.isArray(todo.subtasks) && todo.subtasks.length > 0 && (
+                                    <div className="space-y-1 mb-2">
+                                      {todo.subtasks.map(sub => (
+                                        <label key={sub.id} className="flex items-center gap-2 text-xs text-slate-300">
+                                          <input
+                                            type="checkbox"
+                                            checked={!!sub.done}
+                                            onChange={() => handleToggleTodoSubtask(journalModuleDate, todo.id, sub.id)}
+                                            className="accent-cyan-400"
+                                          />
+                                          <span className={sub.done ? 'line-through text-slate-500' : ''}>{sub.text}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={todoSubtaskDrafts[todo.id] || ''}
+                                      onChange={e => {
+                                        const v = e.target.value;
+                                        setTodoSubtaskDrafts(prev => ({ ...prev, [todo.id]: v }));
+                                      }}
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                          handleAddTodoSubtask(journalModuleDate, todo.id, todoSubtaskDrafts[todo.id] || '');
+                                          setTodoSubtaskDrafts(prev => ({ ...prev, [todo.id]: '' }));
+                                        }
+                                      }}
+                                      placeholder="Add sub-task..."
+                                      className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-slate-200 outline-none"
+                                    />
+                                    <button
+                                      onClick={() => {
+                                        handleAddTodoSubtask(journalModuleDate, todo.id, todoSubtaskDrafts[todo.id] || '');
+                                        setTodoSubtaskDrafts(prev => ({ ...prev, [todo.id]: '' }));
+                                      }}
+                                      className="px-2 py-1 text-xs font-bold rounded bg-cyan-500/20 text-cyan-300 border border-cyan-400/20 hover:bg-cyan-500/30"
+                                      title="Add sub-task"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {journalModuleDayTodos.length === 0 && (
+                            <div className="text-slate-500 text-sm italic text-center py-12">No objectives assigned for this day.</div>
+                          )}
+                        </div>
+                        <div className="p-3 border-t border-cyan-500/30 bg-black/20 flex gap-2 shrink-0">
+                          <input
+                            value={journalModuleTodoInput}
+                            onChange={e => setJournalModuleTodoInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { handleAddTodo(journalModuleDate, journalModuleTodoInput); setJournalModuleTodoInput(''); } }}
+                            placeholder="New objective..."
+                            className="flex-1 bg-transparent outline-none text-sm text-slate-200"
+                          />
+                          <button onClick={() => { handleAddTodo(journalModuleDate, journalModuleTodoInput); setJournalModuleTodoInput(''); }} className="text-cyan-400 hover:text-cyan-300">
+                            <Plus size={20}/>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {journalSectionTab === 'journal' && (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2 mb-4">
+                          <button
+                            onClick={() => toggleJournalStar(journalModuleDate)}
+                            className={`px-3 py-2 border rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-2 ${journalStars?.[journalModuleDate] ? 'bg-amber-500/15 border-amber-400/40 text-amber-200' : 'bg-white/5 hover:bg-white/10 border-white/10'}`}
+                            title="Star this journal entry"
+                          >
+                            <Star size={14} className={journalStars?.[journalModuleDate] ? 'fill-current' : ''} />
+                            <span>Star</span>
+                          </button>
+                          <button
+                            onClick={() => insertTimestampIntoTextarea(journalModuleDate, journalOnlyTextareaRef.current)}
+                            className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap flex items-center gap-2"
+                            title="Insert current local time at cursor (Ctrl+T)"
+                          >
+                            <Clock size={14} />
+                            <span>Time</span>
+                          </button>
+                          <button
+                            onClick={() => { playSound('click'); handleDownloadWeekJournalPdf(); }}
+                            className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-slate-200 text-[11px] font-bold transition-all whitespace-nowrap"
+                            title="Download full week's journal as PDF"
+                          >
+                            Download Week PDF
+                          </button>
+                        </div>
+                        <textarea
+                          ref={journalOnlyTextareaRef}
+                          className="w-full min-h-[420px] bg-transparent p-4 text-slate-200 font-mono text-sm focus:outline-none resize-none overflow-y-auto border border-amber-500/20 rounded-3xl"
+                          placeholder="Write your journal for the selected day..."
+                          value={getJournalTextareaValue(journalModuleDate, 'module')}
+                          onChange={(e) => {
+                            clearTransientJournalMarker('module', journalModuleDate);
+                            handleJournalSave(journalModuleDate, e.target.value);
+                            requestAnimationFrame(() => autoResizeJournalTextarea(journalOnlyTextareaRef.current));
+                          }}
+                          onKeyDown={(e) => autoFormatJournalLineOnSpace(journalOnlyTextareaRef, journalModuleDate, e)}
+                          onKeyUp={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
+                          onMouseUp={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
+                          onSelect={() => autoResizeJournalTextarea(journalOnlyTextareaRef.current)}
+                          onBlur={() => clearTransientJournalMarker('module', journalModuleDate)}
+                        />
+                        <div className="mt-3 text-[11px] text-slate-400">
+                          Tip: write like <span className="text-amber-300 font-bold">7am (did this)</span> or <span className="text-amber-300 font-bold">22.3 (note)</span> to auto-fill triangle notes.
+                        </div>
+                      </>
+                    )}
+
+                    {journalSectionTab === 'habits' && (
+                      <div className="border border-emerald-500/25 rounded-3xl bg-[#0b1120] overflow-hidden">
+                        <div className="bg-emerald-500/10 px-4 py-3 border-b border-emerald-500/25 flex items-center justify-between gap-3">
+                          <span className="font-bold text-emerald-300 uppercase tracking-widest text-xs">Habit List</span>
+                          <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{journalModuleDayHabits.length} habits</span>
+                        </div>
+                        <div className="p-4 space-y-4 max-h-[560px] overflow-y-auto custom-scrollbar">
+                          {journalModuleDayHabits.map((habit) => {
+                            const status = habit.status || 'red';
+                            let Icon = Square;
+                            let iconClass = 'text-red-500 hover:text-red-400';
+                            let textClass = 'text-slate-200';
+                            if (status === 'yellow') {
+                              Icon = MinusSquare;
+                              iconClass = 'text-yellow-400 hover:text-yellow-300';
+                              textClass = 'text-yellow-100/80';
+                            } else if (status === 'green') {
+                              Icon = CheckSquare;
+                              iconClass = 'text-green-500 hover:text-green-400';
+                              textClass = 'line-through text-slate-500';
+                            }
+                            return (
+                              <div key={habit.id} className="flex flex-col gap-1 group">
+                                <div className="flex items-start gap-3">
+                                  <button onClick={() => handleToggleHabit(journalModuleDate, habit.id)} className={`mt-0.5 shrink-0 ${iconClass} transition-colors`}>
+                                    <Icon size={18}/>
+                                  </button>
+                                  <span className={`flex-1 text-sm font-bold ${textClass} transition-colors`}>{habit.name}</span>
+                                  <span className="flex items-center text-orange-400 text-xs font-black ml-auto">
+                                    <Flame size={14} />{habitStreaks[habit.id] || 0}
+                                  </span>
+                                  <button onClick={() => handleDeleteDailyHabit(journalModuleDate, habit.id)} className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 text-red-500 hover:text-red-400 transition-opacity">
+                                    <Trash2 size={16}/>
+                                  </button>
+                                </div>
+                                {status === 'yellow' && (
+                                  <div className="pl-8 pr-6 w-full flex items-center gap-3">
+                                    <div className="flex-1">
+                                      <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        value={habit.progress || 0}
+                                        onChange={e => handleUpdateHabitProgress(journalModuleDate, habit.id, e.target.value)}
+                                        className="w-full accent-yellow-400"
+                                      />
+                                    </div>
+                                    <span className="text-yellow-300 font-bold text-xs w-10 text-right">{Math.round(habit.progress || 0)}%</span>
+                                    <input
+                                      type="text"
+                                      value={habit.remark || ''}
+                                      onChange={e => handleUpdateHabitRemark(journalModuleDate, habit.id, e.target.value)}
+                                      placeholder="Note..."
+                                      className="w-24 bg-yellow-500/10 border border-yellow-500/30 text-yellow-200/80 text-xs rounded px-2 py-1 outline-none focus:border-yellow-400/50"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {journalModuleDayHabits.length === 0 && (
+                            <div className="text-slate-500 text-sm italic text-center py-12">No habits scheduled for this day.</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -12379,8 +12900,7 @@
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
                     {renderSectionIconTabs('modules', [
                       { id: 'categories', label: 'Category Manifest', icon: Square, activeClassName: 'border-cyan-400/60 bg-cyan-500/15 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.18)]' },
-                      { id: 'habits', label: 'Habit Tracker', icon: CalendarIcon, activeClassName: 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.18)]' },
-                      { id: 'presets', label: 'Blueprint Presets', icon: Database, activeClassName: 'border-indigo-400/60 bg-indigo-500/15 text-indigo-200 shadow-[0_0_16px_rgba(99,102,241,0.18)]' }
+                      { id: 'habits', label: 'Habit Tracker', icon: CalendarIcon, activeClassName: 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.18)]' }
                     ])}
                     <div className={modulesSectionTab === 'categories' ? '' : 'hidden'}>
                     <h3 className="font-bold text-cyan-400 uppercase tracking-widest text-xs mb-4 border-b border-cyan-500/30 pb-2">Category Manifest</h3>
@@ -12586,27 +13106,6 @@
                             </div>
                           );
                         })}
-                      </div>
-                    </div>
-                    </div>
-                    <div className={modulesSectionTab === 'presets' ? '' : 'hidden'}>
-                    {/* Blueprint Presets Library in Modules */}
-                    <div className="mt-2">
-                      <h3 className="font-bold text-indigo-400 uppercase tracking-widest text-xs mb-4 flex items-center gap-2"><Database size={18} /> Blueprint Presets Library</h3>
-                      <div className="text-xs text-slate-400 mb-4">Your saved day + week presets (real + plan colours) appear here.</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {blueprintPresets.map(p => (
-                          <div key={p.id} className="bg-white/5 border border-indigo-400/20 rounded-2xl p-4 flex justify-between items-center">
-                            <div>
-                              <span className="font-bold">{p.name}</span>
-                              <span className="ml-3 text-[10px] text-slate-400">{p.type.toUpperCase()} preset</span>
-                            </div>
-                            <button onClick={() => {
-                              loadBlueprintPreset(p);
-                            }} className="text-xs px-4 py-2 bg-indigo-500 text-white rounded-xl font-black">Load</button>
-                          </div>
-                        ))}
-                        {blueprintPresets.length === 0 && <div className="col-span-2 text-slate-400 italic text-center py-8">No presets yet â€“ use the new single button in any day header</div>}
                       </div>
                     </div>
                     </div>
@@ -13271,7 +13770,7 @@
       );
     }
 
-    function WalletMonthlyStats({ transactions, categories, currency, walletId }) {
+    function WalletMonthlyStats({ transactions, categories, currency, walletId, onOpenBudgetManager }) {
       const now = new Date();
       const currentMonth = now.toISOString().substring(0, 7); // YYYY-MM
       
@@ -13321,10 +13820,19 @@
           {/* Budget Thresholds */}
           <div className="pt-4 border-t border-white/10 space-y-4">
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Budget Thresholds</h4>
-              <div className="text-[10px] text-slate-500 uppercase tracking-[0.25em]">60% calm · 85% watch · 100% over</div>
+              <div className="min-w-0">
+                <h4 className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Budget Thresholds</h4>
+                <div className="text-[10px] text-slate-500 uppercase tracking-[0.25em] mt-1">60% calm · 85% watch · 100% over</div>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenBudgetManager}
+                className="shrink-0 rounded-2xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-amber-200 transition-all hover:bg-amber-500/20 hover:border-amber-300/50"
+              >
+                Set Budget
+              </button>
             </div>
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
               {categories
                 .filter(c => c.type === 'expense')
                 .sort((a, b) => {
@@ -13340,6 +13848,8 @@
                   const hasLimit = cat.monthlyLimit !== null && cat.monthlyLimit !== undefined && cat.monthlyLimit > 0;
                   const rawRatio = hasLimit ? (spent / cat.monthlyLimit) : 0;
                   const fillPercent = hasLimit ? Math.max(0, Math.min(100, rawRatio * 100)) : 0;
+                  const usagePercent = hasLimit ? Math.round(rawRatio * 100) : 0;
+                  const remaining = hasLimit ? cat.monthlyLimit - spent : null;
                   const exceeded = hasLimit && rawRatio > 1;
                   const nearLimit = hasLimit && rawRatio >= 0.85 && rawRatio <= 1;
                   const healthy = hasLimit && rawRatio < 0.6;
@@ -13363,43 +13873,52 @@
                           ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.35)]'
                           : 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.35)]';
                   return (
-                    <div key={cat.id} className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                    <div key={cat.id} className="bg-white/5 border border-white/10 rounded-3xl p-4 h-full">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat.color }}></div>
-                            <div className="text-sm font-black uppercase tracking-widest text-white truncate">{cat.name}</div>
+                            <div className="w-2.5 h-2.5 rounded-full shadow-[0_0_10px_currentColor]" style={{ backgroundColor: cat.color, color: cat.color }}></div>
+                            <span className="text-[10px] font-black text-white uppercase tracking-widest truncate">{cat.name}</span>
                           </div>
-                          <div className="text-[11px] text-slate-400 mt-1">
-                            {hasLimit ? `${Math.round(rawRatio * 100)}% of ${currency}${cat.monthlyLimit.toLocaleString()} used` : 'Set a monthly limit to activate threshold tracking.'}
-                          </div>
+                          <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                            {hasLimit ? `${usagePercent}% of limit used` : 'No monthly cap set yet'}
+                          </p>
                         </div>
-                        <div className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] ${statusTone}`}>
+                        <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.2em] ${statusTone}`}>
                           {statusLabel}
-                        </div>
+                        </span>
                       </div>
                       <div className="mt-4 grid grid-cols-3 gap-2">
-                        <div className="rounded-2xl border border-white/10 bg-black/15 px-3 py-2">
-                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">Spent</div>
-                          <div className="text-sm font-black text-white mt-1">{currency}{spent.toLocaleString()}</div>
+                        <div className="rounded-2xl border border-white/10 bg-[#05070e]/55 px-3 py-3">
+                          <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-500">Spent</div>
+                          <div className="mt-1 text-sm font-black text-white">{currency}{spent.toLocaleString()}</div>
                         </div>
-                        <div className="rounded-2xl border border-white/10 bg-black/15 px-3 py-2">
-                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">Limit</div>
-                          <div className="text-sm font-black text-white mt-1">{hasLimit ? `${currency}${cat.monthlyLimit.toLocaleString()}` : '--'}</div>
+                        <div className="rounded-2xl border border-white/10 bg-[#05070e]/55 px-3 py-3">
+                          <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-500">Limit</div>
+                          <div className="mt-1 text-sm font-black text-white">{hasLimit ? `${currency}${cat.monthlyLimit.toLocaleString()}` : '--'}</div>
                         </div>
-                        <div className="rounded-2xl border border-white/10 bg-black/15 px-3 py-2">
-                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">{exceeded ? 'Over' : 'Left'}</div>
-                          <div className={`text-sm font-black mt-1 ${exceeded ? 'text-rose-300' : 'text-emerald-300'}`}>
-                            {hasLimit ? `${currency}${Math.abs(cat.monthlyLimit - spent).toLocaleString()}` : '--'}
+                        <div className="rounded-2xl border border-white/10 bg-[#05070e]/55 px-3 py-3">
+                          <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-slate-500">{hasLimit && exceeded ? 'Over' : 'Left'}</div>
+                          <div className={`mt-1 text-sm font-black ${hasLimit ? (exceeded ? 'text-rose-300' : 'text-emerald-300') : 'text-slate-500'}`}>
+                            {hasLimit ? `${currency}${Math.abs(remaining).toLocaleString()}` : '--'}
                           </div>
                         </div>
                       </div>
-                      <div className="mt-4">
+                      <div className="mt-4 space-y-2">
                         <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/10">
                           <div className={`h-full transition-all duration-500 ${barTone}`} style={{ width: `${fillPercent}%` }}></div>
                         </div>
+                        <div className="flex items-center justify-between gap-3 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                          <span>{hasLimit ? `${usagePercent}% used` : 'Use Set Budget to add a cap'}</span>
+                          <span className={exceeded ? 'text-rose-300' : 'text-emerald-300'}>
+                            {hasLimit ? `${exceeded ? 'Over' : 'Left'} ${currency}${Math.abs(remaining).toLocaleString()}` : '--'}
+                          </span>
+                        </div>
                         {hasLimit && exceeded && (
-                          <div className="mt-2 text-[11px] text-rose-300">Over budget by {currency}{(spent - cat.monthlyLimit).toLocaleString()} this month.</div>
+                          <div className="text-[11px] text-rose-300">Over budget by {currency}{(spent - cat.monthlyLimit).toLocaleString()} this month.</div>
+                        )}
+                        {!hasLimit && (
+                          <div className="text-[11px] text-slate-500">Set a monthly limit here to turn this category into a live budget tracker.</div>
                         )}
                       </div>
                     </div>
