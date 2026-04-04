@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -1606,6 +1606,15 @@
            window.scrollTo({ top, behavior: 'smooth' });
          }, 10);
       };
+      const scrollElementToViewportCenter = (elementId, delay = 80) => {
+         window.setTimeout(() => {
+           const el = document.getElementById(elementId);
+           if (!el) return;
+           const rect = el.getBoundingClientRect();
+           const targetTop = rect.top + window.scrollY - Math.max(0, (window.innerHeight - rect.height) / 2);
+           window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+         }, delay);
+      };
       const toggleEpoch = (id) => {
         playSound('click');
         setCollapsedEpochs(prev => {
@@ -1918,7 +1927,7 @@
       const [showDebtModal, setShowDebtModal] = useState(false);
       const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
       const [debtDraft, setDebtDraft] = useState({ id: '', person: '', type: 'owe_me', amount: '', dateTaken: formatDateString(new Date()), dueDate: formatDateString(new Date()), settlementStatus: 'not_settled', settledAmount: 0, note: '' });
-      const [subscriptionDraft, setSubscriptionDraft] = useState({ id: '', name: '', amount: '', paymentDate: formatDateString(new Date()), categoryId: getDefaultSubscriptionCategoryId(), note: '' });
+      const [subscriptionDraft, setSubscriptionDraft] = useState({ id: '', name: '', amount: '', paymentDate: formatDateString(new Date()), categoryId: getDefaultSubscriptionCategoryId(), note: '', lastPaidOn: '' });
 
       const allDataRef = useRef(allData);
       const backupDirHandleRef = useRef(null);
@@ -7120,6 +7129,31 @@
         });
         showToast('Reminder deleted', 'success');
       }, [showToast]);
+      const completeCustomSoftReminder = useCallback((reminderId) => {
+        if (!reminderId) return;
+        setCustomSoftReminders(prev => prev.filter(reminder => reminder.id !== reminderId));
+        setDismissedReminderKeys(prev => {
+          const next = { ...prev };
+          Object.keys(next).forEach(key => {
+            if (key.startsWith(`custom-${reminderId}::`)) delete next[key];
+          });
+          return next;
+        });
+        showToast('Reminder completed', 'success');
+      }, [showToast]);
+      const snoozeCustomSoftReminder = useCallback((reminder) => {
+        if (!reminder || !reminder.id) return;
+        setCustomReminderDraft({
+          id: reminder.id,
+          message: reminder.message || '',
+          date: reminder.date || todayStr,
+          remindAt: reminder.remindAt || '09:00',
+          windowStart: reminder.windowStart || reminder.remindAt || '09:00',
+          windowEnd: reminder.windowEnd || '18:00'
+        });
+        setShowReminderModal(true);
+        showToast('Edit the reminder time and save to snooze it', 'info');
+      }, [todayStr, showToast]);
       const handleSaveCustomReminder = useCallback(() => {
         const message = String(customReminderDraft.message || '').trim();
         const date = String(customReminderDraft.date || '').trim();
@@ -7206,7 +7240,17 @@
             title: `You have ${formattedUnloggedHours} unlogged hour${roundedUnloggedHours === 1 ? '' : 's'} today`,
             body: 'A few grid fills will bring today back into focus.',
             actionLabel: 'Open Grid',
-            onClick: () => navigateToSection('tracker')
+            onClick: () => {
+              openOnlySection('tracker');
+              const first = getFirstNonColoredTriangle(todayStr);
+              if (first) {
+                expandSectionForHour(first.hour);
+                setKeyboardCursor(first);
+                scrollElementToViewportCenter(`kbdcell-${todayStr}-${first.hour}`, 180);
+              } else {
+                requestAnimationFrame(() => scrollToElementWithStickyOffset('section-tracker'));
+              }
+            }
           });
         }
 
@@ -7224,15 +7268,17 @@
             actionLabel: 'Open Captain\'s Log',
             onClick: () => {
               playSound('click');
+              openOnlySection('journal');
               setActiveJournalDate(yesterdayStr);
             }
           });
         }
 
         const todayDayOfMonth = Number(todayStr.slice(8, 10));
-        const dueTodaySubscriptions = subscriptions.filter(sub => Number(String(sub.paymentDate || '').slice(8, 10)) === todayDayOfMonth);
+        const dueTodaySubscriptions = subscriptions.filter(sub => Number(String(sub.paymentDate || '').slice(8, 10)) === todayDayOfMonth && sub.lastPaidOn !== todayStr);
         if (dueTodaySubscriptions.length > 0) {
           const firstName = dueTodaySubscriptions[0]?.name || 'Subscription';
+          const firstDueSubscription = dueTodaySubscriptions[0] || null;
           reminders.push({
             id: 'subscription-due',
             reminderKey: `system-subscription-due::${todayStr}`,
@@ -7240,7 +7286,23 @@
             title: dueTodaySubscriptions.length === 1 ? `${firstName} is due today` : `${dueTodaySubscriptions.length} subscriptions are due today`,
             body: dueTodaySubscriptions.length === 1 ? 'Log it once and keep the wallet timeline clean.' : 'Open Wallet to log or review your recurring payments.',
             actionLabel: 'Open Wallet',
-            onClick: () => navigateToSection('wallet')
+            onClick: () => {
+              openOnlySection('wallet');
+              setWalletAmountFocusTick(t => t + 1);
+              scrollElementToViewportCenter('wallet-subscriptions-panel', 140);
+              if (firstDueSubscription && dueTodaySubscriptions.length === 1) {
+                setSubscriptionDraft({
+                  id: firstDueSubscription.id,
+                  name: firstDueSubscription.name,
+                  amount: firstDueSubscription.amount,
+                  paymentDate: firstDueSubscription.paymentDate || todayStr,
+                  categoryId: firstDueSubscription.categoryId || getDefaultSubscriptionCategoryId(),
+                  note: firstDueSubscription.note || '',
+                  lastPaidOn: firstDueSubscription.lastPaidOn || ''
+                });
+                setShowSubscriptionModal(true);
+              }
+            }
           });
         }
         customSoftReminders.forEach(reminder => {
@@ -7255,6 +7317,7 @@
             id: `custom-${reminder.id}`,
             reminderKey: `custom-${reminder.id}::${todayStr}`,
             customReminderId: reminder.id,
+            sourceReminder: reminder,
             tone: 'purple',
             title: reminder.message,
             body: `Scheduled for ${getDisplayDate(reminder.date)} • ${reminder.remindAt} • active between ${reminder.windowStart} and ${reminder.windowEnd}.`,
@@ -7268,7 +7331,7 @@
         return reminders
           .filter(reminder => !dismissedReminderKeys[reminder.reminderKey])
           .slice(0, 6);
-      }, [allData, todayStr, todosData, subscriptions, navigateToSection, playSound, customSoftReminders, dismissedReminderKeys]);
+      }, [allData, todayStr, todosData, subscriptions, playSound, customSoftReminders, dismissedReminderKeys, openOnlySection, scrollToElementWithStickyOffset, scrollElementToViewportCenter, getFirstNonColoredTriangle, expandSectionForHour, getDefaultSubscriptionCategoryId]);
       const openLinkedRecord = useCallback((record) => {
         if (!record) return;
         playSound('click');
@@ -10071,7 +10134,7 @@
                             if (!confirm(`Delete subscription "${subscriptionDraft.name}"?`)) return;
                             updateSubscriptions(prev => prev.filter(s => s.id !== subscriptionDraft.id));
                             setShowSubscriptionModal(false);
-                            setSubscriptionDraft({ id: '', name: '', amount: '', paymentDate: formatDateString(new Date()), categoryId: getDefaultSubscriptionCategoryId(), note: '' });
+                            setSubscriptionDraft({ id: '', name: '', amount: '', paymentDate: formatDateString(new Date()), categoryId: getDefaultSubscriptionCategoryId(), note: '', lastPaidOn: '' });
                             playSound('trash');
                             showToast('Subscription deleted', 'success');
                           }}
@@ -10109,7 +10172,8 @@
                             ...subscriptionDraft,
                             id: subscriptionDraft.id || 'sub_' + Date.now() + Math.random().toString(36).slice(2, 7),
                             categoryId: subscriptionDraft.categoryId || getDefaultSubscriptionCategoryId(),
-                            amount
+                            amount,
+                            lastPaidOn: subscriptionDraft.lastPaidOn || ''
                           };
                           updateSubscriptions(prev => {
                             const exists = prev.some(s => s.id === record.id);
@@ -10118,7 +10182,7 @@
                             return next;
                           });
                           setShowSubscriptionModal(false);
-                          setSubscriptionDraft({ id: '', name: '', amount: '', paymentDate: formatDateString(new Date()), categoryId: getDefaultSubscriptionCategoryId(), note: '' });
+                          setSubscriptionDraft({ id: '', name: '', amount: '', paymentDate: formatDateString(new Date()), categoryId: getDefaultSubscriptionCategoryId(), note: '', lastPaidOn: '' });
                         }}
                         className="px-5 py-3 bg-purple-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-purple-400 transition-all"
                       >
@@ -10642,11 +10706,18 @@
                           ? 'border-purple-400/30 text-purple-200 hover:bg-purple-500/10'
                           : 'border-cyan-400/30 text-cyan-200 hover:bg-cyan-500/10';
                       return (
-                        <div key={reminder.id} className={`rounded-[28px] border p-4 ${toneClasses}`}>
+                        <div
+                          key={reminder.id}
+                          onClick={reminder.onClick}
+                          className={`rounded-[28px] border p-4 cursor-pointer transition-transform hover:-translate-y-0.5 ${toneClasses}`}
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div className="text-sm font-black text-white leading-snug">{reminder.title}</div>
                             <button
-                              onClick={() => dismissSoftReminder(reminder.reminderKey)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                dismissSoftReminder(reminder.reminderKey);
+                              }}
                               className="w-8 h-8 rounded-xl border border-white/10 bg-black/15 text-slate-400 hover:text-white hover:bg-white/10 transition-all shrink-0"
                               title="Dismiss reminder"
                             >
@@ -10657,21 +10728,36 @@
                           <div className="text-sm text-slate-300 mt-3 leading-relaxed">{reminder.body}</div>
                           <div className="mt-4 flex items-center gap-2">
                             <button
-                              onClick={reminder.onClick}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                reminder.onClick();
+                              }}
                               className={`px-4 py-2 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all ${actionClasses}`}
                             >
                               {reminder.actionLabel}
                             </button>
                             {reminder.customReminderId && (
-                              <button
-                                onClick={() => {
-                                  if (!confirm(`Delete reminder "${reminder.title}"?`)) return;
-                                  deleteCustomSoftReminder(reminder.customReminderId);
-                                }}
-                                className="px-4 py-2 rounded-2xl border border-rose-400/30 bg-rose-500/10 text-rose-200 text-xs font-black uppercase tracking-widest hover:bg-rose-500/20 transition-all"
-                              >
-                                Delete
-                              </button>
+                              <Fragment>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    snoozeCustomSoftReminder(reminder.sourceReminder);
+                                  }}
+                                  className="px-4 py-2 rounded-2xl border border-amber-400/30 bg-amber-500/10 text-amber-200 text-xs font-black uppercase tracking-widest hover:bg-amber-500/20 transition-all"
+                                >
+                                  Snooze
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!confirm(`Mark reminder "${reminder.title}" as done?`)) return;
+                                    completeCustomSoftReminder(reminder.customReminderId);
+                                  }}
+                                  className="px-4 py-2 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 text-emerald-200 text-xs font-black uppercase tracking-widest hover:bg-emerald-500/20 transition-all"
+                                >
+                                  Done
+                                </button>
+                              </Fragment>
                             )}
                           </div>
                         </div>
@@ -11692,11 +11778,11 @@
                       </div>
 
                       {/* Subscriptions / Fixed Costs */}
-                      <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
+                      <div id="wallet-subscriptions-panel" className="bg-white/5 border border-white/10 rounded-3xl p-6">
                         <div className="flex justify-between items-center mb-5 border-b border-purple-500/30 pb-3">
                           <h3 className="font-bold text-purple-400 uppercase tracking-widest text-xs">Subscriptions</h3>
                           <button onClick={() => {
-                            setSubscriptionDraft({ id: '', name: '', amount: '', paymentDate: todayStr, categoryId: getDefaultSubscriptionCategoryId(), note: '' });
+                            setSubscriptionDraft({ id: '', name: '', amount: '', paymentDate: todayStr, categoryId: getDefaultSubscriptionCategoryId(), note: '', lastPaidOn: '' });
                             setShowSubscriptionModal(true);
                           }} className="text-purple-400 hover:text-purple-300"><Plus size={16}/></button>
                         </div>
@@ -11713,7 +11799,8 @@
                                   amount: sub.amount,
                                   paymentDate: sub.paymentDate || todayStr,
                                   categoryId: sub.categoryId || getDefaultSubscriptionCategoryId(),
-                                  note: sub.note || ''
+                                  note: sub.note || '',
+                                  lastPaidOn: sub.lastPaidOn || ''
                                 });
                                 setShowSubscriptionModal(true);
                               }}
@@ -11730,7 +11817,8 @@
                                     name: sub.name,
                                     amount: sub.amount,
                                     paymentDate: sub.paymentDate || todayStr,
-                                    note: sub.note || ''
+                                    note: sub.note || '',
+                                    lastPaidOn: sub.lastPaidOn || ''
                                   });
                                   setShowSubscriptionModal(true);
                                   }}
@@ -11751,6 +11839,8 @@
                                 <button onClick={(e) => { e.stopPropagation(); if (confirm(`Mark ${sub.name} as paid?`)) {
                                     const catId = walletCategories.find(c => c.id === sub.categoryId)?.id || walletCategories.find(c => c.name.toLowerCase() === 'food')?.id || walletCategories.find(c => c.type === 'expense')?.id || 'others';
                                     addWalletTransaction('expense', catId, sub.amount, `Subscription: ${sub.name}`, todayStr, activeWalletId);
+                                    updateSubscriptions(prev => prev.map(item => item.id === sub.id ? { ...item, lastPaidOn: todayStr } : item));
+                                    showToast('Subscription marked as paid', 'success');
                                   } }} className="text-slate-500 hover:text-purple-400" title="Mark as paid (logs to transaction)"><Zap size={14}/></button>
                               </div>
                             </div>
