@@ -413,6 +413,8 @@
     const Redo = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>;
     const Sparkles = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/></svg>;
     const ChevronDown = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="6 9 12 15 18 9"></polyline></svg>;
+    const Menu3 = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>;
+    const Pin = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 17v5"/><path d="M8 3h8"/><path d="M9 3v6l-3 4h12l-3-4V3"/></svg>;
     const BookOpen = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>;
     const Wallet = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-1"/><path d="M16 12h5"/><circle cx="16" cy="12" r="1"/></svg>;
     const TrendingUp = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
@@ -463,7 +465,8 @@
       defaultSelectedColorId: 'lock',
       defaultTimerMinutes: 25,
       defaultBreakMinutes: 5,
-      defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick']
+      defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick'],
+      pinnedSections: []
     };
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
@@ -797,6 +800,8 @@
       const [isLoaded, setIsLoaded] = useState(false);
       const [showHelp, setShowHelp] = useState(false);
       const [showSettingsModal, setShowSettingsModal] = useState(false);
+      const [showAppMenu, setShowAppMenu] = useState(false);
+      const [activeMenuSection, setActiveMenuSection] = useState('tracker');
       const [settingsDraft, setSettingsDraft] = useState(() => {
         const defaultSettings = {
           defaultFocusMode: false,
@@ -804,7 +809,8 @@
           defaultSelectedColorId: 'lock',
           defaultTimerMinutes: 25,
           defaultBreakMinutes: 5,
-          defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick']
+          defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick'],
+          pinnedSections: []
         };
         try {
           const saved = JSON.parse(localStorage.getItem(LOCAL_SETTINGS_KEY));
@@ -934,8 +940,39 @@
          playSound('click');
          setSectionsOpen(prev => ({ ...prev, [sec]: !prev[sec] }));
       };
+      const appSections = [
+        { id: 'tracker', label: 'Grid', icon: CalendarIcon, accent: 'text-cyan-300', targetId: 'section-tracker' },
+        { id: 'wallet', label: 'Wallet', icon: Wallet, accent: 'text-emerald-300', targetId: 'section-wallet' },
+        { id: 'analytics', label: 'Analytics', icon: Activity, accent: 'text-purple-300', targetId: 'section-analytics' },
+        { id: 'graph', label: 'Graph', icon: BarChart3, accent: 'text-pink-300', targetId: 'section-graph' },
+        { id: 'journal', label: 'Journal', icon: FileText, accent: 'text-amber-300', targetId: 'journal-only-module' },
+        { id: 'modules', label: 'System Modules', icon: Settings2, accent: 'text-cyan-300', targetId: 'section-modules' },
+        { id: 'storage', label: 'Data & Storage', icon: Database, accent: 'text-indigo-300', targetId: 'section-storage' }
+      ];
+      const pinnableSectionIds = appSections.filter(section => section.id !== 'tracker').map(section => section.id);
+      const normalizedPinnedSections = (() => {
+        const current = Array.isArray(settingsDraft.pinnedSections) ? settingsDraft.pinnedSections : [];
+        return current.filter((sectionId, index) => pinnableSectionIds.includes(sectionId) && current.indexOf(sectionId) === index);
+      })();
+      const pinnedSectionsKey = normalizedPinnedSections.join('|');
+      const shouldRenderSection = (sectionId) => activeMenuSection === 'tracker'
+        ? sectionId === 'tracker' || normalizedPinnedSections.includes(sectionId)
+        : activeMenuSection === sectionId;
+      const togglePinnedSection = (sectionId) => {
+        if (!pinnableSectionIds.includes(sectionId)) return;
+        playSound('click');
+        setSettingsDraft(prev => {
+          const current = Array.isArray(prev.pinnedSections) ? prev.pinnedSections : [];
+          const next = current.includes(sectionId)
+            ? current.filter(id => id !== sectionId)
+            : [...current, sectionId];
+          return { ...prev, pinnedSections: next.filter((id, index) => pinnableSectionIds.includes(id) && next.indexOf(id) === index) };
+        });
+      };
       const openOnlySection = (sec) => {
          playSound('click');
+         setActiveMenuSection(sec);
+         setShowAppMenu(false);
          setSectionsOpen({
            tracker: false,
            journal: false,
@@ -947,6 +984,40 @@
            [sec]: true
          });
       };
+      const navigateToSection = (sec) => {
+        const section = appSections.find(item => item.id === sec);
+        if (!section) return;
+        openOnlySection(sec);
+        if (sec === 'wallet') setWalletAmountFocusTick(t => t + 1);
+        if (sec === 'journal') {
+          setJournalModuleDate(activeJournalDate || todayStr);
+          setJournalFocusTick(t => t + 1);
+        }
+        if (section.targetId) scrollToElementWithStickyOffset(section.targetId);
+      };
+      useEffect(() => {
+        setSectionsOpen(prev => {
+          const next = {
+            tracker: false,
+            journal: false,
+            analytics: false,
+            modules: false,
+            storage: false,
+            graph: false,
+            wallet: false
+          };
+          if (activeMenuSection === 'tracker') {
+            next.tracker = true;
+            normalizedPinnedSections.forEach(sectionId => {
+              if (sectionId in next) next[sectionId] = true;
+            });
+          } else if (activeMenuSection in next) {
+            next[activeMenuSection] = true;
+          }
+          const isSame = Object.keys(next).every(key => !!prev[key] === !!next[key]);
+          return isSame ? prev : next;
+        });
+      }, [activeMenuSection, pinnedSectionsKey]);
       const scrollToElementWithStickyOffset = (elementId) => {
          setTimeout(() => {
            const el = document.getElementById(elementId);
@@ -2120,65 +2191,6 @@
         }
         handleRedo();
       }, [handleEntityRedo, handleRedo]);
-      const routinePacks = useMemo(() => ([
-        {
-          id: 'morning',
-          name: 'Morning Pack',
-          icon: Sunrise,
-          description: 'Drop a reusable morning block plus prep todos in one tap.',
-          todos: ['Hydrate and reset', 'Review top priorities', 'Start the first focus block'],
-          segments: [
-            { hour: 6, role: 'essential' },
-            { hour: 7, role: 'essential' },
-            { hour: 8, role: 'studyWork' },
-            { hour: 9, role: 'studyWork' },
-            { hour: 10, role: 'studyWork' },
-            { hour: 11, role: 'fun' }
-          ]
-        },
-        {
-          id: 'evening',
-          name: 'Evening Pack',
-          icon: Sunset,
-          description: 'Stage your shutdown routine, recovery time, and sleep ramp.',
-          todos: ['Wrap loose ends', 'Prep tomorrow', 'Run shutdown routine'],
-          segments: [
-            { hour: 18, role: 'studyWork' },
-            { hour: 19, role: 'essential' },
-            { hour: 20, role: 'fun' },
-            { hour: 21, role: 'essential' },
-            { hour: 22, role: 'sleep' },
-            { hour: 23, role: 'sleep' }
-          ]
-        }
-      ]), []);
-      const resolveRoutineCategoryId = useCallback((role) => {
-        const matchers = {
-          sleep: [
-            c => /sleep|rest/i.test(c.name || ''),
-            c => /sleep|rest/i.test(c.id || '')
-          ],
-          essential: [
-            c => /essential|care|self|home|chores/i.test(c.name || ''),
-            c => /essential|care|self|home|chores/i.test(c.id || '')
-          ],
-          studyWork: [
-            c => /study|learn|work|job/i.test(c.name || ''),
-            c => /study|learn|work|job/i.test(c.id || ''),
-            c => Number(parseFloat(c.pointsPerHour) || 0) > 0
-          ],
-          fun: [
-            c => /fun|relax|break|play/i.test(c.name || ''),
-            c => /fun|relax|break|play/i.test(c.id || '')
-          ]
-        };
-        const checks = matchers[role] || [];
-        for (const check of checks) {
-          const found = categories.find(check);
-          if (found) return found.id;
-        }
-        return categories[0]?.id || null;
-      }, [categories]);
       const toggleJournalStar = useCallback((dateStr) => {
         if (!dateStr) return;
         playSound('click');
@@ -2208,60 +2220,6 @@
         });
         showToast(alreadyStarred ? 'Note removed from Starred' : 'Note added to Starred', 'success');
       }, [noteStars, showToast]);
-      const applyRoutinePack = useCallback((dateStr, packId) => {
-        const pack = routinePacks.find(item => item.id === packId);
-        if (!pack || !dateStr) return;
-        saveHistoryState();
-
-        const nextGridData = { ...allData };
-        const nextDay = { ...(nextGridData[dateStr] || {}) };
-        let appliedHours = 0;
-        pack.segments.forEach(segment => {
-          const categoryId = resolveRoutineCategoryId(segment.role);
-          if (!categoryId) return;
-          const currentHour = { ...(nextDay[segment.hour] || { t1: null, t2: null, q1: null, q2: null, q3: null, q4: null, split1: false, split2: false, merged: false }) };
-          const values = ['t1', 't2', 'q1', 'q2', 'q3', 'q4'].map(key => currentHour[key]).filter(Boolean);
-          const hasRealData = values.some(value => !String(value).startsWith('bp_'));
-          if (hasRealData) return;
-          appliedHours += 1;
-          nextDay[segment.hour] = {
-            split1: false,
-            split2: false,
-            merged: false,
-            t1: `bp_${categoryId}`,
-            t2: `bp_${categoryId}`,
-            q1: null,
-            q2: null,
-            q3: null,
-            q4: null
-          };
-        });
-        nextGridData[dateStr] = nextDay;
-        setAllData(nextGridData);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(nextGridData));
-        if (scheduleGridBackupRef.current) scheduleGridBackupRef.current(allData, nextGridData, [dateStr]);
-
-        const currentTodos = todosData[dateStr] || [];
-        const existingTexts = new Set(currentTodos.map(todo => String(todo?.text || '').trim().toLowerCase()).filter(Boolean));
-        const additions = pack.todos
-          .filter(text => !existingTexts.has(String(text || '').trim().toLowerCase()))
-          .map(text => ({
-            id: createClientId('todo'),
-            text,
-            status: 'red',
-            done: false,
-            remark: '',
-            progress: 0,
-            subtasks: []
-          }));
-        const addedTodos = additions.length;
-        const nextTodos = { ...todosData, [dateStr]: [...currentTodos, ...additions] };
-        pushEntityHistory({ kind: 'todos', before: todosData, after: nextTodos, label: 'routine pack todos' });
-        setTodosData(nextTodos);
-        localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(nextTodos));
-
-        showToast(`${pack.name} applied: ${appliedHours} planned hour${appliedHours === 1 ? '' : 's'} and ${addedTodos} todo${addedTodos === 1 ? '' : 's'}.`, 'success');
-      }, [routinePacks, resolveRoutineCategoryId, saveHistoryState, showToast, allData, todosData]);
       // --- NEW: Habit reorder helpers (global, in System Modules) ---
       const moveHabitUp = useCallback((id) => {
         playSound('click');
@@ -2903,7 +2861,7 @@
           if (key === ' ') {
             e.preventDefault();
             // NEW: If any modal/window is open, close it on spacebar (if typing is not selected)
-        if (activeJournalDate || showSettingsModal || showHelp || showSearchModal || showQuickCapture || showBlueprintManagerModal || showStreakModal || showFrozenDatesModal || showStarredModal || showWeeklyReview || showPointsSelector || showLevelHistory) {
+        if (activeJournalDate || showSettingsModal || showHelp || showSearchModal || showQuickCapture || showBlueprintManagerModal || showStreakModal || showFrozenDatesModal || showStarredModal || showWeeklyReview || showPointsSelector || showLevelHistory || showAppMenu) {
               playSound('click');
               setActiveJournalDate(null);
               setShowSettingsModal(false);
@@ -2917,6 +2875,7 @@
           setShowWeeklyReview(false);
           setShowPointsSelector(false);
           setShowLevelHistory(false);
+          setShowAppMenu(false);
               return;
             }
             if (selectedColorId === 'lock') {
@@ -2938,7 +2897,16 @@
           if (key === 'j' && selectedColorId === 'lock') {
             e.preventDefault();
             playSound('click');
-            setSectionsOpen(prev => ({ ...prev, journal: true }));
+            setActiveMenuSection('journal');
+            setSectionsOpen({
+              tracker: false,
+              journal: true,
+              analytics: false,
+              modules: false,
+              storage: false,
+              graph: false,
+              wallet: false
+            });
             setJournalModuleDate(todayStr);
             setJournalFocusTick(Date.now());
             return;
@@ -2951,7 +2919,7 @@
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-}, [categories, handleUniversalUndo, handleUniversalRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory]);
+}, [categories, handleUniversalUndo, handleUniversalRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory, showAppMenu]);
 
       // NEW: Global Search modal focus + Escape to close
       useEffect(() => {
@@ -2968,10 +2936,18 @@
           window.removeEventListener('keydown', onKey);
         };
       }, [showSearchModal]);
+      useEffect(() => {
+        if (!showAppMenu) return;
+        const onKey = (e) => {
+          if (e.key === 'Escape') setShowAppMenu(false);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [showAppMenu]);
 
       // NEW: When opening the Journal-only module, focus the textarea for instant writing.
       useEffect(() => {
-        if (!sectionsOpen.journal) return;
+        if (!sectionsOpen.journal || activeMenuSection !== 'journal') return;
         primeTransientJournalMarker('module', journalModuleDate);
         const t = setTimeout(() => {
           try {
@@ -2984,10 +2960,10 @@
           } catch (e) {}
         }, 80);
         return () => window.clearTimeout(t);
-      }, [sectionsOpen.journal, journalModuleDate, journalFocusTick, primeTransientJournalMarker]);
+      }, [sectionsOpen.journal, activeMenuSection, journalModuleDate, journalFocusTick, primeTransientJournalMarker]);
       useEffect(() => {
-        if (!sectionsOpen.journal) clearTransientJournalMarker('module');
-      }, [sectionsOpen.journal, clearTransientJournalMarker]);
+        if (!sectionsOpen.journal || activeMenuSection !== 'journal') clearTransientJournalMarker('module');
+      }, [sectionsOpen.journal, activeMenuSection, clearTransientJournalMarker]);
 
       // NEW: Clear journal save pulse after 2 seconds
       useEffect(() => {
@@ -6456,30 +6432,6 @@
                             Save Day Template
                           </button>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {routinePacks.map(pack => {
-                            const PackIcon = pack.icon;
-                            return (
-                              <button
-                                key={pack.id}
-                                onClick={() => applyRoutinePack(activeJournalDate, pack.id)}
-                                className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 hover:bg-white/10 transition-all text-left"
-                                title={pack.description}
-                              >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${pack.id === 'morning' ? 'border-amber-400/30 bg-amber-500/10 text-amber-300' : 'border-indigo-400/30 bg-indigo-500/10 text-indigo-300'}`}>
-                                    <PackIcon size={16} />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="text-[11px] font-black uppercase tracking-widest text-white truncate">{pack.name}</div>
-                                    <div className="text-[10px] text-slate-400 truncate">{pack.id === 'morning' ? 'Grid + todos together' : 'Grid + todos together'}</div>
-                                  </div>
-                                </div>
-                                <Plus size={14} className="text-cyan-300 shrink-0" />
-                              </button>
-                            );
-                          })}
-                        </div>
                         <div className="flex flex-col md:flex-row gap-2">
                           <select
                             value={selectedTodoTemplateId}
@@ -7239,7 +7191,7 @@
                         <li><strong>Snooze Tasks:</strong> Instantly push an unfinished ToDo to tomorrow&apos;s list with a single click.</li>
                         <li><strong>Migrate Yesterday:</strong> A dedicated button inside the Captain's Log sweeps all unfinished tasks from the previous day into today's list.</li>
                         <li><strong>Granular Habit Tracking:</strong> Reorder habits via drag-and-drop, track individual habit streaks, and log partial progress (Yellow state) via a percentage slider.</li>
-                        <li><strong>NEW - Routine Packs:</strong> Reusable Morning and Evening packs can fill planned grid colors and inject matching ToDos together.</li>
+                        <li><strong>Day Templates:</strong> Save a day&apos;s ToDo setup as a reusable template, then append or replace it later in one tap.</li>
                       </ul>
                       <p className="mt-4"><strong>Grid & Journal Automation</strong></p>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
@@ -7257,6 +7209,7 @@
                         <li><strong>PDF Reporting:</strong> Export high-fidelity, beautifully formatted PDF reports for both your Weekly Journal/Grid and your Wallet Analytics.</li>
                         <li><strong>NEW - Weekly Review Screen:</strong> A dedicated review view auto-summarizes streaks, frozen days, spending, unfinished ToDos, and weekly wins, and now lets you pick the exact month and week to review.</li>
                         <li><strong>NEW - Mobile Bottom Bar:</strong> Phones now get a compact 4-action bottom dock, and Settings lets you choose which four actions live there.</li>
+                        <li><strong>NEW - App Menu & Pinned Sections:</strong> The top-left menu now opens sections one at a time like a modern app, and you can pin sections to keep them on the default Grid home view.</li>
                         <li><strong>Theme Engine:</strong> 12 completely distinct visual modes, ranging from high-contrast dark modes (Cyber, Void, Neon) to eye-friendly light modes (Daylight, Light Mode).</li>
                         <li><strong>Global Mute:</strong> A master switch in the settings to disable all system audio cues (paint, erase, success, trash) for silent environments.</li>
                       </ul>
@@ -8450,6 +8403,85 @@
                 </div>
               </div>
             )}
+            {showAppMenu && (
+              <div className="fixed inset-0 z-[260] bg-black/70 backdrop-blur-sm" onClick={() => setShowAppMenu(false)}>
+                <div className="h-full w-[min(340px,86vw)] bg-[#07101d]/95 border-r border-cyan-400/20 shadow-[0_0_35px_rgba(34,211,238,0.14)] flex flex-col" onClick={e => e.stopPropagation()}>
+                  <div className="px-5 py-5 border-b border-white/10">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.35em] text-cyan-400 font-black">Navigator</div>
+                        <div className="text-sm text-slate-300 mt-1">Grid is your default home. Pin sections to keep them beside it.</div>
+                      </div>
+                      <button onClick={() => setShowAppMenu(false)} className="w-10 h-10 rounded-2xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 transition-all">
+                        <X size={18} className="mx-auto" />
+                      </button>
+                    </div>
+                    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3">
+                      <div className="text-[10px] uppercase tracking-[0.3em] text-cyan-300 font-black">Home View</div>
+                      <div className="text-sm text-white font-bold mt-1">Grid{normalizedPinnedSections.length ? ` + ${normalizedPinnedSections.length} pinned section${normalizedPinnedSections.length === 1 ? '' : 's'}` : ' only'}</div>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
+                    {appSections.map(section => {
+                      const Icon = section.icon;
+                      const isActive = activeMenuSection === section.id;
+                      const isPinned = normalizedPinnedSections.includes(section.id);
+                      return (
+                        <div key={`menu-${section.id}`} className={`rounded-2xl border transition-all ${isActive ? 'border-cyan-400/50 bg-cyan-500/10 shadow-[0_0_18px_rgba(34,211,238,0.12)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
+                          <div className="flex items-center gap-2 p-2">
+                            <button
+                              onClick={() => navigateToSection(section.id)}
+                              className="flex-1 min-w-0 flex items-center gap-3 rounded-xl px-3 py-3 text-left"
+                            >
+                              <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${isActive ? 'border-cyan-400/40 bg-cyan-500/15' : 'border-white/10 bg-black/20'}`}>
+                                <Icon size={18} className={section.accent} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-sm font-black uppercase tracking-widest text-white truncate">{section.label}</div>
+                                <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{section.id === 'tracker' ? 'Default Home' : isPinned ? 'Pinned On Home' : 'Open Section'}</div>
+                              </div>
+                            </button>
+                            {section.id !== 'tracker' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  togglePinnedSection(section.id);
+                                }}
+                                className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all ${isPinned ? 'border-amber-400/40 bg-amber-500/10 text-amber-300' : 'border-white/10 bg-black/20 text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}
+                                title={isPinned ? 'Unpin from home view' : 'Pin to home view'}
+                              >
+                                <Pin size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="p-4 border-t border-white/10">
+                    <button
+                      onClick={() => {
+                        playSound('click');
+                        setShowAppMenu(false);
+                        setShowSettingsModal(true);
+                      }}
+                      className="w-full flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-200 hover:bg-white/10 transition-all"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl border border-white/10 bg-black/20 flex items-center justify-center text-slate-300">
+                          <Settings2 size={18} />
+                        </div>
+                        <div className="text-left">
+                          <div className="text-sm font-black uppercase tracking-widest text-white">Settings</div>
+                          <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">App Preferences</div>
+                        </div>
+                      </div>
+                      <ChevronDown size={16} className="-rotate-90 text-slate-500" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Header */}
 
             {/* Header */}
@@ -8457,6 +8489,16 @@
               <div className="max-w-[1400px] mx-auto px-4 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 {/* Logo Section */}
                 <div className="flex items-center gap-4 min-w-0">
+                  <button
+                    onClick={() => {
+                      playSound('click');
+                      setShowAppMenu(true);
+                    }}
+                    className="w-11 h-11 rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 transition-all shrink-0"
+                    title="Open app menu"
+                  >
+                    <Menu3 size={20} className="mx-auto" />
+                  </button>
                   <div className="relative flex items-center justify-center shrink-0 alive-pulse">
                     <img src="./icon-5125.png" alt="Trackerbox Icon" className="w-12 h-12 md:w-14 md:h-14 drop-shadow-[0_0_15px_rgba(34,211,238,0.5)] rounded-lg" />
                   </div>
@@ -8550,40 +8592,6 @@
                   >
                     <span className="text-3xl font-black leading-none">+</span>
                   </button>
-                  <button
-                    onClick={() => {
-                      openOnlySection('wallet');
-                      setWalletAmountFocusTick(t => t + 1);
-                      scrollToElementWithStickyOffset('section-wallet');
-                    }}
-                    className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${sectionsOpen.wallet ? 'border-emerald-400/70 bg-emerald-400/10 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                    title="Open Wallet-only module"
-                  >
-                    <Wallet size={20} />
-                  </button>
-                  {/* Journal shortcut - jump to the journal section header */}
-                  <button
-                    onClick={() => {
-                      openOnlySection('journal');
-                      setJournalModuleDate(activeJournalDate || todayStr);
-                      setJournalFocusTick(t => t + 1);
-                      scrollToElementWithStickyOffset('journal-only-module');
-                    }}
-                    className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${sectionsOpen.journal ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                    title="Open Journal section"
-                  >
-                    <FileText size={20} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      openOnlySection('tracker');
-                      scrollToElementWithStickyOffset('section-tracker');
-                    }}
-                    className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
-                    title="Show only Grid and jump to top"
-                  >
-                    <CalendarIcon size={20} />
-                  </button>
                   <div className="flex gap-2">
                     <button
                       onClick={handleUniversalUndo}
@@ -8623,15 +8631,13 @@
                     <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
                       <Clock size={20} />
                     </button>
-                    <button onClick={() => { playSound('click'); setShowSettingsModal(true); }} className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all" title="Open Settings">
-                      <Settings2 size={20} />
-                    </button>
                   </div>
                 </div>
               </div>
             </header>
             <main className="max-w-[1400px] w-full mx-auto px-4 py-8 flex-1 min-w-0 flex flex-col">
               {/* ---------------- SECTION 1: GRID ---------------- */}
+              {shouldRenderSection('tracker') && (
               <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-1" id="section-tracker">
                 {/* Accordion Header */}
                 <button onClick={() => toggleSection('tracker')} className="w-full p-4 md:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white/5 hover:bg-white/10 tb-interactive rounded-t-3xl">
@@ -9339,7 +9345,9 @@
                   </div>
                 )}
               </section>
+              )}
               {/* ---------------- SECTION: WALLET TRACKER ---------------- */}
+              {shouldRenderSection('wallet') && (
               <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-2" id="section-wallet">
                 <button onClick={() => toggleSection('wallet')} className="w-full p-4 md:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex flex-wrap items-center gap-3">
@@ -9853,7 +9861,9 @@
                   </div>
                 )}
               </section>
+              )}
               {/* ---------------- SECTION 2: ANALYTICS CORE ---------------- */}
+              {shouldRenderSection('analytics') && (
               <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-3" id="section-analytics">
                 <button onClick={() => toggleSection('analytics')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
@@ -10046,8 +10056,10 @@
                   </div>
                 )}
               </section>
+              )}
               {/* ---------------- BAR GRAPH SECTION ---------------- */}
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-4">
+              {shouldRenderSection('graph') && (
+              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-4" id="section-graph">
                 <button onClick={() => toggleSection('graph')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
                         <Activity size={24} className="text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
@@ -10173,7 +10185,9 @@
                   </div>
                 )}
               </section>
+              )}
               {/* ---------------- SECTION 3: JOURNAL ONLY MODULE ---------------- */}
+              {shouldRenderSection('journal') && (
               <section className={`glass-panel rounded-3xl w-full overflow-hidden mb-6 order-2 ${journalSavePulseTick ? 'journal-save-pulse' : ''}`} id="journal-only-module">
                 <button onClick={() => toggleSection('journal')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
@@ -10244,7 +10258,9 @@
                   </div>
                 )}
               </section>
+              )}
               {/* ---------------- SECTION 3: SYSTEM MODULES ---------------- */}
+              {shouldRenderSection('modules') && (
               <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-5" id="section-modules">
                 <button onClick={() => toggleSection('modules')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
@@ -10480,7 +10496,9 @@
                   </div>
                 )}
               </section>
+              )}
               {/* ---------------- SECTION 4: DATA & STORAGE CORE ---------------- */}
+              {shouldRenderSection('storage') && (
               <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 relative order-6" id="section-storage">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-red-500 opacity-50"></div>
                 <button onClick={() => toggleSection('storage')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive relative">
@@ -10615,6 +10633,7 @@
                   </div>
                 )}
               </section>
+              )}
             </main>
             <div className="md:hidden fixed bottom-3 left-1/2 -translate-x-1/2 z-[120] w-[calc(100vw-24px)] max-w-sm">
               <div className="glass-panel rounded-[24px] border border-white/10 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.45)]">
@@ -11167,47 +11186,94 @@
 
           {/* Budget Thresholds */}
           <div className="pt-4 border-t border-white/10 space-y-4">
-            <h4 className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Budget Thresholds</h4>
-            {categories.filter(c => c.type === 'expense').map(cat => {
-              const spent = categoryExpenses[cat.id] || 0;
-              const hasLimit = cat.monthlyLimit !== null && cat.monthlyLimit !== undefined && cat.monthlyLimit > 0;
-              const percent = hasLimit ? Math.min(100, (spent / cat.monthlyLimit) * 100) : 0;
-              const exceeded = hasLimit && spent > cat.monthlyLimit;
-              return (
-                <div key={cat.id} className="space-y-1.5">
-                  <div className="flex justify-between items-center text-[9px] font-bold uppercase">
-                    <span className="text-slate-300">{cat.name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className={hasLimit ? (exceeded ? 'text-rose-400' : 'text-emerald-400') : 'text-slate-400'}>
-                        {currency}{spent.toLocaleString()}
-                      </span>
-                      {hasLimit && (
-                        <>
-                          <span className="text-slate-500">/</span>
-                          <span className="text-slate-400">{currency}{cat.monthlyLimit.toLocaleString()}</span>
-                          {exceeded ? (
-                            <span className="text-rose-400 font-bold">(-{currency}{(spent - cat.monthlyLimit).toLocaleString()})</span>
-                          ) : (
-                            <span className="text-emerald-400 font-bold">(+{currency}{(cat.monthlyLimit - spent).toLocaleString()})</span>
-                          )}
-                        </>
-                      )}
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Budget Thresholds</h4>
+              <div className="text-[10px] text-slate-500 uppercase tracking-[0.25em]">60% calm · 85% watch · 100% over</div>
+            </div>
+            <div className="space-y-3">
+              {categories
+                .filter(c => c.type === 'expense')
+                .sort((a, b) => {
+                  const aHas = a.monthlyLimit !== null && a.monthlyLimit !== undefined && a.monthlyLimit > 0;
+                  const bHas = b.monthlyLimit !== null && b.monthlyLimit !== undefined && b.monthlyLimit > 0;
+                  if (aHas !== bHas) return aHas ? -1 : 1;
+                  const aPct = aHas ? ((categoryExpenses[a.id] || 0) / a.monthlyLimit) : -1;
+                  const bPct = bHas ? ((categoryExpenses[b.id] || 0) / b.monthlyLimit) : -1;
+                  return bPct - aPct;
+                })
+                .map(cat => {
+                  const spent = categoryExpenses[cat.id] || 0;
+                  const hasLimit = cat.monthlyLimit !== null && cat.monthlyLimit !== undefined && cat.monthlyLimit > 0;
+                  const rawRatio = hasLimit ? (spent / cat.monthlyLimit) : 0;
+                  const fillPercent = hasLimit ? Math.max(0, Math.min(100, rawRatio * 100)) : 0;
+                  const exceeded = hasLimit && rawRatio > 1;
+                  const nearLimit = hasLimit && rawRatio >= 0.85 && rawRatio <= 1;
+                  const healthy = hasLimit && rawRatio < 0.6;
+                  const statusLabel = !hasLimit ? 'No limit' : exceeded ? 'Over cap' : nearLimit ? 'Watch' : healthy ? 'Healthy' : 'Active';
+                  const statusTone = !hasLimit
+                    ? 'border-white/10 bg-white/5 text-slate-400'
+                    : exceeded
+                      ? 'border-rose-400/30 bg-rose-500/10 text-rose-300'
+                      : nearLimit
+                        ? 'border-amber-400/30 bg-amber-500/10 text-amber-300'
+                        : healthy
+                          ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-300'
+                          : 'border-cyan-400/30 bg-cyan-500/10 text-cyan-300';
+                  const barTone = !hasLimit
+                    ? 'bg-slate-500/30'
+                    : exceeded
+                      ? 'bg-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.45)]'
+                      : nearLimit
+                        ? 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.35)]'
+                        : healthy
+                          ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.35)]'
+                          : 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.35)]';
+                  return (
+                    <div key={cat.id} className="rounded-3xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat.color }}></div>
+                            <div className="text-sm font-black uppercase tracking-widest text-white truncate">{cat.name}</div>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-1">
+                            {hasLimit ? `${Math.round(rawRatio * 100)}% of ${currency}${cat.monthlyLimit.toLocaleString()} used` : 'Set a monthly limit to activate threshold tracking.'}
+                          </div>
+                        </div>
+                        <div className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.25em] ${statusTone}`}>
+                          {statusLabel}
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-2">
+                        <div className="rounded-2xl border border-white/10 bg-black/15 px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">Spent</div>
+                          <div className="text-sm font-black text-white mt-1">{currency}{spent.toLocaleString()}</div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-black/15 px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">Limit</div>
+                          <div className="text-sm font-black text-white mt-1">{hasLimit ? `${currency}${cat.monthlyLimit.toLocaleString()}` : '--'}</div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-black/15 px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">{exceeded ? 'Over' : 'Left'}</div>
+                          <div className={`text-sm font-black mt-1 ${exceeded ? 'text-rose-300' : 'text-emerald-300'}`}>
+                            {hasLimit ? `${currency}${Math.abs(cat.monthlyLimit - spent).toLocaleString()}` : '--'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4">
+                        <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/10">
+                          <div className={`h-full transition-all duration-500 ${barTone}`} style={{ width: `${fillPercent}%` }}></div>
+                        </div>
+                        {hasLimit && exceeded && (
+                          <div className="mt-2 text-[11px] text-rose-300">Over budget by {currency}{(spent - cat.monthlyLimit).toLocaleString()} this month.</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-500 ${hasLimit ? (exceeded ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.4)]') : 'bg-white/10'}`} 
-                      style={{ width: `${percent}%` }}
-                    ></div>
-                  </div>
-                  {!hasLimit && (
-                    <div className="text-[9px] text-slate-500 italic">No budget set for this category.</div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+            </div>
             {categories.filter(c => c.type === 'expense').length === 0 && (
-              <p className="text-[9px] text-slate-600 italic">No expense categories available.</p>
+              <p className="text-[10px] text-slate-600 italic">No expense categories available.</p>
             )}
           </div>
         </div>
@@ -11493,6 +11559,3 @@
   </script>n
 </body>
 </html> 
-
-
-
