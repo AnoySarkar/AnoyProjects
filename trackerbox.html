@@ -10,14 +10,17 @@
   <link rel="apple-touch-icon" href="./icon-192.png">
   <script>
     window.__trackerboxLoaderStartedAt = performance.now();
+    window.__trackerboxInitialDisplayName = '';
+    window.__trackerboxShouldKeepWarm = true;
+    try {
+      const raw = localStorage.getItem('trackerbox_settings_v1');
+      const settings = raw ? JSON.parse(raw) : null;
+      window.__trackerboxInitialDisplayName = settings?.userDisplayName?.trim() || '';
+      window.__trackerboxShouldKeepWarm = settings?.keepAppWarm !== false;
+    } catch (err) {}
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        try {
-          const raw = localStorage.getItem('trackerbox_settings_v1');
-          const settings = raw ? JSON.parse(raw) : null;
-          const shouldKeepWarm = settings?.keepAppWarm !== false;
-          if (!shouldKeepWarm) return;
-        } catch (err) {}
+        if (!window.__trackerboxShouldKeepWarm) return;
         navigator.serviceWorker.register('./sw.js')
           .then(reg => console.log('Service Worker registered successfully!', reg))
           .catch(err => console.error('Service Worker registration failed:', err));
@@ -250,6 +253,7 @@
       display: grid;
       gap: 0.55rem;
       justify-items: center;
+      width: 100%;
     }
     .loader-kicker {
       padding: 0.45rem 0.85rem;
@@ -282,10 +286,13 @@
       opacity: 0.95;
     }
     .loader-note {
-      max-width: 28ch;
-      font-size: 0.84rem;
+      width: 100%;
+      max-width: none;
+      font-size: clamp(0.62rem, 2.4vw, 0.84rem);
       line-height: 1.55;
       color: rgba(191, 219, 254, 0.7);
+      white-space: nowrap;
+      letter-spacing: 0.01em;
     }
     .loader-meter {
       width: min(270px, 92%);
@@ -400,7 +407,7 @@
         font-size: clamp(1.85rem, 10vw, 2.55rem);
       }
       .loader-note {
-        font-size: 0.79rem;
+        font-size: clamp(0.58rem, 2.8vw, 0.74rem);
       }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -635,7 +642,7 @@
         <span class="loader-spark loader-spark-3"></span>
       </div>
       <div class="loader-copy">
-        <div class="loader-kicker">Avijit Sarkar</div>
+        <div class="loader-kicker" id="loader-identity-pill">Welcome</div>
         <div class="loader-logo">TrackerBox</div>
         <div class="loader-status">Preparing Your Space</div>
         <div class="loader-note">Designed and Created by Avijit Sarkar</div>
@@ -652,6 +659,14 @@
       </div>
     </div>
   </div>
+  <script>
+    (function () {
+      const name = (window.__trackerboxInitialDisplayName || '').trim();
+      if (!name) return;
+      const pill = document.getElementById('loader-identity-pill');
+      if (pill) pill.textContent = name;
+    })();
+  </script>
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useLayoutEffect, useMemo, useCallback, Fragment, useRef } = React;
@@ -821,6 +836,7 @@
       defaultTimerMinutes: 25,
       defaultBreakMinutes: 5,
       keepAppWarm: true,
+      userDisplayName: '',
       defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick'],
       pinnedSections: []
     };
@@ -1166,6 +1182,7 @@
           defaultTimerMinutes: 25,
           defaultBreakMinutes: 5,
           keepAppWarm: true,
+          userDisplayName: '',
           defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick'],
           pinnedSections: []
         };
@@ -1184,6 +1201,8 @@
         } catch (e) {}
         return defaultSettings;
       });
+      const [showNameSetupModal, setShowNameSetupModal] = useState(() => !((window.__trackerboxInitialDisplayName || '').trim()));
+      const trimmedUserDisplayName = (settingsDraft.userDisplayName || '').trim().replace(/\s+/g, ' ');
       // Collapsible Section States
       const [sectionsOpen, setSectionsOpen] = useState({
          tracker: true,
@@ -7643,7 +7662,39 @@
                       </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">8. System Keyboard Shortcuts</h3>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">8. Identity, Startup & Interface Control</h3>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>First-Run Identity Prompt:</strong> On a fresh install, Trackerbox asks for your display name and uses it on the startup welcome pill. You can change it anytime in Settings.</li>
+                        <li><strong>Startup Defaults:</strong> Settings stores your preferred focus mode, default selected color/tool, default collapsed epochs, pomodoro length, and break length.</li>
+                        <li><strong>Keep App Warm:</strong> The settings panel shows service worker, shell cache, and persistent storage status so you can judge how "ready" the app is on your device.</li>
+                        <li><strong>App Menu + Pinned Sections:</strong> The top-left menu can open one major area at a time, while pinned sections keep your favorite modules visible on the main home view.</li>
+                        <li><strong>Mobile Bottom Bar Builder:</strong> On phones, you choose which four actions stay docked at the bottom for quick access.</li>
+                        <li><strong>Theme + Audio Controls:</strong> Trackerbox includes multiple visual themes and a global mute system for silent environments.</li>
+                      </ul>
+                    </div>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">9. Extended Modules & Memory Systems</h3>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Blueprint Manager:</strong> Save and reload structured day or week plans, including real fills and blueprint fills, so repeatable schedules can be restored fast.</li>
+                        <li><strong>Starred Memory Layer:</strong> Journal notes, cell notes, and wallet transactions can be starred and reopened later from one unified Starred Hub.</li>
+                        <li><strong>Frozen Day Registry:</strong> Cryo-Sleep dates are reviewable in their own modal so protected streak days stay transparent instead of disappearing into the heatmap.</li>
+                        <li><strong>Streak + Level Panels:</strong> Separate views expose longest streaks, active streak history, habit streaks, current rank title, and XP progression logic.</li>
+                        <li><strong>Wallet Expansion Modules:</strong> Beyond transactions, the finance system includes savings goals, debt ledgers, subscriptions, editable category budgets, and reusable wallet templates.</li>
+                        <li><strong>Transaction Lifecycle Tools:</strong> Wallet entries support starring, editing, deleting, template creation from live entries, and one-tap subscription payment logging.</li>
+                      </ul>
+                    </div>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">10. Analytics Configuration & Review Surfaces</h3>
+                      <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
+                        <li><strong>Heatmap Tuning Controls:</strong> Analytics lets you choose the metric to visualize, define worst/best thresholds, and set the XP multiplier used for point conversion.</li>
+                        <li><strong>Daily / Weekly / Monthly / Annual Scan Cards:</strong> The analytics core includes stat cards for multiple time horizons so you can inspect one date, one week, one month, or a full year.</li>
+                        <li><strong>Bar Graph Engine:</strong> A separate graph module plots points, XP, or category hours over week/month ranges for cleaner trend reading.</li>
+                        <li><strong>Weekly Review:</strong> The review screen summarizes completion rate, streak pulse, frozen days, spending, unfinished todos, and standout wins for a chosen week.</li>
+                        <li><strong>Export Surfaces:</strong> Both the planning side and the wallet side can generate polished PDFs for archival or sharing.</li>
+                      </ul>
+                    </div>
+                    <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">11. System Keyboard Shortcuts</h3>
                       <p><strong>Trackerbox features a robust hotkey system allowing you to navigate and log without touching the mouse.</strong></p>
                       <p className="mt-3"><strong>Global Shortcuts</strong></p>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
@@ -8120,6 +8171,53 @@
                 </div>
               ))}
             </div>
+            {showNameSetupModal && (
+              <div className="fixed inset-0 z-[9997] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="glass-panel w-full max-w-md rounded-3xl p-6 border-cyan-400/40" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shrink-0">
+                      <Sparkles size={22} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-black uppercase tracking-widest text-white">Choose Your Name</h2>
+                      <p className="text-sm text-slate-400 mt-1">Trackerbox will use this in the loading welcome pill, while the author credit stays fixed. You can change it anytime in Settings.</p>
+                    </div>
+                  </div>
+                  <label className="flex flex-col gap-2">
+                    <span className="text-xs font-bold uppercase tracking-widest text-cyan-300">Display Name</span>
+                    <input
+                      type="text"
+                      autoFocus
+                      maxLength="40"
+                      value={settingsDraft.userDisplayName || ''}
+                      onChange={(e) => setSettingsDraft(prev => ({ ...prev, userDisplayName: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && trimmedUserDisplayName) {
+                          setSettingsDraft(prev => ({ ...prev, userDisplayName: trimmedUserDisplayName }));
+                          setShowNameSetupModal(false);
+                          showToast(`Welcome, ${trimmedUserDisplayName}`, 'success');
+                        }
+                      }}
+                      placeholder="Enter your name"
+                      className="bg-[#0b1120] border border-white/10 focus:border-cyan-400/50 rounded-2xl px-4 py-3 text-white font-bold outline-none"
+                    />
+                  </label>
+                  <p className="text-xs text-slate-500 mt-3">This name is stored locally on this device.</p>
+                  <button
+                    onClick={() => {
+                      if (!trimmedUserDisplayName) return;
+                      setSettingsDraft(prev => ({ ...prev, userDisplayName: trimmedUserDisplayName }));
+                      setShowNameSetupModal(false);
+                      showToast(`Welcome, ${trimmedUserDisplayName}`, 'success');
+                    }}
+                    disabled={!trimmedUserDisplayName}
+                    className={`mt-6 w-full py-3 rounded-2xl font-black uppercase tracking-widest transition-all ${trimmedUserDisplayName ? 'bg-cyan-500 text-black hover:bg-cyan-400' : 'bg-white/5 text-slate-500 border border-white/10 cursor-not-allowed'}`}
+                  >
+                    Save Name
+                  </button>
+                </div>
+              </div>
+            )}
             {showSettingsModal && (
               <div className="fixed inset-0 z-[9998] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowSettingsModal(false)}>
                 <div className="glass-panel w-full max-w-2xl rounded-3xl p-6 border-cyan-400/40 max-h-[85vh] overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
@@ -8131,6 +8229,20 @@
                     <button onClick={() => setShowSettingsModal(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
                   </div>
                   <div className="grid gap-4">
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
+                      <label className="flex flex-col gap-2">
+                        <span className="font-bold uppercase tracking-widest text-xs text-cyan-300">Display Name</span>
+                        <input
+                          type="text"
+                          maxLength="40"
+                          value={settingsDraft.userDisplayName || ''}
+                          onChange={(e) => setSettingsDraft(prev => ({ ...prev, userDisplayName: e.target.value }))}
+                          placeholder="Enter your name"
+                          className="bg-[#0b1120] text-slate-200 rounded-2xl border border-white/10 px-4 py-3 outline-none"
+                        />
+                      </label>
+                      <p className="text-xs text-slate-500 mt-3">Used on the loading welcome pill and stored only in this browser.</p>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         onClick={() => {
@@ -8274,7 +8386,7 @@
                     <div className="flex flex-wrap gap-3 justify-end">
                       <button
                         onClick={() => {
-                          setSettingsDraft(DEFAULT_SETTINGS);
+                          setSettingsDraft(prev => ({ ...DEFAULT_SETTINGS, userDisplayName: prev.userDisplayName || '' }));
                           showToast('Defaults restored', 'success');
                         }}
                         className="px-4 py-3 bg-white/5 border border-white/10 text-slate-200 rounded-2xl hover:bg-white/10 transition-all"
@@ -8283,7 +8395,9 @@
                       </button>
                       <button
                         onClick={() => {
+                          setSettingsDraft(prev => ({ ...prev, userDisplayName: trimmedUserDisplayName }));
                           setShowSettingsModal(false);
+                          if (!trimmedUserDisplayName) setShowNameSetupModal(true);
                           showToast('Settings saved', 'success');
                         }}
                         className="px-4 py-3 bg-cyan-500 text-black font-bold rounded-2xl hover:bg-cyan-400 transition-all"
@@ -9292,9 +9406,6 @@
                                       <div className="flex items-start gap-2">
                                         <div className="shrink-0 w-10 md:w-12">
                                           <div className="sticky top-20 flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
-                                            <button onClick={handleUniversalUndo} disabled={!canUniversalUndo} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${canUniversalUndo ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
-                                            <button onClick={handleUniversalRedo} disabled={!canUniversalRedo} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${canUniversalRedo ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
-                                            <div className="w-full h-px bg-white/10 my-1"></div>
                                             {/* Compact Plan Toggle (P) */}
                                             <button
                                               onClick={() => {
@@ -9640,9 +9751,6 @@
                                       {idx === 0 && (
                                         <td rowSpan={6} className="align-middle sticky left-0 z-40 w-[45px] md:w-[60px] p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}>
                                           <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
-                                            <button onClick={handleUniversalUndo} disabled={!canUniversalUndo} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${canUniversalUndo ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
-                                            <button onClick={handleUniversalRedo} disabled={!canUniversalRedo} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${canUniversalRedo ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
-                                            <div className="w-full h-px bg-white/10 my-1"></div>
                                             {/* Compact Plan Toggle (P) */}
                                             <button
                                               onClick={() => {
