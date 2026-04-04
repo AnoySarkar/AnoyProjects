@@ -898,6 +898,7 @@
     const LOCAL_TODO_TEMPLATES_KEY = 'trackerbox_todo_templates_v1';
     const LOCAL_PRIVACY_MODE_KEY = 'trackerbox_privacy_mode_v1';
     const LOCAL_RESUME_STATE_KEY = 'trackerbox_resume_state_v1';
+    const LOCAL_SECTION_TAB_STATE_KEY = 'trackerbox_section_tabs_v1';
     const LOCAL_CUSTOM_SOFT_REMINDERS_KEY = 'trackerbox_custom_soft_reminders_v1';
     const LOCAL_DISMISSED_REMINDERS_KEY = 'trackerbox_dismissed_reminders_v1';
     const LOCAL_WALLET_ANALYTICS_PERIOD_KEY = 'trackerbox_wallet_analytics_period_v1';
@@ -979,6 +980,22 @@
       const weekNumber = 1 + Math.ceil((firstThursday - target) / (7 * 24 * 60 * 60 * 1000));
       return `${date.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
     };
+    const getDefaultFocusTabId = (date = new Date()) => {
+      const hour = date.getHours();
+      if (hour < 6) return 'night';
+      if (hour < 12) return 'morning';
+      if (hour < 18) return 'afternoon';
+      return 'evening';
+    };
+    const createDefaultSectionTabs = () => ({
+      trackerFocus: getDefaultFocusTabId(),
+      wallet: 'entry',
+      analytics: 'heatmap',
+      graph: 'graph',
+      journal: 'editor',
+      modules: 'categories',
+      storage: 'backup'
+    });
     const DEFAULT_ACTION_PRESETS = [
       {
         id: 'preset_tea_break',
@@ -1434,6 +1451,15 @@
         return settingsDraft.defaultFocusMode;
       });
       const [focusModeDate, setFocusModeDate] = useState(() => formatDateString(new Date()));
+      const [sectionTabs, setSectionTabs] = useState(() => {
+        const defaults = createDefaultSectionTabs();
+        try {
+          const saved = JSON.parse(localStorage.getItem(LOCAL_SECTION_TAB_STATE_KEY));
+          return saved && typeof saved === 'object' ? { ...defaults, ...saved } : defaults;
+        } catch (e) {
+          return defaults;
+        }
+      });
       
       const [isPrivacyMode, setIsPrivacyMode] = useState(() => {
         try {
@@ -1441,6 +1467,9 @@
           return saved === 'true';
         } catch (e) { return false; }
       });
+      const setSectionTab = (sectionId, tabId) => {
+        setSectionTabs(prev => ({ ...prev, [sectionId]: tabId }));
+      };
 
       // === WALLET TRACKER HELPERS ===
       const addWalletTransaction = (type, categoryId, amount, remark, dateStr, walletId = activeWalletId) => {
@@ -1547,6 +1576,31 @@
           return { ...prev, pinnedSections: next.filter((id, index) => pinnableSectionIds.includes(id) && next.indexOf(id) === index) };
         });
       };
+      const renderSectionIconTabs = (sectionId, tabs, className = '') => (
+        <div className={`mb-6 overflow-x-auto custom-scrollbar ${className}`.trim()}>
+          <div className="inline-flex min-w-full justify-start md:justify-center gap-2 rounded-[20px] border border-white/10 bg-[#05070e]/55 p-2 backdrop-blur-md">
+            {tabs.map(tab => {
+              const Icon = tab.icon;
+              const isActive = sectionTabs[sectionId] === tab.id;
+              return (
+                <button
+                  key={`${sectionId}-${tab.id}`}
+                  type="button"
+                  onClick={() => {
+                    playSound('click');
+                    setSectionTab(sectionId, tab.id);
+                  }}
+                  className={`h-11 w-11 shrink-0 rounded-2xl border transition-all flex items-center justify-center ${isActive ? (tab.activeClassName || 'border-cyan-400/60 bg-cyan-500/15 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.18)]') : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200'}`}
+                  title={tab.label}
+                  aria-label={tab.label}
+                >
+                  <Icon size={18} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
       const openOnlySection = (sec) => {
          playSound('click');
          setActiveMenuSection(sec);
@@ -1629,6 +1683,9 @@
       useEffect(() => {
         try { localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settingsDraft)); } catch (e) {}
       }, [settingsDraft]);
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_SECTION_TAB_STATE_KEY, JSON.stringify(sectionTabs)); } catch (e) {}
+      }, [sectionTabs]);
       useEffect(() => {
         writeResumeState({
           activeMenuSection,
@@ -2005,6 +2062,7 @@
           customSoftReminders: L.customSoftReminders,
           dismissedReminderKeys: L.dismissedReminderKeys,
           settings: L.settingsDraft,
+          sectionTabs: L.sectionTabs,
           resumeState: readResumeState(),
           lastExportTime: L.lastExportTime,
           walletTransactions: L.walletTransactions,
@@ -2032,6 +2090,7 @@
             isDescriptionMode: L.isDescriptionMode,
             collapsedEpochs: L.collapsedEpochs,
             sectionsOpen: L.sectionsOpen,
+            sectionTabs: L.sectionTabs,
             selectedColorId: L.selectedColorId,
             walletFilterPeriod: L.walletFilterPeriod,
             walletFilterDay: L.walletFilterDay,
@@ -3484,6 +3543,7 @@
           customSoftReminders,
           dismissedReminderKeys,
           settingsDraft,
+          sectionTabs,
           resumeState: readResumeState(),
           lastExportTime,
           isPrivacyMode,
@@ -3505,6 +3565,7 @@
           isDescriptionMode,
           collapsedEpochs,
           sectionsOpen,
+          sectionTabs,
           selectedColorId,
           walletTransactions,
           wallets,
@@ -3540,7 +3601,7 @@
             flushAutoBackupToFolder(snap);
           }, 650);
         };
-}, [allData, journalData, journalStars, todosData, habitsConfig, habitLogs, sysConfig, descriptions, noteStars, frozenDays, blueprintPresets, actionPresets, customSoftReminders, dismissedReminderKeys, settingsDraft, lastExportTime, isPrivacyMode, walletFilterPeriod, walletFilterDay, walletFilterWeek, walletFilterMonth, walletFilterYear, walletCategoryFilter, walletTypeFilter, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
+}, [allData, journalData, journalStars, todosData, habitsConfig, habitLogs, sysConfig, descriptions, noteStars, frozenDays, blueprintPresets, actionPresets, customSoftReminders, dismissedReminderKeys, settingsDraft, sectionTabs, lastExportTime, isPrivacyMode, walletFilterPeriod, walletFilterDay, walletFilterWeek, walletFilterMonth, walletFilterYear, walletCategoryFilter, walletTypeFilter, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
       useEffect(() => () => {
         clearTimeout(autoBackupTimerRef.current);
       }, []);
@@ -3844,6 +3905,11 @@
       const habitZoneAvailableWeeks = useMemo(() => getWeeksInMonth(habitZoneWeekMonth), [habitZoneWeekMonth]);
       // === NEW: Compute display dates for FOCUS MODE ===
       const displayDates = isFocusMode ? [focusModeDate] : currentWeekDates;
+      const activeFocusSection = SECTIONS.find(section => section.id === sectionTabs.trackerFocus) || SECTIONS[0];
+      const walletSectionTab = sectionTabs.wallet || 'entry';
+      const analyticsSectionTab = sectionTabs.analytics || 'heatmap';
+      const modulesSectionTab = sectionTabs.modules || 'categories';
+      const storageSectionTab = sectionTabs.storage || 'backup';
       const habitZoneDates = useMemo(() => {
         if (habitZoneMode === 'week') return habitZoneAvailableWeeks[habitZoneWeekIndex]?.dates || [];
         if (habitZoneMode === 'month') {
@@ -5663,6 +5729,7 @@
           customSoftReminders,
           dismissedReminderKeys,
           settings: settingsDraft,
+          sectionTabs,
           resumeState: readResumeState(),
           lastExportTime,
           walletTransactions,
@@ -5690,6 +5757,7 @@
             isDescriptionMode,
             collapsedEpochs,
             sectionsOpen,
+            sectionTabs,
             selectedColorId,
             walletFilterPeriod,
             walletFilterDay,
@@ -6249,6 +6317,11 @@
                 setSettingsDraft(nextSettings);
                 localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(nextSettings));
               }
+              if (hasImportedField('sectionTabs') && imported.sectionTabs && typeof imported.sectionTabs === 'object') {
+                const nextSectionTabs = { ...createDefaultSectionTabs(), ...imported.sectionTabs };
+                setSectionTabs(nextSectionTabs);
+                localStorage.setItem(LOCAL_SECTION_TAB_STATE_KEY, JSON.stringify(nextSectionTabs));
+              }
               if (hasImportedField('resumeState') && imported.resumeState && typeof imported.resumeState === 'object') {
                 const exactResumeState = { ...imported.resumeState, updatedAt: Date.now() };
                 try { localStorage.setItem(LOCAL_RESUME_STATE_KEY, JSON.stringify(exactResumeState)); } catch (e) {}
@@ -6317,6 +6390,11 @@
                 if (typeof u.isDescriptionMode === 'boolean') setIsDescriptionMode(u.isDescriptionMode);
                 if (u.collapsedEpochs && typeof u.collapsedEpochs === 'object') setCollapsedEpochs(ce => ({ ...ce, ...u.collapsedEpochs }));
                 if (u.sectionsOpen && typeof u.sectionsOpen === 'object') setSectionsOpen(so => ({ ...so, ...u.sectionsOpen }));
+                if (u.sectionTabs && typeof u.sectionTabs === 'object') {
+                  const nextSectionTabs = { ...createDefaultSectionTabs(), ...u.sectionTabs };
+                  setSectionTabs(nextSectionTabs);
+                  localStorage.setItem(LOCAL_SECTION_TAB_STATE_KEY, JSON.stringify(nextSectionTabs));
+                }
                 if (u.selectedColorId) setSelectedColorId(u.selectedColorId);
                 if (u.walletFilterPeriod) setWalletFilterPeriod(u.walletFilterPeriod);
                 if (u.walletFilterDay) setWalletFilterDay(u.walletFilterDay);
@@ -6365,6 +6443,9 @@
                     ...(imported.settings.defaultCollapsedEpochs && typeof imported.settings.defaultCollapsedEpochs === 'object' ? imported.settings.defaultCollapsedEpochs : {})
                   }
                 }));
+              }
+              if (hasImportedField('sectionTabs') && imported.sectionTabs && typeof imported.sectionTabs === 'object') {
+                localStorage.setItem(LOCAL_SECTION_TAB_STATE_KEY, JSON.stringify({ ...createDefaultSectionTabs(), ...imported.sectionTabs }));
               }
               playSound('success');
               showToast("âœ… Successfully uploaded! All data has been synchronized.");
@@ -10922,8 +11003,14 @@
                             </div>
                             <div className="flex items-start gap-3 md:gap-4">
                               <div className="flex-1 min-w-0">
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-5">
-                              {SECTIONS.map((section) => (
+                            {renderSectionIconTabs('trackerFocus', SECTIONS.map(section => ({
+                              id: section.id,
+                              label: section.label,
+                              icon: section.icon,
+                              activeClassName: 'border-lime-400/60 bg-lime-500/15 text-lime-200 shadow-[0_0_16px_rgba(163,230,53,0.18)]'
+                            })), 'mb-4 md:mb-5')}
+                            <div className="grid grid-cols-1 gap-4 md:gap-5">
+                              {[activeFocusSection].map((section) => (
                                 <div id={`tb-section-${section.id}`} key={section.id} className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden backdrop-blur-sm">
                                   <button
                                     onClick={() => toggleEpoch(section.id)}
@@ -11412,9 +11499,16 @@
                 </button>
                 {sectionsOpen.wallet && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
+                    {renderSectionIconTabs('wallet', [
+                      { id: 'entry', label: 'Add Transaction & Log', icon: Plus, activeClassName: 'border-cyan-400/60 bg-cyan-500/15 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.18)]' },
+                      { id: 'overview', label: 'Balance Overview', icon: Wallet, activeClassName: 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.18)]' },
+                      { id: 'breakdown', label: 'Monthly Breakdown & Budgets', icon: BarChart3, activeClassName: 'border-purple-400/60 bg-purple-500/15 text-purple-200 shadow-[0_0_16px_rgba(168,85,247,0.18)]' },
+                      { id: 'analytics', label: 'Financial Analytics', icon: PieChart, activeClassName: 'border-amber-400/60 bg-amber-500/15 text-amber-200 shadow-[0_0_16px_rgba(245,158,11,0.18)]' },
+                      { id: 'vault', label: 'Savings, Debts & Subscriptions', icon: Database, activeClassName: 'border-fuchsia-400/60 bg-fuchsia-500/15 text-fuchsia-200 shadow-[0_0_16px_rgba(217,70,239,0.18)]' }
+                    ])}
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                       {/* Add Transaction */}
-                      <div className="order-1 lg:order-2 lg:col-span-4 space-y-6">
+                      <div className={`order-1 lg:order-2 ${walletSectionTab === 'entry' ? 'lg:col-span-4' : 'hidden'} space-y-6`}>
                         <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
                             <h3 className="font-bold text-cyan-400 uppercase tracking-widest text-xs">Add Transaction</h3>
@@ -11453,7 +11547,7 @@
                       </div>
 
                       {/* Wallet Top Stats */}
-                      <div className="order-2 lg:order-1 lg:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-4 mb-0">
+                      <div className={walletSectionTab === 'overview' ? 'order-2 lg:order-1 lg:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-4 mb-0' : 'hidden'}>
                         {(() => {
                           const activeWalletTxs = walletTransactions.filter(t => t.walletId === activeWalletId);
                           const totalIncome = activeWalletTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
@@ -11479,7 +11573,7 @@
                       </div>
 
                       {/* Transaction Logs */}
-                      <div className="order-3 lg:order-3 lg:col-span-8 space-y-6">
+                      <div className={`order-3 lg:order-3 ${(walletSectionTab === 'entry' || walletSectionTab === 'overview') ? (walletSectionTab === 'overview' ? 'lg:col-span-12' : 'lg:col-span-8') : 'hidden'} space-y-6`}>
                         <div className="bg-white/5 border border-white/10 rounded-3xl p-6 h-full flex flex-col">
                           <div className="flex justify-between items-center mb-5 border-b border-white/10 pb-3">
                             <h3 className="font-bold text-emerald-400 uppercase tracking-widest text-xs">Transaction Logs</h3>
@@ -11580,7 +11674,7 @@
                       </div>
 
                       {/* Monthly Breakdown */}
-                      <div className="order-4 lg:order-4 lg:col-span-4 space-y-6">
+                      <div className={`order-4 lg:order-4 ${walletSectionTab === 'breakdown' ? 'lg:col-span-12' : 'hidden'} space-y-6`}>
                         <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
                           <h3 className="font-bold text-purple-400 uppercase tracking-widest text-xs mb-5 border-b border-purple-500/30 pb-3">Monthly Breakdown</h3>
                           <WalletMonthlyStats transactions={walletTransactions} categories={walletCategories} currency={walletCurrency} walletId={activeWalletId} />
@@ -11589,7 +11683,7 @@
                     </div>
 
                     {/* Charts Section */}
-                    <div className="mt-8 bg-white/5 border border-white/10 rounded-3xl p-6">
+                    <div className={`${walletSectionTab === 'analytics' ? 'mt-2' : 'hidden'} bg-white/5 border border-white/10 rounded-3xl p-6`}>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
                         <div>
                           <h3 className="font-bold text-amber-400 uppercase tracking-widest text-xs mb-2">Financial Analytics</h3>
@@ -11665,7 +11759,7 @@
                     </div>
 
                     {/* NEW: Extra Wallet Modules */}
-                    <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className={walletSectionTab === 'vault' ? 'mt-2 grid grid-cols-1 lg:grid-cols-3 gap-6' : 'hidden'}>
                       {/* Savings Goals */}
                       <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
                         <div className="flex justify-between items-center mb-5 border-b border-cyan-500/30 pb-3">
@@ -11875,7 +11969,12 @@
                 </button>
                 {sectionsOpen.analytics && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
-                    <div className="mb-8 bg-white/5 border border-white/10 rounded-3xl p-6">
+                    {renderSectionIconTabs('analytics', [
+                      { id: 'heatmap', label: 'Heatmap Controls', icon: Activity, activeClassName: 'border-pink-400/60 bg-pink-500/15 text-pink-200 shadow-[0_0_16px_rgba(236,72,153,0.18)]' },
+                      { id: 'stats', label: 'Stats Cards', icon: PieChart, activeClassName: 'border-cyan-400/60 bg-cyan-500/15 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.18)]' },
+                      { id: 'trend', label: 'Trend Timeline', icon: TrendingUp, activeClassName: 'border-lime-400/60 bg-lime-500/15 text-lime-200 shadow-[0_0_16px_rgba(163,230,53,0.18)]' }
+                    ])}
+                    <div className={analyticsSectionTab === 'heatmap' ? 'mb-8 bg-white/5 border border-white/10 rounded-3xl p-6' : 'hidden'}>
                       <h3 className="font-bold text-pink-400 uppercase tracking-widest text-xs mb-5 border-b border-pink-500/30 pb-3">HEATMAP VISUALIZATION CONTROLS</h3>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                         <div>
@@ -11963,7 +12062,7 @@
                         })()}
                       </div>
                     </div>
-                    <ChronoSpectralHeatmap
+                    {analyticsSectionTab === 'heatmap' && <ChronoSpectralHeatmap
                       statYear={statYear}
                       allData={allData}
                       todosData={todosData}
@@ -11972,8 +12071,8 @@
                       sysConfig={sysConfig}
                       heatmapMode={sysConfig.heatmapMode}
                       onDayClick={setActiveJournalDate}
-                    />
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mt-6 md:mt-8">
+                    />}
+                    <div className={analyticsSectionTab === 'stats' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mt-2' : 'hidden'}>
                       <div className="flex flex-col h-full gap-3 md:gap-4">
                         <div className="bg-white/5 rounded-2xl border border-white/10 p-3 flex flex-col">
                           <span className="text-[10px] md:text-xs font-black uppercase text-slate-400 tracking-wider">Daily Scan</span>
@@ -12008,7 +12107,7 @@
                         <StatCard title="Selected Year" stats={statsYear} categories={categories} showGoals={true} multiplier={365} showAverage={true} />
                       </div>
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-3 mt-6">
+                    <div className={analyticsSectionTab === 'trend' ? 'flex flex-wrap items-center justify-between gap-3 mt-2' : 'hidden'}>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => { playSound('click'); setActivityTimeView('week'); }}
@@ -12046,14 +12145,14 @@
                         )}
                       </div>
                     </div>
-                    <WeeklyChart
+                    {analyticsSectionTab === 'trend' && <WeeklyChart
                       viewMode={activityTimeView}
                       weekDates={statAvailableWeeks[statWeekIndex]?.dates || []}
                       monthDates={activityTimeMonth ? getDaysInMonth(activityTimeMonth) : []}
                       allData={allData}
                       categories={categories}
                       onDayClick={setActiveJournalDate}
-                    />
+                    />}
                   </div>
                 )}
               </section>
@@ -12070,6 +12169,9 @@
                 </button>
                 {sectionsOpen.graph && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
+                    {renderSectionIconTabs('graph', [
+                      { id: 'graph', label: 'Bar Graph', icon: BarChart3, activeClassName: 'border-amber-400/60 bg-amber-500/15 text-amber-200 shadow-[0_0_16px_rgba(245,158,11,0.18)]' }
+                    ])}
                     <div className="flex flex-wrap items-end gap-6 mb-8">
                       <div className="flex-1 min-w-[220px]">
                         <label className="block text-xs font-black text-amber-300 uppercase tracking-widest mb-2">What to graph</label>
@@ -12199,6 +12301,9 @@
                 </button>
                 {sectionsOpen.journal && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
+                    {renderSectionIconTabs('journal', [
+                      { id: 'editor', label: 'Journal Editor', icon: FileText, activeClassName: 'border-amber-400/60 bg-amber-500/15 text-amber-200 shadow-[0_0_16px_rgba(245,158,11,0.18)]' }
+                    ])}
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                       <div className="flex items-center gap-3">
                         <span className="text-xs font-bold text-amber-300 uppercase tracking-widest">TARGET DAY</span>
@@ -12272,6 +12377,12 @@
                 </button>
                 {sectionsOpen.modules && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
+                    {renderSectionIconTabs('modules', [
+                      { id: 'categories', label: 'Category Manifest', icon: Square, activeClassName: 'border-cyan-400/60 bg-cyan-500/15 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.18)]' },
+                      { id: 'habits', label: 'Habit Tracker', icon: CalendarIcon, activeClassName: 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.18)]' },
+                      { id: 'presets', label: 'Blueprint Presets', icon: Database, activeClassName: 'border-indigo-400/60 bg-indigo-500/15 text-indigo-200 shadow-[0_0_16px_rgba(99,102,241,0.18)]' }
+                    ])}
+                    <div className={modulesSectionTab === 'categories' ? '' : 'hidden'}>
                     <h3 className="font-bold text-cyan-400 uppercase tracking-widest text-xs mb-4 border-b border-cyan-500/30 pb-2">Category Manifest</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 mb-8 md:mb-12">
                       {categories.map((cat, idx) => (
@@ -12295,7 +12406,9 @@
                          <Plus size={20} /> Add Category
                       </button>
                     </div>
-                    <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8 border-t border-cyan-500/30 pt-6 md:pt-8">
+                    </div>
+                    <div className={modulesSectionTab === 'habits' ? '' : 'hidden'}>
+                    <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8">
                       <div className="bg-emerald-500/20 p-2 md:p-3 rounded-xl md:rounded-2xl border border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
                         <CalendarIcon size={24} className="text-emerald-400 md:hidden" />
                         <CalendarIcon size={28} className="text-emerald-400 hidden md:block" />
@@ -12475,8 +12588,10 @@
                         })}
                       </div>
                     </div>
+                    </div>
+                    <div className={modulesSectionTab === 'presets' ? '' : 'hidden'}>
                     {/* Blueprint Presets Library in Modules */}
-                    <div className="mt-12 pt-8 border-t border-white/10">
+                    <div className="mt-2">
                       <h3 className="font-bold text-indigo-400 uppercase tracking-widest text-xs mb-4 flex items-center gap-2"><Database size={18} /> Blueprint Presets Library</h3>
                       <div className="text-xs text-slate-400 mb-4">Your saved day + week presets (real + plan colours) appear here.</div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -12493,6 +12608,7 @@
                         ))}
                         {blueprintPresets.length === 0 && <div className="col-span-2 text-slate-400 italic text-center py-8">No presets yet â€“ use the new single button in any day header</div>}
                       </div>
+                    </div>
                     </div>
                   </div>
                 )}
@@ -12511,7 +12627,11 @@
                 </button>
                 {sectionsOpen.storage && (
                   <div className="flex flex-col border-t border-white/10 p-4 md:p-6">
-                    <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 md:gap-6">
+                    {renderSectionIconTabs('storage', [
+                      { id: 'backup', label: 'Backup, Restore & Reset', icon: Database, activeClassName: 'border-emerald-400/60 bg-emerald-500/15 text-emerald-200 shadow-[0_0_16px_rgba(16,185,129,0.18)]' },
+                      { id: 'theme', label: 'Theme Options', icon: Sun, activeClassName: 'border-violet-400/60 bg-violet-500/15 text-violet-200 shadow-[0_0_16px_rgba(167,139,250,0.18)]' }
+                    ])}
+                    <div className={storageSectionTab === 'backup' ? 'grid grid-cols-1 xl:grid-cols-4 gap-4 md:gap-6' : 'hidden'}>
                       {/* Automated Local Auto-Save */}
                       <div className="xl:col-span-2 bg-emerald-900/10 border border-emerald-500/20 rounded-2xl p-6 flex flex-col gap-4">
                         <div className="flex items-center gap-3 border-b border-emerald-500/20 pb-3">
@@ -12607,7 +12727,7 @@
                         </div>
                       </div>
                     </div>
-                    <div className="mt-8 pt-6 border-t border-white/10">
+                    <div className={storageSectionTab === 'theme' ? 'mt-2 pt-2' : 'hidden'}>
                       <h3 className="font-bold text-violet-400 uppercase tracking-widest text-xs mb-4">Theme Options (12 total)</h3>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {[
