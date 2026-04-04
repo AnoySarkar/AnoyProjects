@@ -833,6 +833,7 @@
     const Info = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>;
     const Search = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>;
     const Clock = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+    const Bell = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M10.27 21a2 2 0 0 0 3.46 0"/><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/></svg>;
     const FileText = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>;
     const Copy = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>;
     const Clipboard = ({size=24, className=""}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>;
@@ -895,6 +896,9 @@
     const LOCAL_SAVINGS_GOALS_KEY = 'trackerbox_savings_goals_v1';
     const LOCAL_TODO_TEMPLATES_KEY = 'trackerbox_todo_templates_v1';
     const LOCAL_PRIVACY_MODE_KEY = 'trackerbox_privacy_mode_v1';
+    const LOCAL_RESUME_STATE_KEY = 'trackerbox_resume_state_v1';
+    const LOCAL_CUSTOM_SOFT_REMINDERS_KEY = 'trackerbox_custom_soft_reminders_v1';
+    const LOCAL_DISMISSED_REMINDERS_KEY = 'trackerbox_dismissed_reminders_v1';
     const AUTO_BACKUP_LIMIT = 5;
     const getIsMobileViewport = () => {
       try {
@@ -932,6 +936,12 @@
         });
       }
       return next;
+    };
+    const getMinutesFromClockValue = (value) => {
+      if (!value || typeof value !== 'string' || !value.includes(':')) return null;
+      const [hh, mm] = value.split(':').map(part => parseInt(part, 10));
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+      return hh * 60 + mm;
     };
     const DEFAULT_ACTION_PRESETS = [
       {
@@ -1308,11 +1318,33 @@
     };
     // --- Main Application ---
     function App() {
+      const readResumeState = () => {
+        try {
+          const raw = localStorage.getItem(LOCAL_RESUME_STATE_KEY);
+          const parsed = raw ? JSON.parse(raw) : null;
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+          return {};
+        }
+      };
+      const writeResumeState = (patch = {}) => {
+        try {
+          const prev = readResumeState();
+          localStorage.setItem(LOCAL_RESUME_STATE_KEY, JSON.stringify({
+            ...prev,
+            ...patch,
+            updatedAt: Date.now()
+          }));
+        } catch (e) {}
+      };
       const [isLoaded, setIsLoaded] = useState(false);
       const [showHelp, setShowHelp] = useState(false);
       const [showSettingsModal, setShowSettingsModal] = useState(false);
       const [showAppMenu, setShowAppMenu] = useState(false);
-      const [activeMenuSection, setActiveMenuSection] = useState('tracker');
+      const [activeMenuSection, setActiveMenuSection] = useState(() => {
+        const saved = readResumeState();
+        return typeof saved.activeMenuSection === 'string' && saved.activeMenuSection.trim() ? saved.activeMenuSection : 'tracker';
+      });
       const [settingsDraft, setSettingsDraft] = useState(() => {
         const defaultSettings = createDefaultSettings();
         try {
@@ -1552,6 +1584,30 @@
       useEffect(() => {
         try { localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settingsDraft)); } catch (e) {}
       }, [settingsDraft]);
+      useEffect(() => {
+        writeResumeState({
+          activeMenuSection,
+          activeJournalDate,
+          journalModuleDate
+        });
+      }, [activeMenuSection, activeJournalDate, journalModuleDate]);
+      useEffect(() => {
+        const persistScroll = () => {
+          writeResumeState({ scrollY: Math.max(0, window.scrollY || window.pageYOffset || 0) });
+        };
+        let timeoutId = null;
+        const handleScroll = () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          timeoutId = window.setTimeout(persistScroll, 120);
+        };
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        window.addEventListener('beforeunload', persistScroll);
+        return () => {
+          if (timeoutId) clearTimeout(timeoutId);
+          window.removeEventListener('scroll', handleScroll);
+          window.removeEventListener('beforeunload', persistScroll);
+        };
+      }, []);
       useEffect(() => {
         try { localStorage.setItem(LOCAL_FOCUS_MODE_KEY, String(isFocusMode)); } catch (e) {}
       }, [isFocusMode]);
@@ -1903,6 +1959,11 @@
           frozenDays: L.frozenDays,
           blueprintPresets: L.blueprintPresets,
           actionPresets: L.actionPresets,
+          customSoftReminders: L.customSoftReminders,
+          dismissedReminderKeys: L.dismissedReminderKeys,
+          settings: L.settingsDraft,
+          resumeState: readResumeState(),
+          lastExportTime: L.lastExportTime,
           walletTransactions: L.walletTransactions,
           wallets: L.wallets,
           activeWalletId: L.activeWalletId,
@@ -1944,7 +2005,7 @@
             journalModuleDate: L.journalModuleDate
           },
           exportedAt: new Date().toISOString(),
-          version: 15
+          version: 17
         };
         const json = JSON.stringify(payload);
         const blob = new Blob([json], { type: 'application/json' });
@@ -2061,6 +2122,25 @@
       useEffect(() => {
         if (!activeJournalDate) clearTransientJournalMarker('captain');
       }, [activeJournalDate, clearTransientJournalMarker]);
+      useEffect(() => {
+        if (!isLoaded || hasRestoredResumeScrollRef.current) return;
+        hasRestoredResumeScrollRef.current = true;
+        const saved = readResumeState();
+        const targetScroll = Number(saved.scrollY);
+        if (!Number.isFinite(targetScroll) || targetScroll <= 0) return;
+        let lateTimer = null;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            window.scrollTo({ top: targetScroll, left: 0, behavior: 'auto' });
+            lateTimer = window.setTimeout(() => {
+              window.scrollTo({ top: targetScroll, left: 0, behavior: 'auto' });
+            }, 320);
+          });
+        });
+        return () => {
+          if (lateTimer) window.clearTimeout(lateTimer);
+        };
+      }, [isLoaded, activeMenuSection]);
       const [descClipboard, setDescClipboard] = useState('');
       const [contextMenu, setContextMenu] = useState(null);
       // NEW: Tooltip for note preview on triangle hover (NOW WORKS EVEN WHEN MODE IS OFF)
@@ -2123,6 +2203,12 @@
       useEffect(() => {
         try { localStorage.setItem(LOCAL_ACTION_PRESETS_KEY, JSON.stringify(actionPresets)); } catch (e) {}
       }, [actionPresets]);
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_CUSTOM_SOFT_REMINDERS_KEY, JSON.stringify(customSoftReminders)); } catch (e) {}
+      }, [customSoftReminders]);
+      useEffect(() => {
+        try { localStorage.setItem(LOCAL_DISMISSED_REMINDERS_KEY, JSON.stringify(dismissedReminderKeys)); } catch (e) {}
+      }, [dismissedReminderKeys]);
       // NEW: Toast notifications (non-blocking success messages)
       const [toasts, setToasts] = useState([]);
       const [keepWarmStatus, setKeepWarmStatus] = useState({ serviceWorker: 'idle', persistence: 'idle', cache: 'idle' });
@@ -2983,13 +3069,44 @@
       const [resetMonthStr, setResetMonthStr] = useState(initialMonthStr);
       const [pendingReset, setPendingReset] = useState(null);
       // Feature States: Journal & Timer
-      const [activeJournalDate, setActiveJournalDate] = useState(null);
+      const [activeJournalDate, setActiveJournalDate] = useState(() => {
+        const saved = readResumeState();
+        return typeof saved.activeJournalDate === 'string' && saved.activeJournalDate.trim() ? saved.activeJournalDate : null;
+      });
+      const [customSoftReminders, setCustomSoftReminders] = useState(() => {
+        try {
+          const saved = localStorage.getItem(LOCAL_CUSTOM_SOFT_REMINDERS_KEY);
+          const parsed = saved ? JSON.parse(saved) : null;
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          return [];
+        }
+      });
+      const [dismissedReminderKeys, setDismissedReminderKeys] = useState(() => {
+        try {
+          const saved = localStorage.getItem(LOCAL_DISMISSED_REMINDERS_KEY);
+          const parsed = saved ? JSON.parse(saved) : null;
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+          return {};
+        }
+      });
+      const [showReminderModal, setShowReminderModal] = useState(false);
+      const [customReminderDraft, setCustomReminderDraft] = useState(() => ({
+        id: '',
+        message: '',
+        date: todayStr,
+        remindAt: '09:00',
+        windowStart: '09:00',
+        windowEnd: '18:00'
+      }));
       // Journal-only module state (separate from Captain's Log selection)
       const [journalModuleDate, setJournalModuleDate] = useState(() => {
         try { const saved = localStorage.getItem(LOCAL_JOURNAL_MODULE_DATE_KEY); return saved || todayStr; } catch (e) { return todayStr; }
       });
       const [journalFocusTick, setJournalFocusTick] = useState(0);
       const hasPersistedDatePrefs = useRef(false);
+      const hasRestoredResumeScrollRef = useRef(false);
 
       useEffect(() => {
         if (!hasPersistedDatePrefs.current) return;
@@ -3257,6 +3374,11 @@
           frozenDays,
           blueprintPresets,
           actionPresets,
+          customSoftReminders,
+          dismissedReminderKeys,
+          settingsDraft,
+          resumeState: readResumeState(),
+          lastExportTime,
           categories,
           currentTheme,
           isMuted,
@@ -3303,7 +3425,7 @@
             flushAutoBackupToFolder(snap);
           }, 650);
         };
-}, [allData, journalData, journalStars, todosData, habitsConfig, habitLogs, sysConfig, descriptions, noteStars, frozenDays, blueprintPresets, actionPresets, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
+}, [allData, journalData, journalStars, todosData, habitsConfig, habitLogs, sysConfig, descriptions, noteStars, frozenDays, blueprintPresets, actionPresets, customSoftReminders, dismissedReminderKeys, settingsDraft, lastExportTime, categories, currentTheme, isMuted, pointsPeriod, timer, isFocusMode, isScissorMode, isBlueprintMode, isDescriptionMode, collapsedEpochs, sectionsOpen, selectedColorId, walletTransactions, wallets, activeWalletId, debts, subscriptions, walletTemplates, savingsGoals, todoTemplates, walletCategories, walletCurrency, walletAnalyticsPeriod, walletAnalyticsDay, walletAnalyticsMonth, walletAnalyticsYear, walletAnalyticsWeekMonth, walletAnalyticsWeekIndex, selectedMonthStr, selectedWeekIndex, statDate, statWeekMonth, statWeekIndex, statMonth, statYear, journalModuleDate]);
       useEffect(() => () => {
         clearTimeout(autoBackupTimerRef.current);
       }, []);
@@ -3451,7 +3573,7 @@
           if (key === ' ') {
             e.preventDefault();
             // NEW: If any modal/window is open, close it on spacebar (if typing is not selected)
-        if (activeJournalDate || showSettingsModal || showHelp || showSearchModal || showQuickCapture || showBlueprintManagerModal || showPresetLibraryModal || showStreakModal || showFrozenDatesModal || showStarredModal || showWeeklyReview || showPointsSelector || showLevelHistory || showAppMenu) {
+        if (activeJournalDate || showSettingsModal || showHelp || showSearchModal || showQuickCapture || showBlueprintManagerModal || showPresetLibraryModal || showReminderModal || showStreakModal || showFrozenDatesModal || showStarredModal || showWeeklyReview || showPointsSelector || showLevelHistory || showAppMenu) {
               playSound('click');
               setActiveJournalDate(null);
               setShowSettingsModal(false);
@@ -3460,6 +3582,7 @@
           setShowQuickCapture(false);
           setShowBlueprintManagerModal(false);
           setShowPresetLibraryModal(false);
+          setShowReminderModal(false);
           setShowStreakModal(false);
           setShowFrozenDatesModal(false);
           setShowStarredModal(false);
@@ -3510,7 +3633,7 @@
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-      }, [categories, handleUniversalUndo, handleUniversalRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showPresetLibraryModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory, showAppMenu]);
+      }, [categories, handleUniversalUndo, handleUniversalRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showPresetLibraryModal, showReminderModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory, showAppMenu]);
 
       // NEW: Global Search modal focus + Escape to close
       useEffect(() => {
@@ -5290,6 +5413,121 @@
         });
         return map;
       }, [habitsConfig, habitLogs]);
+      const achievementBadges = useMemo(() => {
+        const expenseDateSet = new Set(
+          walletTransactions
+            .filter(tx => tx.type === 'expense')
+            .map(tx => tx.date)
+        );
+        let currentNoSpendStreak = 0;
+        const noSpendCursor = new Date(`${todayStr}T00:00:00`);
+        while (currentNoSpendStreak < 366) {
+          const dateStr = formatDateString(noSpendCursor);
+          if (expenseDateSet.has(dateStr)) break;
+          currentNoSpendStreak += 1;
+          noSpendCursor.setDate(noSpendCursor.getDate() - 1);
+        }
+
+        const recent7Dates = Array.from({ length: 7 }, (_, idx) => {
+          const d = new Date(`${todayStr}T00:00:00`);
+          d.setDate(d.getDate() - (6 - idx));
+          return formatDateString(d);
+        });
+        const recent30Dates = Array.from({ length: 30 }, (_, idx) => {
+          const d = new Date(`${todayStr}T00:00:00`);
+          d.setDate(d.getDate() - (29 - idx));
+          return formatDateString(d);
+        });
+        const fullDaysLast7 = recent7Dates.filter(dateStr => hasFullActivity(allData[dateStr] || {})).length;
+        const fullDaysLast30 = recent30Dates.filter(dateStr => hasFullActivity(allData[dateStr] || {})).length;
+
+        const deepWorkCategoryIds = categories
+          .filter(cat => /study|learn|work|job|focus|deep/i.test(`${cat.id} ${cat.name}`))
+          .map(cat => cat.id);
+        const deepWorkHoursByWeek = {};
+        Object.entries(allData).forEach(([dateStr, day]) => {
+          const date = new Date(`${dateStr}T00:00:00`);
+          const mondayOffset = (date.getDay() + 6) % 7;
+          date.setDate(date.getDate() - mondayOffset);
+          const weekKey = formatDateString(date);
+          let weekHours = 0;
+          Object.values(day || {}).forEach(cell => {
+            const addIfDeepWork = (value, duration) => {
+              if (!value || String(value).startsWith('bp_')) return;
+              if (!deepWorkCategoryIds.includes(value)) return;
+              weekHours += duration;
+            };
+            if (!cell) return;
+            if (cell.split1) {
+              addIfDeepWork(cell.q1, 0.25);
+              addIfDeepWork(cell.q2, 0.25);
+            } else {
+              addIfDeepWork(cell.t1, 0.5);
+            }
+            if (cell.split2) {
+              addIfDeepWork(cell.q3, 0.25);
+              addIfDeepWork(cell.q4, 0.25);
+            } else {
+              addIfDeepWork(cell.t2, 0.5);
+            }
+          });
+          deepWorkHoursByWeek[weekKey] = (deepWorkHoursByWeek[weekKey] || 0) + weekHours;
+        });
+        const bestDeepWorkWeekHours = Object.values(deepWorkHoursByWeek).length > 0
+          ? Math.max(...Object.values(deepWorkHoursByWeek))
+          : 0;
+
+        const streakRecoveryUnlocked = currentStreak >= 3 && streakDetails.allStreaks.length > 1;
+        const badges = [
+          {
+            id: 'phoenix-return',
+            title: 'Phoenix Return',
+            icon: Flame,
+            unlocked: streakRecoveryUnlocked,
+            accent: 'from-orange-500 to-amber-400',
+            progress: `${Math.min(currentStreak, 3)} / 3`,
+            detail: 'Recover after a broken streak by stacking 3 full days in a row again.'
+          },
+          {
+            id: 'deep-work-week',
+            title: 'Deep Work Week',
+            icon: Sparkles,
+            unlocked: bestDeepWorkWeekHours >= 20,
+            accent: 'from-cyan-500 to-sky-400',
+            progress: `${bestDeepWorkWeekHours.toFixed(1)} / 20h`,
+            detail: 'Log 20 hours of Study, Work, Learn, Job, or Focus time within one week.'
+          },
+          {
+            id: 'no-spend-guardian',
+            title: 'No-Spend Guardian',
+            icon: Wallet,
+            unlocked: currentNoSpendStreak >= 7,
+            accent: 'from-emerald-500 to-lime-400',
+            progress: `${Math.min(currentNoSpendStreak, 7)} / 7 days`,
+            detail: 'Keep expenses at zero for 7 straight days to prove your spending discipline.'
+          },
+          {
+            id: 'steady-seven',
+            title: 'Steady Seven',
+            icon: Trophy,
+            unlocked: fullDaysLast7 >= 5,
+            accent: 'from-violet-500 to-fuchsia-400',
+            progress: `${fullDaysLast7} / 5 days`,
+            detail: 'Hit full-activity logging on 5 of the last 7 days for a consistency win.'
+          },
+          {
+            id: 'rhythm-month',
+            title: 'Rhythm Month',
+            icon: CalendarIcon,
+            unlocked: fullDaysLast30 >= 20,
+            accent: 'from-amber-500 to-orange-400',
+            progress: `${fullDaysLast30} / 20 days`,
+            detail: 'Sustain long-form consistency with 20 fully logged days across the last 30.'
+          }
+        ];
+        return badges;
+      }, [walletTransactions, todayStr, allData, categories, currentStreak, streakDetails]);
+      const achievementUnlockedCount = achievementBadges.filter(badge => badge.unlocked).length;
       // --- Data Portability ---
       const handleExportData = () => {
         playSound('click');
@@ -5307,6 +5545,11 @@
           frozenDays,
           blueprintPresets,
           actionPresets,
+          customSoftReminders,
+          dismissedReminderKeys,
+          settings: settingsDraft,
+          resumeState: readResumeState(),
+          lastExportTime,
           walletTransactions,
           wallets,
           activeWalletId,
@@ -5348,7 +5591,7 @@
             journalModuleDate
           },
           exportedAt: new Date().toISOString(),
-          version: 15
+          version: 17
         };
         const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -5869,6 +6112,46 @@
               if (imported.frozenDays) setFrozenDays(imported.frozenDays);
               if (imported.blueprintPresets) setBlueprintPresets(imported.blueprintPresets);
               if (hasImportedField('actionPresets')) { setActionPresets(imported.actionPresets || []); localStorage.setItem(LOCAL_ACTION_PRESETS_KEY, JSON.stringify(imported.actionPresets || [])); }
+              if (hasImportedField('customSoftReminders')) { setCustomSoftReminders(imported.customSoftReminders || []); localStorage.setItem(LOCAL_CUSTOM_SOFT_REMINDERS_KEY, JSON.stringify(imported.customSoftReminders || [])); }
+              if (hasImportedField('dismissedReminderKeys')) { setDismissedReminderKeys(imported.dismissedReminderKeys && typeof imported.dismissedReminderKeys === 'object' ? imported.dismissedReminderKeys : {}); localStorage.setItem(LOCAL_DISMISSED_REMINDERS_KEY, JSON.stringify(imported.dismissedReminderKeys && typeof imported.dismissedReminderKeys === 'object' ? imported.dismissedReminderKeys : {})); }
+              if (hasImportedField('settings') && imported.settings && typeof imported.settings === 'object') {
+                const nextSettings = {
+                  ...createDefaultSettings(),
+                  ...imported.settings,
+                  defaultCollapsedEpochs: {
+                    ...createDefaultSettings().defaultCollapsedEpochs,
+                    ...(imported.settings.defaultCollapsedEpochs && typeof imported.settings.defaultCollapsedEpochs === 'object' ? imported.settings.defaultCollapsedEpochs : {})
+                  }
+                };
+                setSettingsDraft(nextSettings);
+                localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(nextSettings));
+              }
+              if (hasImportedField('resumeState') && imported.resumeState && typeof imported.resumeState === 'object') {
+                const exactResumeState = { ...imported.resumeState, updatedAt: Date.now() };
+                try { localStorage.setItem(LOCAL_RESUME_STATE_KEY, JSON.stringify(exactResumeState)); } catch (e) {}
+                if (typeof imported.resumeState.activeMenuSection === 'string' && imported.resumeState.activeMenuSection.trim()) {
+                  setActiveMenuSection(imported.resumeState.activeMenuSection);
+                }
+                if (typeof imported.resumeState.activeJournalDate === 'string' || imported.resumeState.activeJournalDate === null) {
+                  setActiveJournalDate(imported.resumeState.activeJournalDate || null);
+                }
+                if (typeof imported.resumeState.journalModuleDate === 'string' && imported.resumeState.journalModuleDate.trim()) {
+                  setJournalModuleDate(imported.resumeState.journalModuleDate);
+                }
+                const importedScrollY = Number(imported.resumeState.scrollY);
+                if (Number.isFinite(importedScrollY) && importedScrollY >= 0) {
+                  window.setTimeout(() => {
+                    window.scrollTo({ top: importedScrollY, left: 0, behavior: 'auto' });
+                  }, 120);
+                }
+              }
+              if (hasImportedField('lastExportTime')) {
+                const restoredLastExport = Number(imported.lastExportTime);
+                if (Number.isFinite(restoredLastExport) && restoredLastExport > 0) {
+                  setLastExportTime(restoredLastExport);
+                  localStorage.setItem(LOCAL_LAST_EXPORT_KEY, String(restoredLastExport));
+                }
+              }
               if (imported.walletTransactions) { setWalletTransactions(imported.walletTransactions); localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(imported.walletTransactions)); }
               if (imported.wallets) updateWallets(imported.wallets);
               if (imported.activeWalletId) updateActiveWalletId(imported.activeWalletId);
@@ -5936,6 +6219,19 @@
               if (imported.frozenDays) localStorage.setItem(LOCAL_FROZEN_DAYS_KEY, JSON.stringify(imported.frozenDays));
               if (imported.blueprintPresets) localStorage.setItem(LOCAL_BLUEPRINT_PRESETS_KEY, JSON.stringify(imported.blueprintPresets));
               if (hasImportedField('actionPresets')) localStorage.setItem(LOCAL_ACTION_PRESETS_KEY, JSON.stringify(imported.actionPresets || []));
+              if (hasImportedField('customSoftReminders')) localStorage.setItem(LOCAL_CUSTOM_SOFT_REMINDERS_KEY, JSON.stringify(imported.customSoftReminders || []));
+              if (hasImportedField('dismissedReminderKeys')) localStorage.setItem(LOCAL_DISMISSED_REMINDERS_KEY, JSON.stringify(imported.dismissedReminderKeys && typeof imported.dismissedReminderKeys === 'object' ? imported.dismissedReminderKeys : {}));
+              if (hasImportedField('lastExportTime') && Number.isFinite(Number(imported.lastExportTime)) && Number(imported.lastExportTime) > 0) localStorage.setItem(LOCAL_LAST_EXPORT_KEY, String(Number(imported.lastExportTime)));
+              if (hasImportedField('settings') && imported.settings && typeof imported.settings === 'object') {
+                localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify({
+                  ...createDefaultSettings(),
+                  ...imported.settings,
+                  defaultCollapsedEpochs: {
+                    ...createDefaultSettings().defaultCollapsedEpochs,
+                    ...(imported.settings.defaultCollapsedEpochs && typeof imported.settings.defaultCollapsedEpochs === 'object' ? imported.settings.defaultCollapsedEpochs : {})
+                  }
+                }));
+              }
               playSound('success');
               showToast("âœ… Successfully uploaded! All data has been synchronized.");
             } else {
@@ -6683,6 +6979,171 @@
           wins
         };
       }, [weeklyReviewAvailableWeeks, weeklyReviewWeekIndex, todayStr, walletTransactions, walletCategories, frozenDays, allData, journalData, todosData, habitLogs, categories, habitsConfig]);
+      const dismissSoftReminder = useCallback((reminderKey) => {
+        if (!reminderKey) return;
+        setDismissedReminderKeys(prev => ({ ...prev, [reminderKey]: true }));
+      }, []);
+      const deleteCustomSoftReminder = useCallback((reminderId) => {
+        if (!reminderId) return;
+        setCustomSoftReminders(prev => prev.filter(reminder => reminder.id !== reminderId));
+        setDismissedReminderKeys(prev => {
+          const next = { ...prev };
+          Object.keys(next).forEach(key => {
+            if (key.startsWith(`custom-${reminderId}::`)) delete next[key];
+          });
+          return next;
+        });
+        showToast('Reminder deleted', 'success');
+      }, [showToast]);
+      const handleSaveCustomReminder = useCallback(() => {
+        const message = String(customReminderDraft.message || '').trim();
+        const date = String(customReminderDraft.date || '').trim();
+        const remindAt = String(customReminderDraft.remindAt || '').trim();
+        const windowStart = String(customReminderDraft.windowStart || '').trim();
+        const windowEnd = String(customReminderDraft.windowEnd || '').trim();
+        const remindAtMinutes = getMinutesFromClockValue(remindAt);
+        const windowStartMinutes = getMinutesFromClockValue(windowStart);
+        const windowEndMinutes = getMinutesFromClockValue(windowEnd);
+        if (!message || !date || remindAtMinutes === null || windowStartMinutes === null || windowEndMinutes === null) {
+          showToast('Fill what, date, remind time, and reminder window', 'error');
+          return;
+        }
+        if (windowEndMinutes <= windowStartMinutes) {
+          showToast('End time must be after start time', 'error');
+          return;
+        }
+        if (remindAtMinutes < windowStartMinutes || remindAtMinutes > windowEndMinutes) {
+          showToast('Remind time should stay inside the reminder window', 'error');
+          return;
+        }
+        const record = {
+          id: customReminderDraft.id || `rem_${Date.now()}`,
+          message,
+          date,
+          remindAt,
+          windowStart,
+          windowEnd
+        };
+        setCustomSoftReminders(prev => {
+          const exists = prev.some(reminder => reminder.id === record.id);
+          return exists
+            ? prev.map(reminder => reminder.id === record.id ? record : reminder)
+            : [record, ...prev];
+        });
+        setCustomReminderDraft({
+          id: '',
+          message: '',
+          date: todayStr,
+          remindAt: '09:00',
+          windowStart: '09:00',
+          windowEnd: '18:00'
+        });
+        setShowReminderModal(false);
+        showToast('Reminder saved', 'success');
+      }, [customReminderDraft, todayStr, showToast]);
+      const softReminders = useMemo(() => {
+        const reminders = [];
+        const now = new Date();
+        const elapsedMinutes = now.getHours() * 60 + now.getMinutes();
+        const todayData = allData[todayStr] || {};
+        let expectedHoursSoFar = 0;
+        let loggedHoursSoFar = 0;
+        for (let hour = 0; hour < 24; hour++) {
+          const cell = todayData[hour] || {};
+          const hourStart = hour * 60;
+          const addElapsedSegment = (value, segmentStart, segmentEnd) => {
+            const elapsed = Math.max(0, Math.min(elapsedMinutes, segmentEnd) - segmentStart);
+            if (elapsed <= 0) return;
+            expectedHoursSoFar += elapsed / 60;
+            if (value && !String(value).startsWith('bp_')) loggedHoursSoFar += elapsed / 60;
+          };
+          if (cell.split1) {
+            addElapsedSegment(cell.q1, hourStart, hourStart + 15);
+            addElapsedSegment(cell.q2, hourStart + 15, hourStart + 30);
+          } else {
+            addElapsedSegment(cell.t1, hourStart, hourStart + 30);
+          }
+          if (cell.split2) {
+            addElapsedSegment(cell.q3, hourStart + 30, hourStart + 45);
+            addElapsedSegment(cell.q4, hourStart + 45, hourStart + 60);
+          } else {
+            addElapsedSegment(cell.t2, hourStart + 30, hourStart + 60);
+          }
+        }
+        const unloggedHours = Math.max(0, expectedHoursSoFar - loggedHoursSoFar);
+        const roundedUnloggedHours = Math.round(unloggedHours * 2) / 2;
+        const formattedUnloggedHours = Number.isInteger(roundedUnloggedHours) ? String(roundedUnloggedHours) : roundedUnloggedHours.toFixed(1);
+        if (roundedUnloggedHours >= 1) {
+          reminders.push({
+            id: 'unlogged-hours',
+            reminderKey: `system-unlogged-hours::${todayStr}`,
+            tone: 'cyan',
+            title: `You have ${formattedUnloggedHours} unlogged hour${roundedUnloggedHours === 1 ? '' : 's'} today`,
+            body: 'A few grid fills will bring today back into focus.',
+            actionLabel: 'Open Grid',
+            onClick: () => navigateToSection('tracker')
+          });
+        }
+
+        const yesterday = new Date(`${todayStr}T00:00:00`);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = formatDateString(yesterday);
+        const unfinishedYesterday = (todosData[yesterdayStr] || []).filter(todo => getTodoCompletionFraction(todo) < 1).length;
+        if (unfinishedYesterday > 0) {
+          reminders.push({
+            id: 'unfinished-yesterday',
+            reminderKey: `system-unfinished-yesterday::${todayStr}`,
+            tone: 'amber',
+            title: `${unfinishedYesterday} unfinished todo${unfinishedYesterday === 1 ? '' : 's'} from yesterday`,
+            body: `Review ${getDisplayDate(yesterdayStr)} and snooze, close, or continue them.`,
+            actionLabel: 'Open Captain\'s Log',
+            onClick: () => {
+              playSound('click');
+              setActiveJournalDate(yesterdayStr);
+            }
+          });
+        }
+
+        const todayDayOfMonth = Number(todayStr.slice(8, 10));
+        const dueTodaySubscriptions = subscriptions.filter(sub => Number(String(sub.paymentDate || '').slice(8, 10)) === todayDayOfMonth);
+        if (dueTodaySubscriptions.length > 0) {
+          const firstName = dueTodaySubscriptions[0]?.name || 'Subscription';
+          reminders.push({
+            id: 'subscription-due',
+            reminderKey: `system-subscription-due::${todayStr}`,
+            tone: 'purple',
+            title: dueTodaySubscriptions.length === 1 ? `${firstName} is due today` : `${dueTodaySubscriptions.length} subscriptions are due today`,
+            body: dueTodaySubscriptions.length === 1 ? 'Log it once and keep the wallet timeline clean.' : 'Open Wallet to log or review your recurring payments.',
+            actionLabel: 'Open Wallet',
+            onClick: () => navigateToSection('wallet')
+          });
+        }
+        customSoftReminders.forEach(reminder => {
+          if (!reminder || reminder.date !== todayStr) return;
+          const remindAtMinutes = getMinutesFromClockValue(reminder.remindAt);
+          const windowStartMinutes = getMinutesFromClockValue(reminder.windowStart);
+          const windowEndMinutes = getMinutesFromClockValue(reminder.windowEnd);
+          if (remindAtMinutes === null || windowStartMinutes === null || windowEndMinutes === null) return;
+          if (elapsedMinutes < remindAtMinutes) return;
+          if (elapsedMinutes < windowStartMinutes || elapsedMinutes > windowEndMinutes) return;
+          reminders.push({
+            id: `custom-${reminder.id}`,
+            reminderKey: `custom-${reminder.id}::${todayStr}`,
+            customReminderId: reminder.id,
+            tone: 'purple',
+            title: reminder.message,
+            body: `Scheduled for ${getDisplayDate(reminder.date)} • ${reminder.remindAt} • active between ${reminder.windowStart} and ${reminder.windowEnd}.`,
+            actionLabel: 'Open Today',
+            onClick: () => {
+              playSound('click');
+              setActiveJournalDate(todayStr);
+            }
+          });
+        });
+        return reminders
+          .filter(reminder => !dismissedReminderKeys[reminder.reminderKey])
+          .slice(0, 6);
+      }, [allData, todayStr, todosData, subscriptions, navigateToSection, playSound, customSoftReminders, dismissedReminderKeys]);
       const openLinkedRecord = useCallback((record) => {
         if (!record) return;
         playSound('click');
@@ -7607,6 +8068,137 @@
                 </div>
               </div>
             )}
+            {showReminderModal && (
+              <div className="fixed inset-0 z-[405] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowReminderModal(false)}>
+                <div className="glass-panel w-full max-w-3xl rounded-3xl p-6 border-cyan-400/40 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between gap-3 mb-6">
+                    <div>
+                      <h3 className="font-black text-cyan-300 uppercase tracking-widest text-xl">Remind Me</h3>
+                      <div className="text-xs text-slate-400 mt-1">Choose what to remind, when it starts, the active time window, and the exact date.</div>
+                    </div>
+                    <button onClick={() => setShowReminderModal(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-[0.95fr,1.05fr] gap-6">
+                    <div className="space-y-4">
+                      <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
+                        <div className="text-xs font-black uppercase tracking-widest text-cyan-300 mb-4">Create Reminder</div>
+                        <div className="space-y-4">
+                          <label className="block">
+                            <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500 mb-2">What to remind</div>
+                            <textarea
+                              value={customReminderDraft.message}
+                              onChange={e => setCustomReminderDraft(prev => ({ ...prev, message: e.target.value }))}
+                              placeholder="Example: review subscriptions before lunch"
+                              rows="3"
+                              className="w-full bg-[#0b1120] border border-white/10 rounded-2xl px-4 py-3 text-slate-100 outline-none resize-none"
+                            />
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <label className="block">
+                              <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500 mb-2">Date</div>
+                              <input
+                                type="date"
+                                value={customReminderDraft.date}
+                                onChange={e => setCustomReminderDraft(prev => ({ ...prev, date: e.target.value }))}
+                                className="w-full bg-[#0b1120] border border-white/10 rounded-2xl px-4 py-3 text-slate-100 outline-none"
+                              />
+                            </label>
+                            <label className="block">
+                              <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500 mb-2">When to remind</div>
+                              <input
+                                type="time"
+                                value={customReminderDraft.remindAt}
+                                onChange={e => setCustomReminderDraft(prev => ({ ...prev, remindAt: e.target.value }))}
+                                className="w-full bg-[#0b1120] border border-white/10 rounded-2xl px-4 py-3 text-slate-100 outline-none"
+                              />
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <label className="block">
+                              <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500 mb-2">Show from</div>
+                              <input
+                                type="time"
+                                value={customReminderDraft.windowStart}
+                                onChange={e => setCustomReminderDraft(prev => ({ ...prev, windowStart: e.target.value }))}
+                                className="w-full bg-[#0b1120] border border-white/10 rounded-2xl px-4 py-3 text-slate-100 outline-none"
+                              />
+                            </label>
+                            <label className="block">
+                              <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500 mb-2">Show until</div>
+                              <input
+                                type="time"
+                                value={customReminderDraft.windowEnd}
+                                onChange={e => setCustomReminderDraft(prev => ({ ...prev, windowEnd: e.target.value }))}
+                                className="w-full bg-[#0b1120] border border-white/10 rounded-2xl px-4 py-3 text-slate-100 outline-none"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                        <div className="mt-5 flex flex-wrap gap-3 justify-end">
+                          <button
+                            onClick={() => {
+                              setCustomReminderDraft({
+                                id: '',
+                                message: '',
+                                date: todayStr,
+                                remindAt: '09:00',
+                                windowStart: '09:00',
+                                windowEnd: '18:00'
+                              });
+                            }}
+                            className="px-4 py-3 rounded-2xl border border-white/10 text-slate-300 hover:bg-white/5 transition-all text-xs font-black uppercase tracking-widest"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            onClick={handleSaveCustomReminder}
+                            className="px-5 py-3 rounded-2xl bg-cyan-500 text-[#041019] font-black uppercase tracking-widest text-xs hover:bg-cyan-400 transition-all"
+                          >
+                            Save Reminder
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
+                      <div className="flex items-center justify-between gap-3 mb-4">
+                        <div className="text-xs font-black uppercase tracking-widest text-cyan-300">Saved Reminders</div>
+                        <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500">{customSoftReminders.length} total</div>
+                      </div>
+                      <div className="space-y-3 max-h-[52vh] overflow-y-auto custom-scrollbar pr-1">
+                        {customSoftReminders.length === 0 ? (
+                          <div className="text-slate-400 italic text-center py-12">No custom reminders yet.</div>
+                        ) : (
+                          customSoftReminders.map(reminder => (
+                            <div key={reminder.id} className="rounded-2xl border border-white/10 bg-[#0b1120]/70 p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-black text-white break-words">{reminder.message}</div>
+                                  <div className="text-[11px] text-slate-400 mt-2">
+                                    {getDisplayDate(reminder.date)} • {reminder.remindAt} • {reminder.windowStart} to {reminder.windowEnd}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    if (!confirm(`Delete reminder "${reminder.message}"?`)) return;
+                                    deleteCustomSoftReminder(reminder.id);
+                                  }}
+                                  className="w-9 h-9 rounded-xl border border-rose-400/20 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-all shrink-0"
+                                  title="Delete reminder"
+                                >
+                                  <Trash2 size={16} className="mx-auto" />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* === NEW: POINTS PERIOD SELECTOR MODAL === */}
             {showPointsSelector && (
               <div className="fixed inset-0 z-[400] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowPointsSelector(false)}>
@@ -7639,33 +8231,99 @@
             {/* === NEW: LEVEL HISTORY / INFO MODAL === */}
             {showLevelHistory && (
               <div className="fixed inset-0 z-[400] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowLevelHistory(false)}>
-                <div className="glass-panel w-full max-w-md rounded-3xl p-6 border-purple-400/50" onClick={e => e.stopPropagation()}>
+                <div className="glass-panel w-full max-w-5xl rounded-3xl p-6 md:p-8 border-purple-400/50 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="font-black text-purple-300 uppercase tracking-widest text-xl">Level &amp; XP Info</h3>
                     <button onClick={() => setShowLevelHistory(false)} className="text-slate-400 hover:text-white"><X size={26} /></button>
                   </div>
-                  <div className="flex justify-center items-center gap-6 mb-8">
-                    <Trophy size={64} className="text-purple-400 drop-shadow-[0_0_20px_rgba(168,85,247,0.6)]" />
-                    <div className="text-center">
-                      <div className="text-7xl font-black text-white leading-none">{level}</div>
-                      <div className="text-purple-400 text-sm font-black tracking-widest mt-1">{rankTitle}</div>
-                      <div className="text-xs text-slate-400 mt-2">{totalXP} / {nextLevelXP} XP</div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-[0.9fr,1.1fr] gap-6">
+                    <div className="space-y-6">
+                      <div className="rounded-[28px] border border-purple-400/20 bg-white/5 p-5 md:p-6">
+                        <div className="flex items-center gap-5">
+                          <Trophy size={64} className="text-purple-400 drop-shadow-[0_0_20px_rgba(168,85,247,0.6)] shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-6xl md:text-7xl font-black text-white leading-none">{level}</div>
+                            <div className="text-purple-400 text-sm font-black tracking-widest mt-2">{rankTitle}</div>
+                            <div className="text-xs text-slate-400 mt-2">{totalXP.toLocaleString()} / {nextLevelXP.toLocaleString()} XP</div>
+                          </div>
+                        </div>
+                        <div className="mt-5">
+                          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.25em] text-slate-400 mb-2">
+                            <span>Level Progress</span>
+                            <span>{Math.round(Math.max(0, Math.min(100, ((totalXP - currentLevelBaseXP) / Math.max(1, nextLevelXP - currentLevelBaseXP)) * 100)))}%</span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-black/40 overflow-hidden border border-white/10">
+                            <div className="h-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-cyan-400" style={{ width: `${Math.max(0, Math.min(100, ((totalXP - currentLevelBaseXP) / Math.max(1, nextLevelXP - currentLevelBaseXP)) * 100))}%` }}></div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 mt-5">
+                          <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500">Current Streak</div>
+                            <div className="text-2xl font-black text-orange-300 mt-2">{currentStreak}</div>
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500">Today</div>
+                            <div className="text-2xl font-black text-lime-300 mt-2">{Math.round(todayPoints)}</div>
+                          </div>
+                          <div className="rounded-2xl border border-white/10 bg-black/15 px-4 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500">Lifetime Points</div>
+                            <div className="text-2xl font-black text-cyan-300 mt-2">{Math.round(totalLifetimePoints)}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/5 rounded-2xl p-5 text-sm">
+                        <p className="font-medium mb-3 text-slate-300">How XP is earned:</p>
+                        <ul className="space-y-2 text-xs text-slate-400">
+                          <li className="flex justify-between"><span>Tracked hours</span><span className="font-mono">+10 XP / hour</span></li>
+                          <li className="flex justify-between"><span>Points earned</span><span className="font-mono">× XP multiplier</span></li>
+                          <li className="flex justify-between"><span>Completed objectives</span><span className="font-mono">+20 XP each</span></li>
+                          <li className="flex justify-between"><span>Green habits</span><span className="font-mono">+10 XP each</span></li>
+                          <li className="flex justify-between"><span>Streak days</span><span className="font-mono">+50 XP each</span></li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div className="rounded-[28px] border border-white/10 bg-white/5 p-5 md:p-6">
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                          <div>
+                            <div className="text-xs font-black uppercase tracking-[0.3em] text-purple-300">Milestones</div>
+                            <div className="text-sm text-slate-400 mt-1">Achievement details for recovery, deep work, money discipline, and consistency.</div>
+                          </div>
+                          <div className="text-sm font-black text-white">{achievementUnlockedCount}/{achievementBadges.length}</div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {achievementBadges.map(badge => {
+                            const Icon = badge.icon;
+                            return (
+                              <div key={badge.id} className={`rounded-[24px] border p-4 transition-all ${badge.unlocked ? 'border-white/20 bg-white/10' : 'border-white/10 bg-black/20'}`}>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${badge.accent} flex items-center justify-center text-white shadow-[0_0_14px_rgba(255,255,255,0.08)]`}>
+                                    <Icon size={18} />
+                                  </div>
+                                  <div className={`text-[10px] font-black uppercase tracking-[0.25em] px-2 py-1 rounded-full ${badge.unlocked ? 'bg-emerald-500/15 text-emerald-200 border border-emerald-400/20' : 'bg-white/5 text-slate-400 border border-white/10'}`}>
+                                    {badge.unlocked ? 'Unlocked' : 'In Progress'}
+                                  </div>
+                                </div>
+                                <div className="mt-4 text-lg font-black text-white leading-tight">{badge.title}</div>
+                                <div className="mt-2 text-sm text-slate-300 leading-relaxed">{badge.detail}</div>
+                                <div className="mt-4 flex items-center justify-between gap-3 text-[11px]">
+                                  <span className="uppercase tracking-[0.25em] text-slate-500">Progress</span>
+                                  <span className={`font-black ${badge.unlocked ? 'text-emerald-300' : 'text-cyan-300'}`}>{badge.progress}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <p className="text-center text-amber-300 text-xs font-medium">
+                        Your level, rank, and milestone progress are calculated live from your real logged data.
+                      </p>
                     </div>
                   </div>
-                  <div className="bg-white/5 rounded-2xl p-5 text-sm">
-                    <p className="font-medium mb-3 text-slate-300">How XP is earned:</p>
-                    <ul className="space-y-2 text-xs text-slate-400">
-                      <li className="flex justify-between"><span>Tracked hours</span><span className="font-mono">+10 XP / hour</span></li>
-                      <li className="flex justify-between"><span>Points earned</span><span className="font-mono">Ã— XP multiplier</span></li>
-                      <li className="flex justify-between"><span>Completed objectives</span><span className="font-mono">+20 XP each</span></li>
-                      <li className="flex justify-between"><span>Green habits</span><span className="font-mono">+10 XP each</span></li>
-                      <li className="flex justify-between"><span>Streak days</span><span className="font-mono">+50 XP each</span></li>
-                    </ul>
-                  </div>
-                  <p className="text-center text-amber-300 text-xs mt-8 font-medium">
-                    Full date-by-date level reach history is planned for a future update.<br/>
-                    Your current level is always calculated live from all logged data.
-                  </p>
                   <button
                     onClick={() => setShowLevelHistory(false)}
                     className="mt-8 w-full py-4 bg-purple-500 hover:bg-purple-400 text-white font-black rounded-2xl tracking-widest uppercase"
@@ -7972,8 +8630,8 @@
                       <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">6. System Integrity (Data & Safety)</h3>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
                         <li><strong>Local-First:</strong> All data lives in your browser&apos;s LocalStorage.</li>
-                        <li><strong>Manual Backups:</strong> Download/Upload full System data files.</li>
-                        <li><strong>Automated Rolling Backups:</strong> Link a local folder to the system; Trackerbox will automatically save a timestamped data file every time a 6-hour block is completed, keeping a rolling history of the last 10 saves.</li>
+                        <li><strong>Manual Backups:</strong> Download/Upload full system snapshots that include your settings, presets, reminders, and resume memory so a restore can bring the app back exactly as it was.</li>
+                        <li><strong>Automated Rolling Backups:</strong> Link a local folder to the system; Trackerbox will automatically save a timestamped data file every time a 6-hour block is completed, keeping a rolling history of the newest 5 saves.</li>
                         <li><strong>Undo/Redo:</strong> 30-step history buffer for grid painting, journal edits, todo changes, and wallet changes.</li>
                       </ul>
                     </div>
@@ -7984,6 +8642,8 @@
                         <li><strong>Quick Capture:</strong> A rapid-entry overlay to instantly log a ToDo, Journal bullet, time-stamped Note, or Wallet transaction without leaving your current view.</li>
                         <li><strong>Global Search (Omnibar):</strong> Instantly search across your entire database - Journal entries, Notes, Completed ToDos, and Wallet transactions. Type "today", "yesterday", or a specific date (for example 2026-04-01) to jump to that day&apos;s Captain&apos;s Log.</li>
                         <li><strong>NEW - Starred Hub:</strong> Star journal entries, note cells, and wallet transactions, then open one top-bar hub to revisit every starred item later.</li>
+                        <li><strong>NEW - Resume Memory:</strong> Refreshing the app restores your last open section, the selected Captain&apos;s Log day, and your previous scroll position so you can continue right where you stopped.</li>
+                        <li><strong>NEW - Soft Reminders:</strong> Gentle in-app reminder cards surface things like unlogged hours, unfinished todos from yesterday, subscriptions due today, and your own custom reminders created from the top-bar bell with a date, remind time, and active window; inactive reminder space stays hidden until something needs attention.</li>
                         <li><strong>Sticky Offsets:</strong> Clicking navigation buttons automatically scrolls sections perfectly into view just beneath the sticky header.</li>
                         <li><strong>Toast Notifications:</strong> Non-blocking, auto-dismissing visual confirmations for saves, updates, and errors so your workflow isn't interrupted by popups.</li>
                       </ul>
@@ -8011,6 +8671,7 @@
                         <li><strong>NEW - Weekly Review Screen:</strong> A dedicated review view auto-summarizes streaks, frozen days, spending, unfinished ToDos, and weekly wins, and now lets you pick the exact month and week to review.</li>
                         <li><strong>NEW - Mobile Quick Access Dock:</strong> Phones now get a configurable bottom dock. Settings lets you turn on as many quick buttons as you want, including Load Preset, Search, Clock, Wallet, Journal, and more.</li>
                         <li><strong>NEW - Preset Hub:</strong> A dedicated Load Preset button opens one place for reusable quick-capture presets and full day/week grid colour presets, with confirmation before apply and a delete mode for cleanup.</li>
+                        <li><strong>NEW - Level Milestones:</strong> Clicking the level chip now opens achievement-style milestone cards for streak recovery, deep-work weeks, no-spend runs, and broader consistency wins.</li>
                         <li><strong>NEW - App Menu & Pinned Sections:</strong> The top-left menu now opens sections one at a time like a modern app, and you can pin sections to keep them on the default Grid home view.</li>
                         <li><strong>Theme Engine:</strong> 12 completely distinct visual modes, ranging from high-contrast dark modes (Cyber, Void, Neon) to eye-friendly light modes (Daylight, Light Mode).</li>
                         <li><strong>Global Mute:</strong> A master switch in the settings to disable all system audio cues (paint, erase, success, trash) for silent environments.</li>
@@ -8023,7 +8684,7 @@
                         <li><strong>Startup Defaults:</strong> Settings stores your preferred focus mode, default selected color/tool, default collapsed epochs, pomodoro length, and break length.</li>
                         <li><strong>Keep App Warm:</strong> The settings panel shows service worker, shell cache, and persistent storage status so you can judge how "ready" the app is on your device.</li>
                         <li><strong>App Menu + Pinned Sections:</strong> The top-left menu can open one major area at a time, while pinned sections keep your favorite modules visible on the main home view.</li>
-                        <li><strong>Mobile Quick Access Builder:</strong> On phones, you choose which actions stay docked at the bottom, and you can switch the colour palette between a vertical sidebar or a horizontal strip above the dock.</li>
+                        <li><strong>Mobile Quick Access Builder:</strong> On phones, you choose which actions stay docked at the bottom, and you can switch the colour palette between a vertical sidebar or a horizontal strip that appears only while the Grid is active.</li>
                         <li><strong>Theme + Audio Controls:</strong> Trackerbox includes multiple visual themes and a global mute system for silent environments.</li>
                       </ul>
                     </div>
@@ -8035,6 +8696,7 @@
                         <li><strong>Frozen Day Registry:</strong> Cryo-Sleep dates are reviewable in their own modal so protected streak days stay transparent instead of disappearing into the heatmap.</li>
                         <li><strong>Streak + Level Panels:</strong> Separate views expose longest streaks, active streak history, habit streaks, current rank title, and XP progression logic.</li>
                         <li><strong>Wallet Expansion Modules:</strong> Beyond transactions, the finance system includes savings goals, debt ledgers, subscriptions, editable category budgets, and reusable wallet templates.</li>
+                        <li><strong>Budget Threshold Tracking:</strong> Category budget cards compare spent, limit, and remaining values, then visualize progress with a threshold bar that turns calm, watch, or over depending on usage.</li>
                         <li><strong>Transaction Lifecycle Tools:</strong> Wallet entries support starring, editing, deleting, template creation from live entries, and one-tap subscription payment logging.</li>
                       </ul>
                     </div>
@@ -9788,13 +10450,36 @@
                     >
                       <Redo size={18} />
                     </button>
-                    <button
-                      onClick={() => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); }}
+                  <button
+                    onClick={() => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); }}
                     className="top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
                     title="Global Search (Ctrl+K / Cmd+K)"
                   >
                     <Search size={20} />
                   </button>
+                    <button
+                      onClick={() => {
+                        playSound('click');
+                        setCustomReminderDraft({
+                          id: '',
+                          message: '',
+                          date: todayStr,
+                          remindAt: '09:00',
+                          windowStart: '09:00',
+                          windowEnd: '18:00'
+                        });
+                        setShowReminderModal(true);
+                      }}
+                      className={`top-chip relative w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showReminderModal ? 'border-amber-400/60 text-amber-200 bg-amber-500/10 shadow-[0_0_12px_rgba(251,191,36,0.2)]' : softReminders.length > 0 ? 'border-amber-400/40 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      title="Remind Me"
+                    >
+                      <Bell size={20} />
+                      {softReminders.length > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-300 text-[#0b1120] text-[9px] font-black flex items-center justify-center shadow-[0_0_12px_rgba(251,191,36,0.55)]">
+                          {softReminders.length > 9 ? '9+' : softReminders.length}
+                        </span>
+                      )}
+                    </button>
                     <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
                       <Clock size={20} />
                     </button>
@@ -9803,6 +10488,71 @@
               </div>
             </header>
             <main className="max-w-[1400px] w-full mx-auto px-4 py-8 flex-1 min-w-0 flex flex-col">
+              {softReminders.length > 0 && (
+              <section className="glass-panel rounded-3xl border border-white/10 p-4 md:p-5 mb-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-300">Soft Reminders</div>
+                    <div className="text-sm text-slate-400 mt-1">Quiet nudges to help you pick up where the day left off.</div>
+                  </div>
+                  <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500">{softReminders.length} active</div>
+                </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    {softReminders.map(reminder => {
+                      const toneClasses = reminder.tone === 'amber'
+                        ? 'border-amber-400/30 bg-amber-500/10'
+                        : reminder.tone === 'purple'
+                          ? 'border-purple-400/30 bg-purple-500/10'
+                          : 'border-cyan-400/30 bg-cyan-500/10';
+                      const titleClasses = reminder.tone === 'amber'
+                        ? 'text-amber-200'
+                        : reminder.tone === 'purple'
+                          ? 'text-purple-200'
+                          : 'text-cyan-200';
+                      const actionClasses = reminder.tone === 'amber'
+                        ? 'border-amber-400/30 text-amber-200 hover:bg-amber-500/10'
+                        : reminder.tone === 'purple'
+                          ? 'border-purple-400/30 text-purple-200 hover:bg-purple-500/10'
+                          : 'border-cyan-400/30 text-cyan-200 hover:bg-cyan-500/10';
+                      return (
+                        <div key={reminder.id} className={`rounded-[28px] border p-4 ${toneClasses}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm font-black text-white leading-snug">{reminder.title}</div>
+                            <button
+                              onClick={() => dismissSoftReminder(reminder.reminderKey)}
+                              className="w-8 h-8 rounded-xl border border-white/10 bg-black/15 text-slate-400 hover:text-white hover:bg-white/10 transition-all shrink-0"
+                              title="Dismiss reminder"
+                            >
+                              <X size={14} className="mx-auto" />
+                            </button>
+                          </div>
+                          <div className={`text-[11px] uppercase tracking-[0.25em] mt-2 ${titleClasses}`}>Attention gently needed</div>
+                          <div className="text-sm text-slate-300 mt-3 leading-relaxed">{reminder.body}</div>
+                          <div className="mt-4 flex items-center gap-2">
+                            <button
+                              onClick={reminder.onClick}
+                              className={`px-4 py-2 rounded-2xl border text-xs font-black uppercase tracking-widest transition-all ${actionClasses}`}
+                            >
+                              {reminder.actionLabel}
+                            </button>
+                            {reminder.customReminderId && (
+                              <button
+                                onClick={() => {
+                                  if (!confirm(`Delete reminder "${reminder.title}"?`)) return;
+                                  deleteCustomSoftReminder(reminder.customReminderId);
+                                }}
+                                className="px-4 py-2 rounded-2xl border border-rose-400/30 bg-rose-500/10 text-rose-200 text-xs font-black uppercase tracking-widest hover:bg-rose-500/20 transition-all"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+              </section>
+              )}
               {/* ---------------- SECTION 1: GRID ---------------- */}
               {shouldRenderSection('tracker') && (
               <section className="section-shell glass-panel rounded-3xl w-full overflow-hidden mb-6 order-1" id="section-tracker">
@@ -11554,7 +12304,7 @@
                           <h3 className="font-black uppercase tracking-widest text-emerald-400 text-sm">Automated File Backup</h3>
                         </div>
                         <p className="text-xs text-slate-300 leading-relaxed">
-                          For maximum security, you can link a local folder. A fresh JSON backup will be written automatically each time any 6-hour block becomes fully filled, and Trackerbox will keep the newest 5 backups by replacing the oldest one. Use Download Data to download the full app snapshot or Upload Data to restore it.
+                          For maximum security, you can link a local folder. A fresh JSON backup will be written automatically each time any 6-hour block becomes fully filled, and Trackerbox will keep the newest 5 backups by replacing the oldest one. Download Data and Upload Data now carry your app snapshot, settings, presets, reminders, and resume memory so restore can bring everything back together.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3 mt-auto">
                           <button
@@ -11669,7 +12419,7 @@
               </section>
               )}
             </main>
-            {mobilePaletteLayout === 'horizontal' && (
+            {mobilePaletteLayout === 'horizontal' && shouldRenderSection('tracker') && sectionsOpen.tracker && (
               <div className="md:hidden fixed bottom-[84px] left-1/2 -translate-x-1/2 z-[121] w-[calc(100vw-24px)] max-w-sm">
                 <div className="glass-panel rounded-[24px] border border-cyan-400/20 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.42)]">
                   {renderPaletteControls('horizontal')}
