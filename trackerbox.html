@@ -895,7 +895,14 @@
     const LOCAL_TODO_TEMPLATES_KEY = 'trackerbox_todo_templates_v1';
     const LOCAL_PRIVACY_MODE_KEY = 'trackerbox_privacy_mode_v1';
     const AUTO_BACKUP_LIMIT = 5;
-    const DEFAULT_SETTINGS = {
+    const getIsMobileViewport = () => {
+      try {
+        return typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+      } catch (e) {
+        return false;
+      }
+    };
+    const createDefaultSettings = (isMobile = getIsMobileViewport()) => ({
       defaultFocusMode: false,
       defaultCollapsedEpochs: { night: true, morning: false, afternoon: false, evening: false },
       defaultSelectedColorId: 'lock',
@@ -903,9 +910,14 @@
       defaultBreakMinutes: 5,
       keepAppWarm: true,
       userDisplayName: '',
+      showHeaderQuickShortcut: !isMobile,
+      showHeaderWalletShortcut: !isMobile,
+      showHeaderJournalShortcut: !isMobile,
+      showHeaderGridShortcut: !isMobile,
       defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick'],
       pinnedSections: []
-    };
+    });
+    const DEFAULT_SETTINGS = createDefaultSettings();
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
       { id: 'sleep', name: 'Sleep', color: '#86efac', target: '', pointsPerHour: 0 },
@@ -1241,17 +1253,7 @@
       const [showAppMenu, setShowAppMenu] = useState(false);
       const [activeMenuSection, setActiveMenuSection] = useState('tracker');
       const [settingsDraft, setSettingsDraft] = useState(() => {
-        const defaultSettings = {
-          defaultFocusMode: false,
-          defaultCollapsedEpochs: { night: true, morning: false, afternoon: false, evening: false },
-          defaultSelectedColorId: 'lock',
-          defaultTimerMinutes: 25,
-          defaultBreakMinutes: 5,
-          keepAppWarm: true,
-          userDisplayName: '',
-          defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick'],
-          pinnedSections: []
-        };
+        const defaultSettings = createDefaultSettings();
         try {
           const saved = JSON.parse(localStorage.getItem(LOCAL_SETTINGS_KEY));
           if (saved && typeof saved === 'object') {
@@ -1269,6 +1271,10 @@
       });
       const [showNameSetupModal, setShowNameSetupModal] = useState(() => !((window.__trackerboxInitialDisplayName || '').trim()));
       const trimmedUserDisplayName = (settingsDraft.userDisplayName || '').trim().replace(/\s+/g, ' ');
+      const showHeaderQuickShortcut = settingsDraft.showHeaderQuickShortcut !== false;
+      const showHeaderWalletShortcut = settingsDraft.showHeaderWalletShortcut !== false;
+      const showHeaderJournalShortcut = settingsDraft.showHeaderJournalShortcut !== false;
+      const showHeaderGridShortcut = settingsDraft.showHeaderGridShortcut !== false;
       // Collapsible Section States
       const [sectionsOpen, setSectionsOpen] = useState({
          tracker: true,
@@ -3071,6 +3077,16 @@
         });
         return Math.round(pts);
       }, [allData, categories, habitLogs, habitsConfig, todayPoints, totalLifetimePoints]);
+      const openWeeklyReviewForDate = useCallback((dateStr) => {
+        const targetDate = dateStr || todayStr;
+        const targetMonth = targetDate.slice(0, 7);
+        const targetWeeks = getWeeksInMonth(targetMonth);
+        const targetWeekIndex = targetWeeks.findIndex(week => week.dates.includes(targetDate));
+        playSound('click');
+        setWeeklyReviewMonth(targetMonth);
+        setWeeklyReviewWeekIndex(targetWeekIndex !== -1 ? targetWeekIndex : 0);
+        setShowWeeklyReview(true);
+      }, [todayStr]);
       // --- Timer Logic ---
       useEffect(() => {
         let interval = null;
@@ -6592,7 +6608,7 @@
         wallet: { label: 'Wallet', icon: Wallet, color: 'text-emerald-300', onClick: () => { openOnlySection('wallet'); setWalletAmountFocusTick(t => t + 1); scrollToElementWithStickyOffset('section-wallet'); } },
         quick: { label: 'Quick', icon: Plus, color: 'text-fuchsia-300', onClick: () => { playSound('click'); setShowQuickCapture(true); } },
         search: { label: 'Search', icon: Search, color: 'text-sky-300', onClick: () => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); } },
-        review: { label: 'Review', icon: BarChart3, color: 'text-amber-300', onClick: () => { playSound('click'); setWeeklyReviewMonth(selectedMonthStr); setWeeklyReviewWeekIndex(selectedWeekIndex); setShowWeeklyReview(true); } },
+        review: { label: 'Review', icon: BarChart3, color: 'text-amber-300', onClick: () => { openWeeklyReviewForDate(activeJournalDate || todayStr); } },
         stars: { label: 'Stars', icon: Star, color: 'text-amber-200', onClick: () => { playSound('click'); setShowStarredModal(true); } },
         settings: { label: 'Settings', icon: Settings2, color: 'text-slate-300', onClick: () => { playSound('click'); setShowSettingsModal(true); } },
         timer: { label: 'Timer', icon: Clock, color: 'text-cyan-300', onClick: () => { playSound('click'); setShowTimer(v => !v); } }
@@ -6883,6 +6899,14 @@
                      </div>
                      {/* QoL Toolbar â€“ Migrate */}
                      <div className="flex items-center gap-2 flex-wrap">
+                       <button
+                         onClick={() => openWeeklyReviewForDate(activeJournalDate)}
+                         className="text-xs px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-2xl font-bold uppercase tracking-widest transition-all flex items-center gap-2 border border-amber-400/20"
+                         title="Open weekly review for this date"
+                       >
+                         <BarChart3 size={14} />
+                         <span>Weekly Review</span>
+                       </button>
                        <button
                          onClick={handleMigrateUnfinishedTasks}
                          className="text-xs px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-2xl font-bold uppercase tracking-widest transition-all flex items-center gap-1"
@@ -8309,6 +8333,48 @@
                       </label>
                       <p className="text-xs text-slate-500 mt-3">Used on the loading welcome pill and stored only in this browser.</p>
                     </div>
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
+                      <div className="font-bold uppercase tracking-widest text-xs text-cyan-300 mb-1">Header Shortcut Buttons</div>
+                      <p className="text-xs text-slate-400 mb-3">Control whether Quick, Wallet, Journal, and Grid shortcut buttons appear in the top header.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="flex items-center gap-3 bg-[#0b1120] rounded-2xl px-3 py-3 border border-white/10 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showHeaderQuickShortcut}
+                            onChange={() => setSettingsDraft(prev => ({ ...prev, showHeaderQuickShortcut: !showHeaderQuickShortcut }))}
+                            className="h-4 w-4 accent-cyan-400"
+                          />
+                          <span className="text-sm text-slate-200">Quick Access</span>
+                        </label>
+                        <label className="flex items-center gap-3 bg-[#0b1120] rounded-2xl px-3 py-3 border border-white/10 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showHeaderWalletShortcut}
+                            onChange={() => setSettingsDraft(prev => ({ ...prev, showHeaderWalletShortcut: !showHeaderWalletShortcut }))}
+                            className="h-4 w-4 accent-cyan-400"
+                          />
+                          <span className="text-sm text-slate-200">Wallet</span>
+                        </label>
+                        <label className="flex items-center gap-3 bg-[#0b1120] rounded-2xl px-3 py-3 border border-white/10 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showHeaderJournalShortcut}
+                            onChange={() => setSettingsDraft(prev => ({ ...prev, showHeaderJournalShortcut: !showHeaderJournalShortcut }))}
+                            className="h-4 w-4 accent-cyan-400"
+                          />
+                          <span className="text-sm text-slate-200">Journal</span>
+                        </label>
+                        <label className="flex items-center gap-3 bg-[#0b1120] rounded-2xl px-3 py-3 border border-white/10 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showHeaderGridShortcut}
+                            onChange={() => setSettingsDraft(prev => ({ ...prev, showHeaderGridShortcut: !showHeaderGridShortcut }))}
+                            className="h-4 w-4 accent-cyan-400"
+                          />
+                          <span className="text-sm text-slate-200">Grid</span>
+                        </label>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         onClick={() => {
@@ -9066,57 +9132,59 @@
                       const isActive = activeMenuSection === section.id;
                       const isPinned = normalizedPinnedSections.includes(section.id);
                       return (
-                        <div key={`menu-${section.id}`} className={`menu-nav-card rounded-2xl border transition-all ${isActive ? 'border-cyan-400/50 bg-cyan-500/10 shadow-[0_0_18px_rgba(34,211,238,0.12)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
-                          <div className="flex items-center gap-2 p-2">
-                            <button
-                              onClick={() => navigateToSection(section.id)}
-                              className="flex-1 min-w-0 flex items-center gap-3 rounded-xl px-3 py-3 text-left"
-                            >
-                              <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${isActive ? 'border-cyan-400/40 bg-cyan-500/15' : 'border-white/10 bg-black/20'}`}>
-                                <Icon size={18} className={section.accent} />
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-sm font-black uppercase tracking-widest text-white truncate">{section.label}</div>
-                                <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{section.id === 'tracker' ? 'Default Home' : isPinned ? 'Pinned On Home' : 'Open Section'}</div>
-                              </div>
-                            </button>
-                            {section.id !== 'tracker' && (
+                        <Fragment key={`menu-${section.id}`}>
+                          <div className={`menu-nav-card rounded-2xl border transition-all ${isActive ? 'border-cyan-400/50 bg-cyan-500/10 shadow-[0_0_18px_rgba(34,211,238,0.12)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
+                            <div className="flex items-center gap-2 p-2">
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  togglePinnedSection(section.id);
-                                }}
-                                className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all ${isPinned ? 'border-amber-400/40 bg-amber-500/10 text-amber-300' : 'border-white/10 bg-black/20 text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}
-                                title={isPinned ? 'Unpin from home view' : 'Pin to home view'}
+                                onClick={() => navigateToSection(section.id)}
+                                className="flex-1 min-w-0 flex items-center gap-3 rounded-xl px-3 py-3 text-left"
                               >
-                                <Pin size={16} />
+                                <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${isActive ? 'border-cyan-400/40 bg-cyan-500/15' : 'border-white/10 bg-black/20'}`}>
+                                  <Icon size={18} className={section.accent} />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="text-sm font-black uppercase tracking-widest text-white truncate">{section.label}</div>
+                                  <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{section.id === 'tracker' ? 'Default Home' : isPinned ? 'Pinned On Home' : 'Open Section'}</div>
+                                </div>
                               </button>
-                            )}
+                              {section.id !== 'tracker' && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    togglePinnedSection(section.id);
+                                  }}
+                                  className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all ${isPinned ? 'border-amber-400/40 bg-amber-500/10 text-amber-300' : 'border-white/10 bg-black/20 text-slate-500 hover:text-slate-200 hover:bg-white/5'}`}
+                                  title={isPinned ? 'Unpin from home view' : 'Pin to home view'}
+                                >
+                                  <Pin size={16} />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                          {section.id === 'storage' && (
+                            <button
+                              onClick={() => {
+                                playSound('click');
+                                setShowAppMenu(false);
+                                setShowSettingsModal(true);
+                              }}
+                              className="menu-nav-card w-full flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-200 hover:bg-white/10 transition-all"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl border border-white/10 bg-black/20 flex items-center justify-center text-slate-300">
+                                  <Settings2 size={18} />
+                                </div>
+                                <div className="text-left">
+                                  <div className="text-sm font-black uppercase tracking-widest text-white">Settings</div>
+                                  <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">App Preferences</div>
+                                </div>
+                              </div>
+                              <ChevronDown size={16} className="-rotate-90 text-slate-500" />
+                            </button>
+                          )}
+                        </Fragment>
                       );
                     })}
-                  </div>
-                  <div className="p-4 border-t border-white/10">
-                    <button
-                      onClick={() => {
-                        playSound('click');
-                        setShowAppMenu(false);
-                        setShowSettingsModal(true);
-                      }}
-                      className="w-full flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-200 hover:bg-white/10 transition-all"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl border border-white/10 bg-black/20 flex items-center justify-center text-slate-300">
-                          <Settings2 size={18} />
-                        </div>
-                        <div className="text-left">
-                          <div className="text-sm font-black uppercase tracking-widest text-white">Settings</div>
-                          <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">App Preferences</div>
-                        </div>
-                      </div>
-                      <ChevronDown size={16} className="-rotate-90 text-slate-500" />
-                    </button>
                   </div>
                 </div>
               </div>
@@ -9223,35 +9291,42 @@
                       {starredCount}
                     </span>
                   </button>
-                  {/* QUICK CAPTURE BUTTON (Shift + T) */}
-                  <button
-                    onClick={() => { playSound('click'); setShowQuickCapture(true); }}
-                    className={`app-shortcut flex items-center justify-center tb-interactive bg-gradient-to-br ${quickSaveType === 'todo' ? 'from-emerald-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300' : 'from-purple-400 to-cyan-400 hover:from-purple-300 hover:to-cyan-300'} text-white rounded-2xl w-11 h-[44px] shadow-[0_0_15px_rgba(34,211,238,0.5)] active:scale-95 transition-all flex-shrink-0`}
-                    title="Quick Capture"
-                  >
-                    <span className="text-3xl font-black leading-none">+</span>
-                  </button>
-                  <button
-                    onClick={() => navigateToSection('wallet')}
-                    className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'wallet' ? 'border-emerald-400/70 bg-emerald-400/10 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                    title="Open Wallet"
-                  >
-                    <Wallet size={20} />
-                  </button>
-                  <button
-                    onClick={() => navigateToSection('journal')}
-                    className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'journal' ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                    title="Open Journal"
-                  >
-                    <FileText size={20} />
-                  </button>
-                  <button
-                    onClick={() => navigateToSection('tracker')}
-                    className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'tracker' ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                    title="Open Grid"
-                  >
-                    <CalendarIcon size={20} />
-                  </button>
+                  {showHeaderQuickShortcut && (
+                    <button
+                      onClick={() => { playSound('click'); setShowQuickCapture(true); }}
+                      className={`app-shortcut flex items-center justify-center tb-interactive bg-gradient-to-br ${quickSaveType === 'todo' ? 'from-emerald-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300' : 'from-purple-400 to-cyan-400 hover:from-purple-300 hover:to-cyan-300'} text-white rounded-2xl w-11 h-[44px] shadow-[0_0_15px_rgba(34,211,238,0.5)] active:scale-95 transition-all flex-shrink-0`}
+                      title="Quick Capture"
+                    >
+                      <span className="text-3xl font-black leading-none">+</span>
+                    </button>
+                  )}
+                  {showHeaderWalletShortcut && (
+                    <button
+                      onClick={() => navigateToSection('wallet')}
+                      className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'wallet' ? 'border-emerald-400/70 bg-emerald-400/10 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      title="Open Wallet"
+                    >
+                      <Wallet size={20} />
+                    </button>
+                  )}
+                  {showHeaderJournalShortcut && (
+                    <button
+                      onClick={() => navigateToSection('journal')}
+                      className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'journal' ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      title="Open Journal"
+                    >
+                      <FileText size={20} />
+                    </button>
+                  )}
+                  {showHeaderGridShortcut && (
+                    <button
+                      onClick={() => navigateToSection('tracker')}
+                      className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'tracker' ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      title="Open Grid"
+                    >
+                      <CalendarIcon size={20} />
+                    </button>
+                  )}
                   <div className="flex gap-2">
                     <button
                       onClick={handleUniversalUndo}
@@ -9276,18 +9351,6 @@
                   >
                     <Search size={20} />
                   </button>
-                    <button
-                      onClick={() => {
-                        playSound('click');
-                        setWeeklyReviewMonth(selectedMonthStr);
-                        setWeeklyReviewWeekIndex(selectedWeekIndex);
-                        setShowWeeklyReview(true);
-                      }}
-                      className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showWeeklyReview ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
-                      title="Open weekly review"
-                    >
-                      <BarChart3 size={20} />
-                    </button>
                     <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
                       <Clock size={20} />
                     </button>
