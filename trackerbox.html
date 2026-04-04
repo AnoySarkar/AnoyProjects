@@ -11,6 +11,12 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
+        try {
+          const raw = localStorage.getItem('trackerbox_settings_v1');
+          const settings = raw ? JSON.parse(raw) : null;
+          const shouldKeepWarm = settings?.keepAppWarm !== false;
+          if (!shouldKeepWarm) return;
+        } catch (err) {}
         navigator.serviceWorker.register('./sw.js')
           .then(reg => console.log('Service Worker registered successfully!', reg))
           .catch(err => console.error('Service Worker registration failed:', err));
@@ -164,6 +170,12 @@
     }
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
+      *,
+      *::before,
+      *::after {
+        animation: none !important;
+        transition-duration: 0.01ms !important;
+      }
     }
     .tb-interactive {
       transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
@@ -185,6 +197,47 @@
       -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--border-color);
       box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+      transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease, background-color 0.25s ease;
+    }
+    .section-shell {
+      position: relative;
+      overflow: hidden;
+      animation: sectionReveal 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .section-shell::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.035) 22%, transparent 48%);
+      transform: translateX(-120%);
+      animation: sheenPass 1.1s ease-out 1;
+    }
+    .top-chip,
+    .app-shortcut,
+    .menu-nav-card {
+      animation: sectionReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+      will-change: transform, opacity;
+    }
+    .menu-drawer {
+      animation: drawerIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    button,
+    a,
+    input,
+    select,
+    textarea {
+      transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, opacity 0.22s ease, color 0.22s ease;
+    }
+    button:hover,
+    .app-shortcut:hover,
+    .top-chip:hover {
+      transform: translateY(-1px);
+    }
+    button:active,
+    .app-shortcut:active,
+    .top-chip:active {
+      transform: translateY(0) scale(0.98);
     }
     .neon-text { text-shadow: 0 0 15px currentColor; }
     @keyframes heartbeat {
@@ -197,6 +250,19 @@
       100% { opacity: 1; transform: scale(1) translateY(0); }
     }
     .animate-modal { animation: modalEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    @keyframes sectionReveal {
+      0% { opacity: 0; transform: translateY(12px) scale(0.985); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes drawerIn {
+      0% { opacity: 0; transform: translateX(-18px) scale(0.985); }
+      100% { opacity: 1; transform: translateX(0) scale(1); }
+    }
+    @keyframes sheenPass {
+      0% { transform: translateX(-120%); opacity: 0; }
+      20% { opacity: 1; }
+      100% { transform: translateX(120%); opacity: 0; }
+    }
     /* Rigid square cells */
     .square-cell-inner { width: 52px; height: 52px; }
     @media (min-width: 768px) { .square-cell-inner { width: 60px; height: 60px; } }
@@ -465,6 +531,7 @@
       defaultSelectedColorId: 'lock',
       defaultTimerMinutes: 25,
       defaultBreakMinutes: 5,
+      keepAppWarm: true,
       defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick'],
       pinnedSections: []
     };
@@ -809,6 +876,7 @@
           defaultSelectedColorId: 'lock',
           defaultTimerMinutes: 25,
           defaultBreakMinutes: 5,
+          keepAppWarm: true,
           defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick'],
           pinnedSections: []
         };
@@ -1601,6 +1669,7 @@
       const [quickNotesStartMinutes, setQuickNotesStartMinutes] = useState(6 * 60); // default: 6:00 AM
       // NEW: Toast notifications (non-blocking success messages)
       const [toasts, setToasts] = useState([]);
+      const [keepWarmStatus, setKeepWarmStatus] = useState({ serviceWorker: 'idle', persistence: 'idle', cache: 'idle' });
       // === NEW: Current Hour Visual Anchor (live) ===
       const [currentHour, setCurrentHour] = useState(new Date().getHours());
       // === NEW: Blueprint Presets (v3: real colors + blueprints + fixed load) ===
@@ -1753,6 +1822,60 @@
           setToasts(prev => prev.filter(t => t.id !== id));
         }, duration);
       }, []);
+      useEffect(() => {
+        let cancelled = false;
+        const warmApp = async () => {
+          if (!settingsDraft.keepAppWarm) {
+            try {
+              if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+                const registration = await navigator.serviceWorker.getRegistration('./');
+                if (registration) await registration.unregister();
+              }
+            } catch (e) {}
+            try {
+              if (typeof window !== 'undefined' && 'caches' in window) {
+                await caches.delete('trackerbox-shell-v1');
+              }
+            } catch (e) {}
+            if (!cancelled) setKeepWarmStatus({ serviceWorker: 'off', persistence: 'off', cache: 'off' });
+            return;
+          }
+          const nextStatus = { serviceWorker: 'unsupported', persistence: 'unsupported', cache: 'unsupported' };
+          try {
+            if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+              const existing = await navigator.serviceWorker.getRegistration('./');
+              if (existing) {
+                await existing.update();
+              } else {
+                await navigator.serviceWorker.register('./sw.js');
+              }
+              nextStatus.serviceWorker = 'ready';
+            }
+          } catch (e) {
+            nextStatus.serviceWorker = 'error';
+          }
+          try {
+            if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
+              const persisted = await navigator.storage.persist();
+              nextStatus.persistence = persisted ? 'granted' : 'limited';
+            }
+          } catch (e) {
+            nextStatus.persistence = 'error';
+          }
+          try {
+            if (typeof window !== 'undefined' && 'caches' in window) {
+              const cache = await caches.open('trackerbox-shell-v1');
+              await cache.addAll(['./', './trackerbox.html', './sw.js']);
+              nextStatus.cache = 'ready';
+            }
+          } catch (e) {
+            nextStatus.cache = 'error';
+          }
+          if (!cancelled) setKeepWarmStatus(nextStatus);
+        };
+        warmApp();
+        return () => { cancelled = true; };
+      }, [settingsDraft.keepAppWarm]);
       // --- Lightweight Markdown (safe subset) ---
       const escapeHtml = (s) => String(s)
         .replace(/&/g, '&amp;')
@@ -3080,13 +3203,14 @@
       }, [habitZoneWeekMonth, habitZoneAvailableWeeks, todayStr]);
       useEffect(() => {
         // Faster startup: paint UI immediately, then hydrate large JSON in a queued task.
+        const shouldWarm = settingsDraft.keepAppWarm;
         const timer = setTimeout(() => {
           const loader = document.getElementById('loading-screen');
           if (loader) loader.classList.add('hidden');
-        }, 400);
+        }, shouldWarm ? 90 : 170);
 
         setIsLoaded(true);
-        setTimeout(() => {
+        const hydrate = () => {
           try {
             const savedData = localStorage.getItem(LOCAL_STORAGE_KEY);
             const savedJournal = localStorage.getItem(LOCAL_JOURNAL_KEY);
@@ -3109,9 +3233,20 @@
               catch (e) { console.error("Error loading descriptions", e); }
             }
           } catch (e) {}
-        }, 0);
+        };
+        let idleId = null;
+        if ('requestIdleCallback' in window) {
+          idleId = window.requestIdleCallback(hydrate, { timeout: shouldWarm ? 60 : 90 });
+        } else {
+          idleId = setTimeout(hydrate, 0);
+        }
         // NEW: Lock feature on every page refresh
         setSelectedColorId('lock');
+        return () => {
+          clearTimeout(timer);
+          if ('cancelIdleCallback' in window && typeof idleId === 'number') window.cancelIdleCallback(idleId);
+          else clearTimeout(idleId);
+        };
       }, []);
       // Save descriptions whenever they change
       useEffect(() => {
@@ -7749,6 +7884,37 @@
                       </label>
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="font-bold uppercase tracking-widest text-xs text-cyan-300">Keep App Warm</div>
+                          <p className="text-xs text-slate-400 mt-1">Best effort mode for phones and PWAs. It keeps the app shell cached, requests persistent storage, and tries to reopen faster. Browsers still control true background execution.</p>
+                        </div>
+                        <label className="flex items-center gap-3 shrink-0 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={settingsDraft.keepAppWarm}
+                            onChange={() => setSettingsDraft(prev => ({ ...prev, keepAppWarm: !prev.keepAppWarm }))}
+                            className="h-4 w-4 accent-cyan-400"
+                          />
+                          <span className="text-sm font-bold text-slate-200">{settingsDraft.keepAppWarm ? 'On' : 'Off'}</span>
+                        </label>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                        <div className="rounded-2xl border border-white/10 bg-[#0b1120] px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">Service Worker</div>
+                          <div className="mt-1 font-black text-white">{keepWarmStatus.serviceWorker}</div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-[#0b1120] px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">Persistent Storage</div>
+                          <div className="mt-1 font-black text-white">{keepWarmStatus.persistence}</div>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-[#0b1120] px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.25em] text-slate-500">Shell Cache</div>
+                          <div className="mt-1 font-black text-white">{keepWarmStatus.cache}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
                       <div className="font-bold uppercase tracking-widest text-xs text-cyan-300 mb-3">Collapsed Epoch Defaults</div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {SECTIONS.map(section => (
@@ -8405,7 +8571,7 @@
             )}
             {showAppMenu && (
               <div className="fixed inset-0 z-[260] bg-black/70 backdrop-blur-sm" onClick={() => setShowAppMenu(false)}>
-                <div className="h-full w-[min(340px,86vw)] bg-[#07101d]/95 border-r border-cyan-400/20 shadow-[0_0_35px_rgba(34,211,238,0.14)] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="menu-drawer h-full w-[min(340px,86vw)] bg-[#07101d]/95 border-r border-cyan-400/20 shadow-[0_0_35px_rgba(34,211,238,0.14)] flex flex-col" onClick={e => e.stopPropagation()}>
                   <div className="px-5 py-5 border-b border-white/10">
                     <div className="flex items-center justify-between gap-3 mb-4">
                       <div>
@@ -8427,7 +8593,7 @@
                       const isActive = activeMenuSection === section.id;
                       const isPinned = normalizedPinnedSections.includes(section.id);
                       return (
-                        <div key={`menu-${section.id}`} className={`rounded-2xl border transition-all ${isActive ? 'border-cyan-400/50 bg-cyan-500/10 shadow-[0_0_18px_rgba(34,211,238,0.12)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
+                        <div key={`menu-${section.id}`} className={`menu-nav-card rounded-2xl border transition-all ${isActive ? 'border-cyan-400/50 bg-cyan-500/10 shadow-[0_0_18px_rgba(34,211,238,0.12)]' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}>
                           <div className="flex items-center gap-2 p-2">
                             <button
                               onClick={() => navigateToSection(section.id)}
@@ -8519,7 +8685,7 @@
                 {/* Main Toolbar & Stats â€” + QUICK CAPTURE NOW INTEGRATED HERE */}
                 <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 mt-2 md:mt-0">
                   {/* Gamification Display */}
-                  <div className="flex items-center bg-[#0b1120] border border-white/10 rounded-2xl overflow-hidden shadow-[0_0_10px_rgba(0,0,0,0.5)] h-[44px]">
+                  <div className="top-chip flex items-center bg-[#0b1120] border border-white/10 rounded-2xl overflow-hidden shadow-[0_0_10px_rgba(0,0,0,0.5)] h-[44px]">
                     <div className="bg-gradient-to-r from-purple-500/20 to-transparent px-3 py-2 border-r border-white/10 flex items-center justify-center text-purple-400" title="Current Rank">
                       <Trophy size={18} />
                     </div>
@@ -8539,7 +8705,7 @@
                   {/* CLICKABLE POINTS DISPLAY WITH PERIOD INDICATOR */}
                   <div
                     onClick={() => { playSound('click'); setShowPointsSelector(true); }}
-                    className="flex items-center gap-2 bg-lime-500/10 border border-lime-500/50 px-3 py-2 rounded-xl shadow-[0_0_10px_rgba(163,230,53,0.2)] h-[44px] cursor-pointer active:scale-95 transition-transform"
+                    className="top-chip flex items-center gap-2 bg-lime-500/10 border border-lime-500/50 px-3 py-2 rounded-xl shadow-[0_0_10px_rgba(163,230,53,0.2)] h-[44px] cursor-pointer active:scale-95 transition-transform"
                     title="Click to choose points period (daily / weekly / monthly / yearly / all-time)"
                   >
                     <Sparkles size={18} className="text-lime-400 drop-shadow-[0_0_8px_rgba(163,230,53,0.8)]" />
@@ -8556,7 +8722,7 @@
                   {/* CLICKABLE STREAK DISPLAY */}
                   <div
                     onClick={() => { playSound('click'); setShowStreakModal(true); }}
-                    className="flex items-center gap-2 bg-orange-500/10 border border-orange-500/50 px-3 py-2 md:px-4 rounded-xl shadow-[0_0_10px_rgba(249,115,22,0.2)] h-[44px] cursor-pointer active:scale-95 transition-transform"
+                    className="top-chip flex items-center gap-2 bg-orange-500/10 border border-orange-500/50 px-3 py-2 md:px-4 rounded-xl shadow-[0_0_10px_rgba(249,115,22,0.2)] h-[44px] cursor-pointer active:scale-95 transition-transform"
                     title="Click for full streak history, longest streak &amp; dates"
                   >
                     <Flame size={20} className={currentStreak > 0 ? "text-orange-400 drop-shadow-[0_0_8px_rgba(249,115,22,0.8)]" : "text-slate-500"} />
@@ -8566,7 +8732,7 @@
                   </div>
                   <button
                     onClick={() => { playSound('click'); setShowFrozenDatesModal(true); }}
-                    className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/40 px-3 py-2 md:px-4 rounded-xl shadow-[0_0_10px_rgba(34,211,238,0.18)] h-[44px] cursor-pointer active:scale-95 transition-transform"
+                    className="top-chip flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/40 px-3 py-2 md:px-4 rounded-xl shadow-[0_0_10px_rgba(34,211,238,0.18)] h-[44px] cursor-pointer active:scale-95 transition-transform"
                     title="Click to view frozen dates"
                   >
                     <Snowflake size={18} className={frozenDaysCount > 0 ? 'text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.7)]' : 'text-slate-500'} />
@@ -8576,7 +8742,7 @@
                   </button>
                   <button
                     onClick={() => { playSound('click'); setShowStarredModal(true); }}
-                    className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/40 px-3 py-2 md:px-4 rounded-xl shadow-[0_0_10px_rgba(245,158,11,0.18)] h-[44px] cursor-pointer active:scale-95 transition-transform"
+                    className="top-chip flex items-center gap-2 bg-amber-500/10 border border-amber-500/40 px-3 py-2 md:px-4 rounded-xl shadow-[0_0_10px_rgba(245,158,11,0.18)] h-[44px] cursor-pointer active:scale-95 transition-transform"
                     title="Open all starred journal entries, notes, and wallet items"
                   >
                     <Star size={18} className={starredCount > 0 ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.7)]' : 'text-slate-500'} />
@@ -8587,16 +8753,37 @@
                   {/* QUICK CAPTURE BUTTON (Shift + T) */}
                   <button
                     onClick={() => { playSound('click'); setShowQuickCapture(true); }}
-                    className={`flex items-center justify-center tb-interactive bg-gradient-to-br ${quickSaveType === 'todo' ? 'from-emerald-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300' : 'from-purple-400 to-cyan-400 hover:from-purple-300 hover:to-cyan-300'} text-white rounded-2xl w-11 h-[44px] shadow-[0_0_15px_rgba(34,211,238,0.5)] active:scale-95 transition-all flex-shrink-0`}
+                    className={`app-shortcut flex items-center justify-center tb-interactive bg-gradient-to-br ${quickSaveType === 'todo' ? 'from-emerald-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300' : 'from-purple-400 to-cyan-400 hover:from-purple-300 hover:to-cyan-300'} text-white rounded-2xl w-11 h-[44px] shadow-[0_0_15px_rgba(34,211,238,0.5)] active:scale-95 transition-all flex-shrink-0`}
                     title="Quick Capture"
                   >
                     <span className="text-3xl font-black leading-none">+</span>
+                  </button>
+                  <button
+                    onClick={() => navigateToSection('wallet')}
+                    className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'wallet' ? 'border-emerald-400/70 bg-emerald-400/10 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                    title="Open Wallet"
+                  >
+                    <Wallet size={20} />
+                  </button>
+                  <button
+                    onClick={() => navigateToSection('journal')}
+                    className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'journal' ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                    title="Open Journal"
+                  >
+                    <FileText size={20} />
+                  </button>
+                  <button
+                    onClick={() => navigateToSection('tracker')}
+                    className={`app-shortcut w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${activeMenuSection === 'tracker' ? 'border-cyan-400/70 bg-cyan-400/10 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                    title="Open Grid"
+                  >
+                    <CalendarIcon size={20} />
                   </button>
                   <div className="flex gap-2">
                     <button
                       onClick={handleUniversalUndo}
                       disabled={!canUniversalUndo}
-                      className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${canUniversalUndo ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-white/5 text-slate-600 cursor-not-allowed opacity-50'}`}
+                      className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${canUniversalUndo ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-white/5 text-slate-600 cursor-not-allowed opacity-50'}`}
                       title="Undo"
                     >
                       <Undo size={18} />
@@ -8604,14 +8791,14 @@
                     <button
                       onClick={handleUniversalRedo}
                       disabled={!canUniversalRedo}
-                      className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${canUniversalRedo ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-white/5 text-slate-600 cursor-not-allowed opacity-50'}`}
+                      className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${canUniversalRedo ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-white/5 text-slate-600 cursor-not-allowed opacity-50'}`}
                       title="Redo"
                     >
                       <Redo size={18} />
                     </button>
                     <button
                       onClick={() => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); }}
-                    className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
+                    className="top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
                     title="Global Search (Ctrl+K / Cmd+K)"
                   >
                     <Search size={20} />
@@ -8623,12 +8810,12 @@
                         setWeeklyReviewWeekIndex(selectedWeekIndex);
                         setShowWeeklyReview(true);
                       }}
-                      className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showWeeklyReview ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
+                      className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showWeeklyReview ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
                       title="Open weekly review"
                     >
                       <BarChart3 size={20} />
                     </button>
-                    <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
+                    <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
                       <Clock size={20} />
                     </button>
                   </div>
@@ -8638,7 +8825,7 @@
             <main className="max-w-[1400px] w-full mx-auto px-4 py-8 flex-1 min-w-0 flex flex-col">
               {/* ---------------- SECTION 1: GRID ---------------- */}
               {shouldRenderSection('tracker') && (
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-1" id="section-tracker">
+              <section className="section-shell glass-panel rounded-3xl w-full overflow-hidden mb-6 order-1" id="section-tracker">
                 {/* Accordion Header */}
                 <button onClick={() => toggleSection('tracker')} className="w-full p-4 md:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white/5 hover:bg-white/10 tb-interactive rounded-t-3xl">
                     <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
@@ -9348,7 +9535,7 @@
               )}
               {/* ---------------- SECTION: WALLET TRACKER ---------------- */}
               {shouldRenderSection('wallet') && (
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-2" id="section-wallet">
+              <section className="section-shell glass-panel rounded-3xl w-full overflow-hidden mb-6 order-2" id="section-wallet">
                 <button onClick={() => toggleSection('wallet')} className="w-full p-4 md:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex flex-wrap items-center gap-3">
                         <Wallet size={24} className="text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
@@ -9864,7 +10051,7 @@
               )}
               {/* ---------------- SECTION 2: ANALYTICS CORE ---------------- */}
               {shouldRenderSection('analytics') && (
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-3" id="section-analytics">
+              <section className="section-shell glass-panel rounded-3xl w-full overflow-hidden mb-6 order-3" id="section-analytics">
                 <button onClick={() => toggleSection('analytics')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
                         <Activity size={24} className="text-purple-400 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
@@ -10059,7 +10246,7 @@
               )}
               {/* ---------------- BAR GRAPH SECTION ---------------- */}
               {shouldRenderSection('graph') && (
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-4" id="section-graph">
+              <section className="section-shell glass-panel rounded-3xl w-full overflow-hidden mb-6 order-4" id="section-graph">
                 <button onClick={() => toggleSection('graph')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
                         <Activity size={24} className="text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
@@ -10188,7 +10375,7 @@
               )}
               {/* ---------------- SECTION 3: JOURNAL ONLY MODULE ---------------- */}
               {shouldRenderSection('journal') && (
-              <section className={`glass-panel rounded-3xl w-full overflow-hidden mb-6 order-2 ${journalSavePulseTick ? 'journal-save-pulse' : ''}`} id="journal-only-module">
+              <section className={`section-shell glass-panel rounded-3xl w-full overflow-hidden mb-6 order-2 ${journalSavePulseTick ? 'journal-save-pulse' : ''}`} id="journal-only-module">
                 <button onClick={() => toggleSection('journal')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
                         <FileText size={24} className="text-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
@@ -10261,7 +10448,7 @@
               )}
               {/* ---------------- SECTION 3: SYSTEM MODULES ---------------- */}
               {shouldRenderSection('modules') && (
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 order-5" id="section-modules">
+              <section className="section-shell glass-panel rounded-3xl w-full overflow-hidden mb-6 order-5" id="section-modules">
                 <button onClick={() => toggleSection('modules')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive">
                     <div className="flex items-center gap-3">
                         <Settings2 size={24} className="text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
@@ -10499,7 +10686,7 @@
               )}
               {/* ---------------- SECTION 4: DATA & STORAGE CORE ---------------- */}
               {shouldRenderSection('storage') && (
-              <section className="glass-panel rounded-3xl w-full overflow-hidden mb-6 relative order-6" id="section-storage">
+              <section className="section-shell glass-panel rounded-3xl w-full overflow-hidden mb-6 relative order-6" id="section-storage">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-red-500 opacity-50"></div>
                 <button onClick={() => toggleSection('storage')} className="w-full p-4 md:p-6 flex justify-between items-center bg-white/5 hover:bg-white/10 tb-interactive relative">
                     <div className="flex items-center gap-3">
