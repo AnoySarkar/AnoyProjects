@@ -462,7 +462,8 @@
       defaultCollapsedEpochs: { night: true, morning: false, afternoon: false, evening: false },
       defaultSelectedColorId: 'lock',
       defaultTimerMinutes: 25,
-      defaultBreakMinutes: 5
+      defaultBreakMinutes: 5,
+      defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick']
     };
     // --- Default Constants ---
     const DEFAULT_CATEGORIES = [
@@ -802,7 +803,8 @@
           defaultCollapsedEpochs: { night: true, morning: false, afternoon: false, evening: false },
           defaultSelectedColorId: 'lock',
           defaultTimerMinutes: 25,
-          defaultBreakMinutes: 5
+          defaultBreakMinutes: 5,
+          defaultBottomBarActions: ['tracker', 'journal', 'wallet', 'quick']
         };
         try {
           const saved = JSON.parse(localStorage.getItem(LOCAL_SETTINGS_KEY));
@@ -873,6 +875,7 @@
         };
         setWalletTransactions(prev => {
           const next = [newTx, ...prev];
+          pushEntityHistory({ kind: 'wallet', before: prev, after: next, label: 'wallet add' });
           try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(next)); } catch (e) {}
           return next;
         });
@@ -898,6 +901,7 @@
       const deleteWalletTransaction = (id) => {
         setWalletTransactions(prev => {
           const next = prev.filter(tx => tx.id !== id);
+          pushEntityHistory({ kind: 'wallet', before: prev, after: next, label: 'wallet delete' });
           try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(next)); } catch (e) {}
           return next;
         });
@@ -908,6 +912,7 @@
       const updateWalletTransaction = (id, updatedTx) => {
         setWalletTransactions(prev => {
           const next = prev.map(tx => tx.id === id ? { ...tx, ...updatedTx } : tx);
+          pushEntityHistory({ kind: 'wallet', before: prev, after: next, label: 'wallet edit' });
           try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(next)); } catch (e) {}
           return next;
         });
@@ -918,6 +923,7 @@
         const isStarred = walletTransactions.find(tx => tx.id === id)?.starred;
         setWalletTransactions(prev => {
           const next = prev.map(tx => tx.id === id ? { ...tx, starred: !tx.starred } : tx);
+          pushEntityHistory({ kind: 'wallet', before: prev, after: next, label: 'wallet star' });
           try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(next)); } catch (e) {}
           return next;
         });
@@ -1021,6 +1027,10 @@
       // History States for Undo/Redo
       const [past, setPast] = useState([]);
       const [future, setFuture] = useState([]);
+      const [entityPast, setEntityPast] = useState([]);
+      const [entityFuture, setEntityFuture] = useState([]);
+      const entityPastRef = useRef([]);
+      const entityFutureRef = useRef([]);
 
       // === WALLET TRACKER STATE ===
       const [walletTransactions, setWalletTransactions] = useState(() => {
@@ -1506,6 +1516,8 @@
       const [showFrozenDatesModal, setShowFrozenDatesModal] = useState(false);
       const [showStarredModal, setShowStarredModal] = useState(false);
       const [showWeeklyReview, setShowWeeklyReview] = useState(false);
+      const [weeklyReviewMonth, setWeeklyReviewMonth] = useState(() => formatDateString(new Date()).slice(0, 7));
+      const [weeklyReviewWeekIndex, setWeeklyReviewWeekIndex] = useState(0);
       // === NEW FOR QUICK-CAPTURE GLOBAL TASK INPUT (REWORKED) ===
       const [showQuickCapture, setShowQuickCapture] = useState(false);
       const [quickInput, setQuickInput] = useState('');
@@ -2027,6 +2039,87 @@
              return f.slice(1);
          });
       }, [showToast]);
+      useEffect(() => {
+        entityPastRef.current = entityPast;
+        entityFutureRef.current = entityFuture;
+      }, [entityPast, entityFuture]);
+      const pushEntityHistory = useCallback((entry, options = {}) => {
+        const beforeStr = typeof entry.before === 'string' ? entry.before : JSON.stringify(entry.before);
+        const afterStr = typeof entry.after === 'string' ? entry.after : JSON.stringify(entry.after);
+        if (beforeStr === afterStr) return;
+        const now = Date.now();
+        const { coalesceKey = null, coalesceWindowMs = 0 } = options;
+        setEntityPast(prev => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (coalesceKey && last?.coalesceKey === coalesceKey && now - (last.timestamp || 0) <= coalesceWindowMs) {
+            next[next.length - 1] = { ...last, after: afterStr, timestamp: now };
+            return next;
+          }
+          next.push({
+            kind: entry.kind,
+            before: beforeStr,
+            after: afterStr,
+            label: entry.label || entry.kind,
+            coalesceKey,
+            timestamp: now
+          });
+          return next.slice(-30);
+        });
+        setEntityFuture([]);
+      }, []);
+      const applyEntitySnapshot = useCallback((entry, direction) => {
+        if (!entry) return;
+        const snapshot = JSON.parse(direction === 'before' ? entry.before : entry.after);
+        if (entry.kind === 'journal') {
+          setJournalData(snapshot);
+          try { localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(snapshot)); } catch (e) {}
+          return;
+        }
+        if (entry.kind === 'todos') {
+          setTodosData(snapshot);
+          try { localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(snapshot)); } catch (e) {}
+          return;
+        }
+        if (entry.kind === 'wallet') {
+          setWalletTransactions(snapshot);
+          try { localStorage.setItem(LOCAL_WALLET_KEY, JSON.stringify(snapshot)); } catch (e) {}
+        }
+      }, []);
+      const handleEntityUndo = useCallback(() => {
+        setEntityPast(prev => {
+          if (!prev.length) return prev;
+          const entry = prev[prev.length - 1];
+          applyEntitySnapshot(entry, 'before');
+          setEntityFuture(f => [entry, ...f].slice(0, 30));
+          showToast(`Undo: ${entry.label}`, 'success');
+          return prev.slice(0, -1);
+        });
+      }, [applyEntitySnapshot, showToast]);
+      const handleEntityRedo = useCallback(() => {
+        setEntityFuture(prev => {
+          if (!prev.length) return prev;
+          const entry = prev[0];
+          applyEntitySnapshot(entry, 'after');
+          setEntityPast(p => [...p, entry].slice(-30));
+          showToast(`Redo: ${entry.label}`, 'success');
+          return prev.slice(1);
+        });
+      }, [applyEntitySnapshot, showToast]);
+      const handleUniversalUndo = useCallback(() => {
+        if (entityPastRef.current.length > 0) {
+          handleEntityUndo();
+          return;
+        }
+        handleUndo();
+      }, [handleEntityUndo, handleUndo]);
+      const handleUniversalRedo = useCallback(() => {
+        if (entityFutureRef.current.length > 0) {
+          handleEntityRedo();
+          return;
+        }
+        handleRedo();
+      }, [handleEntityRedo, handleRedo]);
       const routinePacks = useMemo(() => ([
         {
           id: 'morning',
@@ -2163,6 +2256,7 @@
           }));
         const addedTodos = additions.length;
         const nextTodos = { ...todosData, [dateStr]: [...currentTodos, ...additions] };
+        pushEntityHistory({ kind: 'todos', before: todosData, after: nextTodos, label: 'routine pack todos' });
         setTodosData(nextTodos);
         localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(nextTodos));
 
@@ -2768,12 +2862,14 @@
             return;
           }
           if ((e.ctrlKey || e.metaKey) && key === 'z') {
-             if (e.shiftKey) handleRedo();
-             else handleUndo();
+             e.preventDefault();
+             if (e.shiftKey) handleUniversalRedo();
+             else handleUniversalUndo();
              return;
           }
           if ((e.ctrlKey || e.metaKey) && key === 'y') {
-             handleRedo();
+             e.preventDefault();
+             handleUniversalRedo();
              return;
           }
           // NEW: Global search (Ctrl+K / Cmd+K)
@@ -2855,7 +2951,7 @@
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-}, [categories, handleUndo, handleRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory]);
+}, [categories, handleUniversalUndo, handleUniversalRedo, moveKeyboardCursor, keyboardCursor, getFirstNonColoredTriangle, todayStr, allData, selectedColorId, saveHistoryState, handleUpdateSegment, expandSectionForHour, activeJournalDate, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory]);
 
       // NEW: Global Search modal focus + Escape to close
       useEffect(() => {
@@ -3131,6 +3227,7 @@
               subtasks: []
             };
             const updated = { ...prev, [targetDate]: [...current, newTodo] };
+            pushEntityHistory({ kind: 'todos', before: prev, after: updated, label: 'quick todo add' });
             localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
             return updated;
           });
@@ -3141,6 +3238,7 @@
             const bullet = `- ${quickInput.trim()}`;
             const newText = current ? `${current}\n${bullet}` : bullet;
             const updated = { ...prev, [targetDate]: newText };
+            pushEntityHistory({ kind: 'journal', before: prev, after: updated, label: 'quick journal add' });
             localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(updated));
             return updated;
           });
@@ -3163,7 +3261,7 @@
         }
         setShowQuickCapture(false);
         setQuickInput('');
-      }, [quickInput, quickSaveType, quickTargetDate, quickNotesStartMinutes, showToast, quickWalletAmount, quickWalletType, quickWalletCat, addWalletTransaction]);
+      }, [quickInput, quickSaveType, quickTargetDate, quickNotesStartMinutes, showToast, quickWalletAmount, quickWalletType, quickWalletCat, addWalletTransaction, pushEntityHistory]);
       // --- Chrono-Clone Handlers ---
       const handleCopyDay = (dateStr) => {
         playSound('click');
@@ -3478,6 +3576,10 @@
 
         setJournalData(prev => {
           const newData = { ...prev, [dateStr]: text };
+          pushEntityHistory(
+            { kind: 'journal', before: prev, after: newData, label: `journal ${getDisplayDate(dateStr)}` },
+            { coalesceKey: `journal:${dateStr}`, coalesceWindowMs: 1200 }
+          );
           localStorage.setItem(LOCAL_JOURNAL_KEY, JSON.stringify(newData));
           // Visual save pulse (2s window) for psychological assurance
           setJournalSavePulseTick(Date.now());
@@ -3990,6 +4092,7 @@
             ...prev,
             [dateStr]: mode === 'replace' ? templateTodos : [...currentDayTodos, ...templateTodos]
           };
+          pushEntityHistory({ kind: 'todos', before: prev, after: updated, label: 'todo template restore' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
           return updated;
         });
@@ -4009,6 +4112,7 @@
         setTodosData(prev => {
           const dayTodos = prev[dateStr] || [];
           const newData = { ...prev, [dateStr]: [...dayTodos, { id: Date.now().toString(), text, status: 'red', remark: '', progress: 0, subtasks: [] }] };
+          pushEntityHistory({ kind: 'todos', before: prev, after: newData, label: 'todo add' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
@@ -4029,6 +4133,7 @@
               };
             })
           };
+          pushEntityHistory({ kind: 'todos', before: prev, after: newData, label: 'todo subtask add' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
@@ -4047,6 +4152,7 @@
               };
             })
           };
+          pushEntityHistory({ kind: 'todos', before: prev, after: newData, label: 'todo subtask toggle' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
@@ -4065,6 +4171,7 @@
             }
             return t;
           }) };
+          pushEntityHistory({ kind: 'todos', before: prev, after: newData, label: 'todo status' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
@@ -4079,6 +4186,7 @@
             }
             return t;
           }) };
+          pushEntityHistory({ kind: 'todos', before: prev, after: newData, label: 'todo progress' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
@@ -4087,6 +4195,7 @@
         setTodosData(prev => {
           const dayTodos = prev[dateStr] || [];
           const newData = { ...prev, [dateStr]: dayTodos.map(t => t.id === id ? { ...t, remark } : t) };
+          pushEntityHistory({ kind: 'todos', before: prev, after: newData, label: 'todo note' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
@@ -4096,6 +4205,7 @@
         setTodosData(prev => {
           const dayTodos = prev[dateStr] || [];
           const newData = { ...prev, [dateStr]: dayTodos.filter(t => t.id !== id) };
+          pushEntityHistory({ kind: 'todos', before: prev, after: newData, label: 'todo delete' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(newData));
           return newData;
         });
@@ -4121,6 +4231,7 @@
             [dateStr]: remaining,
             [tomorrowStr]: tomorrowTodos
           };
+          pushEntityHistory({ kind: 'todos', before: prev, after: updated, label: 'todo snooze' });
           localStorage.setItem(LOCAL_TODOS_KEY, JSON.stringify(updated));
           return updated;
         });
@@ -5706,6 +5817,16 @@
         });
         return results.slice(0, 30);
 }, [searchQuery, searchFilter, journalData, todosData, allData, descriptions, todayStr, walletTransactions, walletCategories, walletCurrency]);
+      const weeklyReviewAvailableWeeks = useMemo(() => getWeeksInMonth(weeklyReviewMonth), [weeklyReviewMonth]);
+      useEffect(() => {
+        if (!weeklyReviewAvailableWeeks.length) {
+          if (weeklyReviewWeekIndex !== 0) setWeeklyReviewWeekIndex(0);
+          return;
+        }
+        if (weeklyReviewWeekIndex > weeklyReviewAvailableWeeks.length - 1) {
+          setWeeklyReviewWeekIndex(0);
+        }
+      }, [weeklyReviewAvailableWeeks, weeklyReviewWeekIndex]);
       const starredResults = useMemo(() => {
         const results = [];
         Object.keys(journalStars || {}).forEach(dateStr => {
@@ -5759,8 +5880,8 @@
       }, [journalStars, journalData, noteStars, descriptions, walletTransactions, walletCategories, walletCurrency]);
       const starredCount = starredResults.length;
       const weeklyReview = useMemo(() => {
-        const fallbackWeek = availableWeeks.find(w => (w.dates || []).includes(todayStr)) || availableWeeks[0] || { label: 'Current Week', dates: [] };
-        const selectedWeek = availableWeeks[selectedWeekIndex] || fallbackWeek;
+        const fallbackWeek = weeklyReviewAvailableWeeks.find(w => (w.dates || []).includes(todayStr)) || weeklyReviewAvailableWeeks[0] || { label: 'Current Week', dates: [] };
+        const selectedWeek = weeklyReviewAvailableWeeks[weeklyReviewWeekIndex] || fallbackWeek;
         const dates = Array.isArray(selectedWeek?.dates) ? selectedWeek.dates : [];
         const expenses = walletTransactions.filter(tx => dates.includes(tx.date) && tx.type === 'expense');
         const totalSpent = expenses.reduce((sum, tx) => sum + (parseFloat(tx.amount) || 0), 0);
@@ -5869,7 +5990,7 @@
           topSpendingAmount: topSpendingEntry ? topSpendingEntry[1] : 0,
           wins
         };
-      }, [availableWeeks, selectedWeekIndex, todayStr, walletTransactions, walletCategories, frozenDays, allData, journalData, todosData, habitLogs, categories, habitsConfig]);
+      }, [weeklyReviewAvailableWeeks, weeklyReviewWeekIndex, todayStr, walletTransactions, walletCategories, frozenDays, allData, journalData, todosData, habitLogs, categories, habitsConfig]);
       const openLinkedRecord = useCallback((record) => {
         if (!record) return;
         playSound('click');
@@ -5923,6 +6044,70 @@
       const activeCompletedTasks = activeDayTodos.reduce((sum, todo) => sum + getTodoCompletionFraction(todo), 0) + activeDayHabits.reduce((sum, habit) => sum + getHabitCompletionFraction(habit), 0);
       const activeCompletionRate = activeTotalTasks > 0 ? (activeCompletedTasks / activeTotalTasks) * 100 : 0;
       const activeCompletedTasksDisplay = Number.isInteger(activeCompletedTasks) ? activeCompletedTasks : activeCompletedTasks.toFixed(1);
+      const canUniversalUndo = entityPast.length > 0 || past.length > 0;
+      const canUniversalRedo = entityFuture.length > 0 || future.length > 0;
+      const bottomBarActionChoices = [
+        { id: 'tracker', label: 'Grid' },
+        { id: 'journal', label: 'Journal' },
+        { id: 'wallet', label: 'Wallet' },
+        { id: 'quick', label: 'Quick' },
+        { id: 'search', label: 'Search' },
+        { id: 'review', label: 'Review' },
+        { id: 'stars', label: 'Stars' },
+        { id: 'settings', label: 'Settings' },
+        { id: 'timer', label: 'Timer' }
+      ];
+      const normalizedBottomBarActionIds = (() => {
+        const validIds = bottomBarActionChoices.map(choice => choice.id);
+        const source = Array.isArray(settingsDraft.defaultBottomBarActions) ? settingsDraft.defaultBottomBarActions : [];
+        const unique = [];
+        source.forEach(id => {
+          if (validIds.includes(id) && !unique.includes(id)) unique.push(id);
+        });
+        DEFAULT_SETTINGS.defaultBottomBarActions.forEach(id => {
+          if (validIds.includes(id) && !unique.includes(id)) unique.push(id);
+        });
+        validIds.forEach(id => {
+          if (!unique.includes(id)) unique.push(id);
+        });
+        return unique.slice(0, 4);
+      })();
+      const updateBottomBarActionSlot = (slotIndex, nextId) => {
+        setSettingsDraft(prev => {
+          const validIds = bottomBarActionChoices.map(choice => choice.id);
+          if (!validIds.includes(nextId)) return prev;
+          const current = Array.isArray(prev.defaultBottomBarActions) ? prev.defaultBottomBarActions : [];
+          const normalized = [];
+          current.forEach(id => {
+            if (validIds.includes(id) && !normalized.includes(id)) normalized.push(id);
+          });
+          DEFAULT_SETTINGS.defaultBottomBarActions.forEach(id => {
+            if (validIds.includes(id) && !normalized.includes(id)) normalized.push(id);
+          });
+          validIds.forEach(id => {
+            if (!normalized.includes(id)) normalized.push(id);
+          });
+          const next = normalized.slice(0, 4);
+          const swapIndex = next.indexOf(nextId);
+          if (swapIndex !== -1) {
+            [next[slotIndex], next[swapIndex]] = [next[swapIndex], next[slotIndex]];
+          } else {
+            next[slotIndex] = nextId;
+          }
+          return { ...prev, defaultBottomBarActions: next };
+        });
+      };
+      const mobileBottomBarActions = {
+        tracker: { label: 'Grid', icon: CalendarIcon, color: 'text-cyan-300', onClick: () => { openOnlySection('tracker'); scrollToElementWithStickyOffset('section-tracker'); } },
+        journal: { label: 'Journal', icon: FileText, color: 'text-amber-300', onClick: () => { openOnlySection('journal'); setJournalModuleDate(activeJournalDate || todayStr); setJournalFocusTick(t => t + 1); scrollToElementWithStickyOffset('journal-only-module'); } },
+        wallet: { label: 'Wallet', icon: Wallet, color: 'text-emerald-300', onClick: () => { openOnlySection('wallet'); setWalletAmountFocusTick(t => t + 1); scrollToElementWithStickyOffset('section-wallet'); } },
+        quick: { label: 'Quick', icon: Plus, color: 'text-fuchsia-300', onClick: () => { playSound('click'); setShowQuickCapture(true); } },
+        search: { label: 'Search', icon: Search, color: 'text-sky-300', onClick: () => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); } },
+        review: { label: 'Review', icon: BarChart3, color: 'text-amber-300', onClick: () => { playSound('click'); setWeeklyReviewMonth(selectedMonthStr); setWeeklyReviewWeekIndex(selectedWeekIndex); setShowWeeklyReview(true); } },
+        stars: { label: 'Stars', icon: Star, color: 'text-amber-200', onClick: () => { playSound('click'); setShowStarredModal(true); } },
+        settings: { label: 'Settings', icon: Settings2, color: 'text-slate-300', onClick: () => { playSound('click'); setShowSettingsModal(true); } },
+        timer: { label: 'Timer', icon: Clock, color: 'text-cyan-300', onClick: () => { playSound('click'); setShowTimer(v => !v); } }
+      };
       const activeDayData = allData[activeJournalDate] || {};
       let activeDayTrackedHours = 0;
       let activeDayPoints = 0;
@@ -6873,6 +7058,29 @@
                     </div>
                     <button onClick={() => setShowWeeklyReview(false)} className="text-slate-400 hover:text-white"><X size={24} /></button>
                   </div>
+                  <div className="flex flex-col sm:flex-row gap-3 mb-6">
+                    <label className="flex-1 flex flex-col gap-2">
+                      <span className="text-[10px] uppercase tracking-widest text-slate-400 font-black">Review Month</span>
+                      <input
+                        type="month"
+                        value={weeklyReviewMonth}
+                        onChange={e => { playSound('click'); setWeeklyReviewMonth(e.target.value); setWeeklyReviewWeekIndex(0); }}
+                        className="bg-[#0b1120] border border-amber-400/20 rounded-2xl px-4 py-3 text-sm text-slate-200 font-bold outline-none"
+                      />
+                    </label>
+                    <label className="flex-1 flex flex-col gap-2">
+                      <span className="text-[10px] uppercase tracking-widest text-slate-400 font-black">Review Week</span>
+                      <select
+                        value={weeklyReviewWeekIndex}
+                        onChange={e => { playSound('click'); setWeeklyReviewWeekIndex(Number(e.target.value)); }}
+                        className="bg-[#0b1120] border border-amber-400/20 rounded-2xl px-4 py-3 text-sm text-slate-200 font-bold outline-none"
+                      >
+                        {weeklyReviewAvailableWeeks.map((week, idx) => (
+                          <option key={week.id} value={idx}>{week.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
                     <div className="rounded-3xl border border-cyan-400/20 bg-cyan-500/10 p-4">
                       <div className="text-[10px] uppercase tracking-widest text-cyan-300 font-black">Completion</div>
@@ -6933,14 +7141,14 @@
                 </div>
               </div>
             )}
-            {/* HELP / TUTORIAL MODAL (FULL SYSTEM PROTOCOL â€“ EVERY SINGLE FEATURE + WHATâ€™S NEW) --- */}
+            {/* HELP / TUTORIAL MODAL (FULL SYSTEM PROTOCOL - EVERY FEATURE + WHAT'S NEW) --- */}
             {showHelp && (
                <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowHelp(false)}>
                  <div className="glass-panel animate-modal border-cyan-500/50 shadow-[0_0_30px_rgba(34,211,238,0.2)] rounded-3xl p-6 md:p-8 max-w-3xl w-full relative max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                    <button onClick={() => { playSound('click'); setShowHelp(false); }} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
                   <div className="flex items-center gap-3 mb-6 shrink-0">
                     <Info size={32} className="text-cyan-400" />
-                    <h2 className="text-2xl font-black uppercase text-white">System Protocol â€” Trackerbox Guide</h2>
+                    <h2 className="text-2xl font-black uppercase text-white">System Protocol - Trackerbox Guide</h2>
                   </div>
                  <div className="space-y-6 text-slate-300 text-sm overflow-y-auto custom-scrollbar pr-2 flex-1 min-h-0">
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
@@ -6957,26 +7165,26 @@
                       <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">2. Temporal Grid (The 24h Matrix)</h3>
                       <p>The heart of the system is the interactive time matrix, divided into four 6-hour Epochs:</p>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
-                        <li><strong>Night:</strong> 12 AM â€“ 6 AM</li>
-                        <li><strong>Morning:</strong> 6 AM â€“ 12 PM</li>
-                        <li><strong>Afternoon:</strong> 12 PM â€“ 6 PM</li>
-                        <li><strong>Evening:</strong> 6 PM â€“ 12 AM</li>
+                        <li><strong>Night:</strong> 12 AM - 6 AM</li>
+                        <li><strong>Morning:</strong> 6 AM - 12 PM</li>
+                        <li><strong>Afternoon:</strong> 12 PM - 6 PM</li>
+                        <li><strong>Evening:</strong> 6 PM - 12 AM</li>
                       </ul>
                       <p className="mt-3">Segment Mechanics:</p>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
                         <li><strong>Primary Split:</strong> Every hour starts as two 30-minute halves (t1, t2).</li>
                         <li><strong>Granular Split (Scissor Mode):</strong> High-precision users can split any half into two 15-minute quarters (q1, q2, q3, q4).</li>
-                        <li><strong>Chrono-Cloning:</strong> Copy an entire dayâ€™s structure and paste it onto another date to maintain consistency.</li>
+                        <li><strong>Chrono-Cloning:</strong> Copy an entire day&apos;s structure and paste it onto another date to maintain consistency.</li>
                         <li><strong>Magic Fill:</strong> Instantly fills the Night epoch (12 AM - 8 AM) with your "Sleep" category for rapid logging.</li>
                       </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
-                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">3. Captainâ€™s Log (The Daily Nerve Center)</h3>
+                      <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">3. Captain&apos;s Log (The Daily Nerve Center)</h3>
                       <p>Accessible by clicking any date header or the spacebar while in "Lock" mode.</p>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
                         <li><strong>Unified Workspace:</strong> Journaling: A markdown-supported area for free-writing.</li>
                         <li><strong>Flexible Time-Parsing:</strong> Writing 7am (Workout) or 22.3 (Reading) in the journal automatically injects those notes into the corresponding grid segments.</li>
-                        <li><strong>ToDo System:</strong> Triple-state objectives (Not Started â†’ Partial â†’ Done). Includes sub-tasks and the Snooze (ðŸŒ™) feature to migrate tasks to the next day.</li>
+                        <li><strong>ToDo System:</strong> Triple-state objectives (Not Started - Partial - Done). Includes sub-tasks, snoozing, notes, and weighted partial completion.</li>
                         <li><strong>Habit Sync:</strong> Automatically pulls scheduled habits for that specific day of the week.</li>
                       </ul>
                     </div>
@@ -7003,17 +7211,17 @@
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
                         <li><strong>Chrono-Spectral Heatmap:</strong> A yearly view that colors days based on point performance or category density.</li>
                         <li><strong>Bar Graphs:</strong> Toggle between Points, XP, or specific Category hours over weeks or months.</li>
-                        <li><strong>Cryo-Sleep (â„ï¸):</strong> Mark a day as a "Rest Day." It protects your streak from breaking even if you don't log activity.</li>
+                        <li><strong>Cryo-Sleep:</strong> Mark a day as a rest day. It protects your streak from breaking even if you do not log activity.</li>
                         <li><strong>NEW - Task/Habit Completion Rings:</strong> Day header rings and glow colors now reflect weighted task + habit completion, including partial progress.</li>
                       </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
                       <h3 className="font-black uppercase tracking-widest text-cyan-300 mb-3">6. System Integrity (Data & Safety)</h3>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
-                        <li><strong>Local-First:</strong> All data lives in your browserâ€™s LocalStorage.</li>
+                        <li><strong>Local-First:</strong> All data lives in your browser&apos;s LocalStorage.</li>
                         <li><strong>Manual Backups:</strong> Download/Upload full System data files.</li>
                         <li><strong>Automated Rolling Backups:</strong> Link a local folder to the system; Trackerbox will automatically save a timestamped data file every time a 6-hour block is completed, keeping a rolling history of the last 10 saves.</li>
-                        <li><strong>Undo/Redo:</strong> 30-step history buffer for grid painting.</li>
+                        <li><strong>Undo/Redo:</strong> 30-step history buffer for grid painting, journal edits, todo changes, and wallet changes.</li>
                       </ul>
                     </div>
                     <div className="bg-white/5 p-4 rounded-3xl border border-white/10">
@@ -7021,14 +7229,14 @@
                       <p><strong>Frictionless Capture & Navigation</strong></p>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
                         <li><strong>Quick Capture:</strong> A rapid-entry overlay to instantly log a ToDo, Journal bullet, time-stamped Note, or Wallet transaction without leaving your current view.</li>
-                        <li><strong>Global Search (Omnibar):</strong> Instantly search across your entire databaseâ€”Journal entries, Notes, Completed ToDos, and Wallet transactions. Type "today", "yesterday", or a specific date (e.g., 2026-04-01) to immediately jump to that day's Captain's Log.</li>
+                        <li><strong>Global Search (Omnibar):</strong> Instantly search across your entire database - Journal entries, Notes, Completed ToDos, and Wallet transactions. Type "today", "yesterday", or a specific date (for example 2026-04-01) to jump to that day&apos;s Captain&apos;s Log.</li>
                         <li><strong>NEW - Starred Hub:</strong> Star journal entries, note cells, and wallet transactions, then open one top-bar hub to revisit every starred item later.</li>
                         <li><strong>Sticky Offsets:</strong> Clicking navigation buttons automatically scrolls sections perfectly into view just beneath the sticky header.</li>
                         <li><strong>Toast Notifications:</strong> Non-blocking, auto-dismissing visual confirmations for saves, updates, and errors so your workflow isn't interrupted by popups.</li>
                       </ul>
                       <p className="mt-4"><strong>Advanced Task Management</strong></p>
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
-                        <li><strong>Snooze Tasks (ðŸŒ™):</strong> Instantly push an unfinished ToDo to tomorrowâ€™s list with a single click.</li>
+                        <li><strong>Snooze Tasks:</strong> Instantly push an unfinished ToDo to tomorrow&apos;s list with a single click.</li>
                         <li><strong>Migrate Yesterday:</strong> A dedicated button inside the Captain's Log sweeps all unfinished tasks from the previous day into today's list.</li>
                         <li><strong>Granular Habit Tracking:</strong> Reorder habits via drag-and-drop, track individual habit streaks, and log partial progress (Yellow state) via a percentage slider.</li>
                         <li><strong>NEW - Routine Packs:</strong> Reusable Morning and Evening packs can fill planned grid colors and inject matching ToDos together.</li>
@@ -7037,7 +7245,7 @@
                       <ul className="list-disc list-inside space-y-2 mt-3 text-slate-300">
                         <li><strong>Smart Magic Fill:</strong> Fills all empty time segments in a day with your designated "Sleep" category without overwriting any existing real or blueprint data.</li>
                         <li><strong>Blueprint Presets:</strong> Save an entire day or week's layout (both real and hatched blueprint colors) as a reusable template. Load it on a blank week to instantly populate your schedule.</li>
-                        <li><strong>Auto-Formatting Journal:</strong> Typing -- and pressing space auto-converts to a custom bullet (â—ˆ). Typing 1. auto-formats numbered lists and increments automatically on a new line.</li>
+                        <li><strong>Auto-Formatting Journal:</strong> Typing -- and pressing space auto-converts to a custom bullet. Typing 1. auto-formats numbered lists and increments automatically on a new line.</li>
                         <li><strong>Auto-Resizing Textareas:</strong> Journal and note editors organically grow to fit your text while keeping the last few lines visible above the keyboard or screen edge.</li>
                       </ul>
                       <p className="mt-4"><strong>Focus & Utility</strong></p>
@@ -7047,8 +7255,8 @@
                         <li><strong>Dynamic Tab Title:</strong> The browser tab updates to show the remaining countdown time.</li>
                         <li><strong>Auto-Logging:</strong> Finishing a focus session automatically writes a timestamped completion note directly into today's Journal.</li>
                         <li><strong>PDF Reporting:</strong> Export high-fidelity, beautifully formatted PDF reports for both your Weekly Journal/Grid and your Wallet Analytics.</li>
-                        <li><strong>NEW - Weekly Review Screen:</strong> A dedicated review view auto-summarizes streaks, frozen days, spending, unfinished ToDos, and weekly wins.</li>
-                        <li><strong>NEW - Mobile Bottom Bar:</strong> Phones now get a compact 4-action bottom dock for Grid, Journal, Wallet, and Quick Capture.</li>
+                        <li><strong>NEW - Weekly Review Screen:</strong> A dedicated review view auto-summarizes streaks, frozen days, spending, unfinished ToDos, and weekly wins, and now lets you pick the exact month and week to review.</li>
+                        <li><strong>NEW - Mobile Bottom Bar:</strong> Phones now get a compact 4-action bottom dock, and Settings lets you choose which four actions live there.</li>
                         <li><strong>Theme Engine:</strong> 12 completely distinct visual modes, ranging from high-contrast dark modes (Cyber, Void, Neon) to eye-friendly light modes (Daylight, Light Mode).</li>
                         <li><strong>Global Mute:</strong> A master switch in the settings to disable all system audio cues (paint, erase, success, trash) for silent environments.</li>
                       </ul>
@@ -7630,6 +7838,26 @@
                           className="bg-[#0b1120] text-slate-200 rounded-xl border border-white/10 px-3 py-2"
                         />
                       </label>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-4">
+                      <div className="font-bold uppercase tracking-widest text-xs text-cyan-300 mb-1">Mobile Bottom Bar</div>
+                      <p className="text-xs text-slate-400 mb-3">Pick the 4 actions shown on phones. Choosing one already in another slot swaps them.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {normalizedBottomBarActionIds.map((actionId, idx) => (
+                          <label key={`bottom-bar-slot-${idx}`} className="flex flex-col gap-2 bg-[#0b1120] border border-white/10 rounded-2xl p-4">
+                            <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Slot {idx + 1}</span>
+                            <select
+                              value={actionId}
+                              onChange={(e) => updateBottomBarActionSlot(idx, e.target.value)}
+                              className="bg-black/20 text-slate-200 rounded-xl border border-white/10 px-3 py-2 outline-none"
+                            >
+                              {bottomBarActionChoices.map(choice => (
+                                <option key={choice.id} value={choice.id}>{choice.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-3 justify-end">
                       <button
@@ -8290,8 +8518,8 @@
                     title="Click for full streak history, longest streak &amp; dates"
                   >
                     <Flame size={20} className={currentStreak > 0 ? "text-orange-400 drop-shadow-[0_0_8px_rgba(249,115,22,0.8)]" : "text-slate-500"} />
-                    <span className={`font-black uppercase tracking-wider text-xs md:text-sm ${currentStreak > 0 ? "text-orange-300" : "text-slate-400"}`}>
-                      {currentStreak} <span className="hidden sm:inline">Streak</span>
+                    <span className={`font-black uppercase tracking-wider text-xs md:text-sm min-w-[1.5rem] text-center ${currentStreak > 0 ? "text-orange-300" : "text-slate-400"}`}>
+                      {currentStreak}
                     </span>
                   </div>
                   <button
@@ -8300,8 +8528,8 @@
                     title="Click to view frozen dates"
                   >
                     <Snowflake size={18} className={frozenDaysCount > 0 ? 'text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.7)]' : 'text-slate-500'} />
-                    <span className={`font-black uppercase tracking-wider text-xs md:text-sm ${frozenDaysCount > 0 ? 'text-cyan-300' : 'text-slate-400'}`}>
-                      {frozenDaysCount} <span className="hidden sm:inline">Frozen</span>
+                    <span className={`font-black uppercase tracking-wider text-xs md:text-sm min-w-[1.5rem] text-center ${frozenDaysCount > 0 ? 'text-cyan-300' : 'text-slate-400'}`}>
+                      {frozenDaysCount}
                     </span>
                   </button>
                   <button
@@ -8310,8 +8538,8 @@
                     title="Open all starred journal entries, notes, and wallet items"
                   >
                     <Star size={18} className={starredCount > 0 ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.7)]' : 'text-slate-500'} />
-                    <span className={`font-black uppercase tracking-wider text-xs md:text-sm ${starredCount > 0 ? 'text-amber-200' : 'text-slate-400'}`}>
-                      {starredCount} <span className="hidden sm:inline">Starred</span>
+                    <span className={`font-black uppercase tracking-wider text-xs md:text-sm min-w-[1.5rem] text-center ${starredCount > 0 ? 'text-amber-200' : 'text-slate-400'}`}>
+                      {starredCount}
                     </span>
                   </button>
                   {/* QUICK CAPTURE BUTTON (Shift + T) */}
@@ -8358,6 +8586,22 @@
                   </button>
                   <div className="flex gap-2">
                     <button
+                      onClick={handleUniversalUndo}
+                      disabled={!canUniversalUndo}
+                      className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${canUniversalUndo ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-white/5 text-slate-600 cursor-not-allowed opacity-50'}`}
+                      title="Undo"
+                    >
+                      <Undo size={18} />
+                    </button>
+                    <button
+                      onClick={handleUniversalRedo}
+                      disabled={!canUniversalRedo}
+                      className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${canUniversalRedo ? 'border-white/10 text-slate-300 hover:bg-white/5' : 'border-white/5 text-slate-600 cursor-not-allowed opacity-50'}`}
+                      title="Redo"
+                    >
+                      <Redo size={18} />
+                    </button>
+                    <button
                       onClick={() => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); }}
                     className="w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
                     title="Global Search (Ctrl+K / Cmd+K)"
@@ -8365,7 +8609,12 @@
                     <Search size={20} />
                   </button>
                     <button
-                      onClick={() => { playSound('click'); setShowWeeklyReview(true); }}
+                      onClick={() => {
+                        playSound('click');
+                        setWeeklyReviewMonth(selectedMonthStr);
+                        setWeeklyReviewWeekIndex(selectedWeekIndex);
+                        setShowWeeklyReview(true);
+                      }}
                       className={`w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showWeeklyReview ? 'border-amber-400/70 bg-amber-400/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`}
                       title="Open weekly review"
                     >
@@ -8490,11 +8739,12 @@
                                   <div className="relative group/focusday">
                                     <div onClick={() => { playSound('click'); setActiveJournalDate(dateStr); }} className={`cursor-pointer flex flex-col items-center justify-center py-2 px-2 md:p-3 rounded-2xl border ${headerBg} ${headerBorder} ${headerShadow} mx-auto w-[72px] md:w-[84px] h-[72px] md:h-[84px] transition-all relative overflow-visible`} style={headerStyle}>
                                       <div
-                                        className="absolute inset-[-4px] rounded-[26px] pointer-events-none"
+                                        className="absolute inset-[-4px] rounded-[26px] pointer-events-none p-[4px]"
                                         style={{
                                           background: ringGradient,
-                                          WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
-                                          mask: 'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
+                                          WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+                                          WebkitMaskComposite: 'xor',
+                                          maskComposite: 'exclude',
                                           opacity: isCryo ? 0.35 : 0.95
                                         }}
                                       ></div>
@@ -8556,8 +8806,8 @@
                                       <div className="flex items-start gap-2">
                                         <div className="shrink-0 w-10 md:w-12">
                                           <div className="sticky top-20 flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
-                                            <button onClick={handleUndo} disabled={past.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${past.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
-                                            <button onClick={handleRedo} disabled={future.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${future.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
+                                            <button onClick={handleUniversalUndo} disabled={!canUniversalUndo} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${canUniversalUndo ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
+                                            <button onClick={handleUniversalRedo} disabled={!canUniversalRedo} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${canUniversalRedo ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
                                             <div className="w-full h-px bg-white/10 my-1"></div>
                                             {/* Compact Plan Toggle (P) */}
                                             <button
@@ -8793,11 +9043,12 @@
                                   <th key={dateStr} className="p-1 md:p-2 text-center relative z-20 align-bottom border-none group/th h-[80px]">
                                     <div onClick={() => { playSound('click'); setActiveJournalDate(dateStr); }} className={`cursor-pointer flex flex-col items-center justify-center py-2 px-1 md:p-3 rounded-2xl border ${headerBg} ${headerBorder} ${headerShadow} mx-auto w-[52px] md:w-[60px] h-[60px] md:h-[65px] transition-all relative overflow-visible`} style={headerStyle}>
                                       <div
-                                        className="absolute inset-[-4px] rounded-[24px] pointer-events-none"
+                                        className="absolute inset-[-4px] rounded-[24px] pointer-events-none p-[4px]"
                                         style={{
                                           background: ringGradient,
-                                          WebkitMask: 'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
-                                          mask: 'radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px))',
+                                          WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
+                                          WebkitMaskComposite: 'xor',
+                                          maskComposite: 'exclude',
                                           opacity: isCryo ? 0.35 : 0.95
                                         }}
                                       ></div>
@@ -8903,8 +9154,8 @@
                                       {idx === 0 && (
                                         <td rowSpan={6} className="align-middle sticky left-0 z-40 w-[45px] md:w-[60px] p-0 border-none sticky-bg-override" style={{backgroundColor: 'var(--sticky-bg)'}}>
                                           <div className="flex flex-col gap-1.5 md:gap-2 items-center justify-center bg-white/5 backdrop-blur-md py-3 px-1 rounded-[20px] border border-white/10 mx-auto w-[38px] md:w-[50px] shadow-[0_4px_15px_rgba(0,0,0,0.3)]">
-                                            <button onClick={handleUndo} disabled={past.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${past.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
-                                            <button onClick={handleRedo} disabled={future.length === 0} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${future.length > 0 ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
+                                            <button onClick={handleUniversalUndo} disabled={!canUniversalUndo} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${canUniversalUndo ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Undo (Ctrl+Z)"><Undo size={14} /></button>
+                                            <button onClick={handleUniversalRedo} disabled={!canUniversalRedo} className={`p-1 md:p-1.5 rounded-xl border transition-all hover:scale-110 ${canUniversalRedo ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-white/5 text-slate-600 opacity-50 cursor-not-allowed'}`} title="Redo (Ctrl+Y)"><Redo size={14} /></button>
                                             <div className="w-full h-px bg-white/10 my-1"></div>
                                             {/* Compact Plan Toggle (P) */}
                                             <button
@@ -10368,38 +10619,22 @@
             <div className="md:hidden fixed bottom-3 left-1/2 -translate-x-1/2 z-[120] w-[calc(100vw-24px)] max-w-sm">
               <div className="glass-panel rounded-[24px] border border-white/10 px-3 py-2 shadow-[0_12px_35px_rgba(0,0,0,0.45)]">
                 <div className="grid grid-cols-4 gap-2">
-                  <button
-                    onClick={() => { openOnlySection('tracker'); scrollToElementWithStickyOffset('section-tracker'); }}
-                    className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-slate-200"
-                    title="Grid"
-                  >
-                    <CalendarIcon size={18} className="text-cyan-300" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Grid</span>
-                  </button>
-                  <button
-                    onClick={() => { openOnlySection('journal'); setJournalModuleDate(activeJournalDate || todayStr); setJournalFocusTick(t => t + 1); scrollToElementWithStickyOffset('journal-only-module'); }}
-                    className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-slate-200"
-                    title="Journal"
-                  >
-                    <FileText size={18} className="text-amber-300" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Journal</span>
-                  </button>
-                  <button
-                    onClick={() => { openOnlySection('wallet'); setWalletAmountFocusTick(t => t + 1); scrollToElementWithStickyOffset('section-wallet'); }}
-                    className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-slate-200"
-                    title="Wallet"
-                  >
-                    <Wallet size={18} className="text-emerald-300" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Wallet</span>
-                  </button>
-                  <button
-                    onClick={() => { playSound('click'); setShowQuickCapture(true); }}
-                    className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-slate-200"
-                    title="Quick Capture"
-                  >
-                    <Plus size={18} className="text-fuchsia-300" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Quick</span>
-                  </button>
+                  {normalizedBottomBarActionIds.map(actionId => {
+                    const action = mobileBottomBarActions[actionId];
+                    if (!action) return null;
+                    const Icon = action.icon;
+                    return (
+                      <button
+                        key={`mobile-bottom-${actionId}`}
+                        onClick={action.onClick}
+                        className="flex flex-col items-center justify-center gap-1 rounded-2xl py-2 text-slate-200"
+                        title={action.label}
+                      >
+                        <Icon size={18} className={action.color} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">{action.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
