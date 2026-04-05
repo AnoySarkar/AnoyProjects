@@ -3419,6 +3419,7 @@
       const [searchQuery, setSearchQuery] = useState('');
       const [searchFilter, setSearchFilter] = useState('all'); // all | journal | todos | notes | wallet | dates
       const searchInputRef = useRef(null);
+      const mobileBackExitRef = useRef(0);
       const [habitZoneMode, setHabitZoneMode] = useState('week'); // week | month | year
       const [habitZoneMonth, setHabitZoneMonth] = useState(initialMonthStr);
       const [habitZoneWeekMonth, setHabitZoneWeekMonth] = useState(initialMonthStr);
@@ -3941,6 +3942,61 @@
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
       }, [showAppMenu]);
+      const closeTopOverlay = useCallback(() => {
+        if (showPdfModal) { setShowPdfModal(null); return true; }
+        if (showTemplateModal) { setShowTemplateModal(false); return true; }
+        if (showSavingsGoalModal) { setShowSavingsGoalModal(false); return true; }
+        if (showSubscriptionModal) { setShowSubscriptionModal(false); return true; }
+        if (showDebtModal) { setShowDebtModal(false); return true; }
+        if (showWalletCategoriesManager) { setShowWalletCategoriesManager(false); return true; }
+        if (showWalletManager) { setShowWalletManager(false); return true; }
+        if (showSettingsModal) { setShowSettingsModal(false); return true; }
+        if (showHelp) { setShowHelp(false); return true; }
+        if (showSearchModal) { setShowSearchModal(false); return true; }
+        if (showQuickCapture) { setShowQuickCapture(false); return true; }
+        if (showBlueprintManagerModal) { setShowBlueprintManagerModal(false); return true; }
+        if (showPresetLibraryModal) { setShowPresetLibraryModal(false); return true; }
+        if (showReminderModal) { setShowReminderModal(false); return true; }
+        if (showStreakModal) { setShowStreakModal(false); return true; }
+        if (showFrozenDatesModal) { setShowFrozenDatesModal(false); return true; }
+        if (showStarredModal) { setShowStarredModal(false); return true; }
+        if (showWeeklyReview) { setShowWeeklyReview(false); return true; }
+        if (showPointsSelector) { setShowPointsSelector(false); return true; }
+        if (showLevelHistory) { setShowLevelHistory(false); return true; }
+        if (showAppMenu) { setShowAppMenu(false); return true; }
+        if (showNameSetupModal) { setShowNameSetupModal(false); return true; }
+        if (pendingReset) { setPendingReset(null); return true; }
+        if (activeJournalDate) { setActiveJournalDate(null); return true; }
+        return false;
+      }, [showPdfModal, showTemplateModal, showSavingsGoalModal, showSubscriptionModal, showDebtModal, showWalletCategoriesManager, showWalletManager, showSettingsModal, showHelp, showSearchModal, showQuickCapture, showBlueprintManagerModal, showPresetLibraryModal, showReminderModal, showStreakModal, showFrozenDatesModal, showStarredModal, showWeeklyReview, showPointsSelector, showLevelHistory, showAppMenu, showNameSetupModal, pendingReset, activeJournalDate]);
+      useEffect(() => {
+        if (!isMobileViewport) return;
+        const ensureBackGuard = () => {
+          try {
+            if (!window.history.state || window.history.state.__trackerboxBackGuard !== true) {
+              window.history.pushState({ __trackerboxBackGuard: true }, '', window.location.href);
+            }
+          } catch (e) {}
+        };
+        ensureBackGuard();
+        const handlePopState = () => {
+          if (closeTopOverlay()) {
+            ensureBackGuard();
+            return;
+          }
+          const now = Date.now();
+          if (now - mobileBackExitRef.current < 1800) {
+            mobileBackExitRef.current = 0;
+            try { window.history.go(-1); } catch (e) {}
+            return;
+          }
+          mobileBackExitRef.current = now;
+          showToast('Press back again to exit', 'info', 1800);
+          ensureBackGuard();
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+      }, [isMobileViewport, closeTopOverlay, showToast]);
 
       // NEW: When opening the Journal-only module, focus the textarea for instant writing.
       useEffect(() => {
@@ -5696,6 +5752,7 @@
         habitsConfig.forEach((habit) => {
           let streak = 0;
           let checkDate = new Date();
+          let isFirstScheduledCheck = true;
           while (streak < 1000) {
             const dateStr = formatDateString(checkDate);
             const dow = checkDate.getDay();
@@ -5708,6 +5765,10 @@
             const log = logs.find((l) => l.id === habit.id && !l.deleted);
             if (log && log.status === 'green') {
               streak++;
+              isFirstScheduledCheck = false;
+              checkDate.setDate(checkDate.getDate() - 1);
+            } else if (isFirstScheduledCheck) {
+              isFirstScheduledCheck = false;
               checkDate.setDate(checkDate.getDate() - 1);
             } else {
               break;
@@ -7619,6 +7680,9 @@
         { id: 'tracker', label: 'Grid' },
         { id: 'journal', label: 'Journal' },
         { id: 'wallet', label: 'Wallet' },
+        { id: 'analytics', label: 'Analytics' },
+        { id: 'modules', label: 'Modules' },
+        { id: 'graph', label: 'Graph' },
         { id: 'quick', label: 'Quick' },
         { id: 'preset', label: 'Load Preset' },
         { id: 'search', label: 'Search' },
@@ -7657,6 +7721,9 @@
         tracker: { label: 'Grid', icon: CalendarIcon, color: 'text-cyan-300', onClick: () => { openOnlySection('tracker'); scrollToElementWithStickyOffset('section-tracker'); } },
         journal: { label: 'Journal', icon: FileText, color: 'text-amber-300', onClick: () => { openOnlySection('journal'); setJournalModuleDate(activeJournalDate || todayStr); setJournalFocusTick(t => t + 1); scrollToElementWithStickyOffset('journal-only-module'); } },
         wallet: { label: 'Wallet', icon: Wallet, color: 'text-emerald-300', onClick: () => { openOnlySection('wallet'); setWalletAmountFocusTick(t => t + 1); scrollToElementWithStickyOffset('section-wallet'); } },
+        analytics: { label: 'Analytics', icon: Activity, color: 'text-cyan-300', onClick: () => { openOnlySection('analytics'); scrollToElementWithStickyOffset('section-analytics'); } },
+        modules: { label: 'Modules', icon: Settings2, color: 'text-cyan-300', onClick: () => { openOnlySection('modules'); scrollToElementWithStickyOffset('section-modules'); } },
+        graph: { label: 'Graph', icon: BarChart3, color: 'text-amber-300', onClick: () => { openOnlySection('graph'); scrollToElementWithStickyOffset('section-graph'); } },
         quick: { label: 'Quick', icon: Plus, color: 'text-fuchsia-300', onClick: () => { playSound('click'); setShowQuickCapture(true); } },
         preset: { label: 'Preset', icon: Database, color: 'text-violet-300', onClick: () => { playSound('click'); setIsPresetDeleteMode(false); setShowPresetLibraryModal(true); } },
         search: { label: 'Search', icon: Search, color: 'text-sky-300', onClick: () => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); } },
@@ -9733,7 +9800,7 @@
                       onClick={handleQuickCaptureSave}
                       className={`flex-1 py-5 bg-gradient-to-r ${quickSaveType === 'todo' ? 'from-emerald-400 to-cyan-400' : 'from-cyan-400 to-purple-500'} text-white font-black rounded-3xl text-xl tracking-widest shadow-[0_0_20px_rgba(34,211,238,0.4)]`}
                     >
-                      SAVE
+                      ADD
                     </button>
                   </div>
                 </div>
@@ -10720,6 +10787,58 @@
                       <div className="text-[10px] uppercase tracking-[0.3em] text-cyan-300 font-black">Home View</div>
                       <div className="text-sm text-white font-bold mt-1">Grid{normalizedPinnedSections.length ? ` + ${normalizedPinnedSections.length} pinned section${normalizedPinnedSections.length === 1 ? '' : 's'}` : ' only'}</div>
                     </div>
+                    <div className="grid grid-cols-4 gap-2 mt-4">
+                      <button
+                        onClick={() => {
+                          playSound('click');
+                          setShowAppMenu(false);
+                          setSearchFilter('all');
+                          setSearchQuery('');
+                          setShowSearchModal(true);
+                        }}
+                        className="rounded-2xl border border-white/10 bg-white/5 px-2 py-3 text-slate-200 hover:bg-white/10 transition-all flex flex-col items-center gap-1"
+                        title="Search"
+                      >
+                        <Search size={16} className="text-sky-300" />
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">Search</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          playSound('click');
+                          setShowAppMenu(false);
+                          setShowTimer(v => !v);
+                        }}
+                        className="rounded-2xl border border-white/10 bg-white/5 px-2 py-3 text-slate-200 hover:bg-white/10 transition-all flex flex-col items-center gap-1"
+                        title="Clock"
+                      >
+                        <Clock size={16} className="text-cyan-300" />
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">Clock</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          playSound('click');
+                          setShowAppMenu(false);
+                          setShowHelp(true);
+                        }}
+                        className="rounded-2xl border border-white/10 bg-white/5 px-2 py-3 text-slate-200 hover:bg-white/10 transition-all flex flex-col items-center gap-1"
+                        title="System Protocol"
+                      >
+                        <FileText size={16} className="text-amber-300" />
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">Guide</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          playSound('click');
+                          setShowAppMenu(false);
+                          setShowSettingsModal(true);
+                        }}
+                        className="rounded-2xl border border-white/10 bg-white/5 px-2 py-3 text-slate-200 hover:bg-white/10 transition-all flex flex-col items-center gap-1"
+                        title="Settings"
+                      >
+                        <Settings2 size={16} className="text-slate-300" />
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">Settings</span>
+                      </button>
+                    </div>
                   </div>
                   <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-2">
                     {appSections.map(section => {
@@ -10756,27 +10875,6 @@
                               )}
                             </div>
                           </div>
-                          {section.id === 'storage' && (
-                            <button
-                              onClick={() => {
-                                playSound('click');
-                                setShowAppMenu(false);
-                                setShowSettingsModal(true);
-                              }}
-                              className="menu-nav-card w-full flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-slate-200 hover:bg-white/10 transition-all"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl border border-white/10 bg-black/20 flex items-center justify-center text-slate-300">
-                                  <Settings2 size={18} />
-                                </div>
-                                <div className="text-left">
-                                  <div className="text-sm font-black uppercase tracking-widest text-white">Settings</div>
-                                  <div className="text-[10px] uppercase tracking-[0.25em] text-slate-400">App Preferences</div>
-                                </div>
-                              </div>
-                              <ChevronDown size={16} className="-rotate-90 text-slate-500" />
-                            </button>
-                          )}
                         </Fragment>
                       );
                     })}
@@ -10947,13 +11045,15 @@
                     >
                       <Redo size={18} />
                     </button>
-                  <button
-                    onClick={() => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); }}
-                    className="top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
-                    title="Global Search (Ctrl+K / Cmd+K)"
-                  >
-                    <Search size={20} />
-                  </button>
+                  {!isMobileViewport && (
+                    <button
+                      onClick={() => { playSound('click'); setSearchFilter('all'); setSearchQuery(''); setShowSearchModal(true); }}
+                      className="top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-all"
+                      title="Global Search (Ctrl+K / Cmd+K)"
+                    >
+                      <Search size={20} />
+                    </button>
+                  )}
                     <button
                       onClick={() => {
                         playSound('click');
@@ -10977,9 +11077,11 @@
                         </span>
                       )}
                     </button>
-                    <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
-                      <Clock size={20} />
-                    </button>
+                    {!isMobileViewport && (
+                      <button onClick={() => { playSound('click'); setShowTimer(!showTimer); }} className={`top-chip w-[44px] h-[44px] flex items-center justify-center rounded-xl border transition-all ${showTimer ? 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.2)]' : 'border-white/10 text-slate-400 hover:bg-white/5'}`} title="Toggle Focus Chronos">
+                        <Clock size={20} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
