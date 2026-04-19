@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WorkFlow</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="icon" href="icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="theme-color" content="#312e81">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Space Grotesk', 'system-ui', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          }
+        }
+      }
+    };
+  </script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root { color-scheme: dark; }
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top, rgba(79, 70, 229, 0.20), transparent 28rem),
+        radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.08), transparent 22rem),
+        #09090b;
+      color: #e4e4e7;
+      font-family: 'Space Grotesk', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .fade-in { animation: fadeIn 0.28s ease-out forwards; }
+    .slide-up { animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .zoom-in { animation: zoomIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes zoomIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+    @media print {
+      @page { size: portrait; margin: 10mm; }
+      body { background: white !important; color: black !important; }
+      .print-hidden { display: none !important; }
+      .print-only { display: block !important; }
+      .page-break-inside-avoid { page-break-inside: avoid; break-inside: avoid; }
+    }
+    .print-only { display: none; }
+  </style>
+</head>
+<body class="selection:bg-indigo-500/30">
+  <div class="print-hidden fixed left-1/2 top-0 z-0 h-[340px] w-full max-w-6xl -translate-x-1/2 rounded-full bg-indigo-600/5 blur-[150px] pointer-events-none"></div>
+  <div id="app" class="relative z-10"></div>
+  <input id="jsonUploadInput" type="file" accept="application/json,.json" class="hidden" onchange="handleUploadJson(event)">
+  <script>
+    function playSound(type) {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+        const now = ctx.currentTime;
+        if (type === 'click') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(780, now);
+          osc.frequency.exponentialRampToValueAtTime(120, now + 0.05);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+          osc.start(now);
+          osc.stop(now + 0.05);
+        } else if (type === 'pop') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(420, now);
+          osc.frequency.exponentialRampToValueAtTime(210, now + 0.1);
+          filter.type = 'lowpass';
+          filter.frequency.value = 1050;
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+          osc.start(now);
+          osc.stop(now + 0.1);
+        } else if (type === 'done') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(600, now);
+          osc.frequency.setValueAtTime(920, now + 0.1);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.linearRampToValueAtTime(0, now + 0.3);
+          osc.start(now);
+          osc.stop(now + 0.3);
+        } else if (type === 'delete' || type === 'longpress') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(150, now);
+          osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+          filter.type = 'lowpass';
+          filter.frequency.value = 380;
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+          osc.start(now);
+          osc.stop(now + 0.15);
+        }
+      } catch (error) {
+        console.warn('Audio not supported', error);
+      }
+    }
+
+    const APP_TITLE = 'WorkFlow';
+    const CONFIG_STORAGE_KEY = 'workflow_config_v2';
+    const PROJECTS_STORAGE_KEY = 'workflow_projects_v2';
+    const LEGACY_PROJECTS_STORAGE_KEY = 'tk_workflow_data';
+    const STATUSES = ['Not started', 'Started', 'Half way', 'Almost done', 'Done', 'Pending', 'Not needed', 'Cancelled'];
+
+    const STATUS_STYLES = {
+      'Not started': 'bg-zinc-900/50 text-zinc-500 border-zinc-800',
+      'Started': 'bg-blue-950/60 text-blue-400 border-blue-900/50',
+      'Half way': 'bg-indigo-950/60 text-indigo-400 border-indigo-900/50',
+      'Almost done': 'bg-violet-950/60 text-violet-400 border-violet-900/50',
+      'Done': 'bg-emerald-950/60 text-emerald-400 border-emerald-900/50 shadow-[0_0_15px_rgba(52,211,153,0.15)]',
+      'Pending': 'bg-red-400/20 text-red-300 border-red-400/30',
+      'Not needed': 'bg-zinc-800/30 text-zinc-600 border-zinc-700 border-dashed',
+      'Cancelled': 'bg-red-950/50 text-red-500 border-red-900/50 line-through',
+    };
+
+    const PRINT_STYLES = {
+      'Not started': 'bg-gray-100 text-gray-500 border-gray-200',
+      'Started': 'bg-blue-50 text-blue-600 border-blue-200',
+      'Half way': 'bg-indigo-50 text-indigo-600 border-indigo-200',
+      'Almost done': 'bg-violet-50 text-violet-600 border-violet-200',
+      'Done': 'bg-emerald-50 text-emerald-600 border-emerald-200',
+      'Pending': 'bg-red-50 text-red-600 border-red-200',
+      'Not needed': 'bg-gray-50 text-gray-400 border-gray-200 border-dashed',
+      'Cancelled': 'bg-red-50 text-red-500 border-red-200 line-through',
+    };
+
+    const LEGACY_BASE = ['draftingScript', 'finalScript', 'mscScript', 'elevenLScript', 'workflowReady', 'audioReady', 'bRoll', 'microVeo', 'shortVeo', 'coreVeo'];
+    const LEGACY_MICRO = ['micro_postEditingReady', 'micro_audio', 'micro_videoSync', 'micro_transactions', 'micro_textSetting', 'micro_videoEffects', 'micro_soundEffects', 'micro_bgm', 'micro_thumbnailSet', 'micro_finishingTouch', 'micro_finalCut', 'micro_uploaded'];
+    const LEGACY_SHORT = ['short_microAdoption', 'short_audioAddition', 'short_videoSyncing', 'short_transactions', 'short_textSetting', 'short_videoEffects', 'short_soundEffects', 'short_bgm', 'short_thumbnailSet', 'short_finishingTouch', 'short_finalCut', 'short_uploaded'];
+    const LEGACY_CORE = ['core_shortAdoption', 'core_audioAddition', 'core_videoSyncing', 'core_broll', 'core_transactions', 'core_textSetting', 'core_videoEffects', 'core_soundEffects', 'core_bgm', 'core_thumbnailSet', 'core_finishingTouch', 'core_finalCut', 'core_uploaded'];
+
+    let expandedProjects = {};
+    let activeTabs = {};
+    let activeModal = null;
+    let modalData = {};
+    let pressTimer = null;
+
+    function generateId(prefix) {
+      const safePrefix = prefix || 'id';
+      return safePrefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    function legacyLabel(key) {
+      const withoutPrefix = key.replace(/^(micro|short|core)_/, '');
+      const withSpaces = withoutPrefix.replace(/([A-Z])/g, ' $1').replace(/\bmsc\b/i, 'MSC').replace(/\bbgm\b/i, 'BGM').replace(/\byt\b/i, 'YT');
+      return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
+    }
+
+    function escapeHTML(value) {
+      if (value === null || value === undefined) return '';
+      return String(value).replace(/[&<>'"]/g, function(tag) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[tag] || tag;
+      });
+    }
+
+    function normalizeDateValue(value) {
+      if (!value) return '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+      const slashMatch = String(value).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (slashMatch) {
+        const day = slashMatch[1].padStart(2, '0');
+        const month = slashMatch[2].padStart(2, '0');
+        return slashMatch[3] + '-' + month + '-' + day;
+      }
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return '';
+      const year = parsed.getFullYear();
+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
+      const day = String(parsed.getDate()).padStart(2, '0');
+      return year + '-' + month + '-' + day;
+    }
+
+    function formatDateDisplay(value, emptyLabel) {
+      const normalized = normalizeDateValue(value);
+      if (!normalized) return emptyLabel || 'Pick date';
+      const date = new Date(normalized + 'T00:00:00');
+      return new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }).format(date);
+    }
+
+    function createStep(id, label) {
+      return { id: id || generateId('step'), label: label || 'New Step' };
+    }
+
+    function createField(id, label, type) {
+      const normalizedType = ['text', 'number', 'date'].includes(type) ? type : 'text';
+      return { id: id || generateId('field'), label: label || 'New Field', type: normalizedType };
+    }
+
+    function createFork(definition) {
+      const source = definition || {};
+      return {
+        id: source.id || generateId('fork'),
+        name: source.name || 'New Fork',
+        icon: source.icon || 'layers-3',
+        steps: Array.isArray(source.steps) ? source.steps.map(function(step) { return createStep(step.id, step.label); }) : [],
+        fields: Array.isArray(source.fields) ? source.fields.map(function(field) { return createField(field.id, field.label, field.type); }) : [],
+      };
+    }
+
+    function createDefaultConfig() {
+      return {
+        version: 2,
+        forks: [
+          createFork({
+            id: 'base',
+            name: 'Base',
+            icon: 'film',
+            steps: LEGACY_BASE.map(function(stepId) { return createStep(stepId, legacyLabel(stepId)); }),
+          }),
+          createFork({
+            id: 'micro',
+            name: 'Micro',
+            icon: 'sparkles',
+            steps: LEGACY_MICRO.map(function(stepId) { return createStep(stepId, legacyLabel(stepId)); }),
+            fields: [
+              createField('micro_realUploadDate', 'Real Upload Date', 'date'),
+              createField('micro_instaViews', 'Insta Views', 'number'),
+              createField('micro_fbViews', 'FB Views', 'number'),
+              createField('micro_ytViews', 'YT Views', 'number'),
+            ]
+          }),
+          createFork({
+            id: 'short',
+            name: 'Short',
+            icon: 'scissors',
+            steps: LEGACY_SHORT.map(function(stepId) { return createStep(stepId, legacyLabel(stepId)); }),
+            fields: [
+              createField('short_realUploadDate', 'Real Upload Date', 'date'),
+              createField('short_instaViews', 'Insta Views', 'number'),
+              createField('short_fbViews', 'FB Views', 'number'),
+              createField('short_ytViews', 'YT Views', 'number'),
+            ]
+          }),
+          createFork({
+            id: 'core',
+            name: 'Core',
+            icon: 'play-circle',
+            steps: LEGACY_CORE.map(function(stepId) { return createStep(stepId, legacyLabel(stepId)); }),
+            fields: [
+              createField('core_realUploadDate', 'Real Upload Date', 'date'),
+              createField('core_instaViews', 'Insta Views', 'number'),
+              createField('core_fbViews', 'FB Views', 'number'),
+              createField('core_ytViews', 'YT Views', 'number'),
+            ]
+          }),
+        ]
+      };
+    }
+
+    function normalizeConfig(rawConfig) {
+      const config = rawConfig && Array.isArray(rawConfig.forks) ? rawConfig : createDefaultConfig();
+      const forks = config.forks.map(function(fork) { return createFork(fork); });
+      return { version: 2, forks: forks.length ? forks : createDefaultConfig().forks };
+    }
+
+    function buildDefaultForkData(fork) {
+      const stepStatus = {};
+      const fieldValues = {};
+      fork.steps.forEach(function(step) { stepStatus[step.id] = 'Not started'; });
+      fork.fields.forEach(function(field) { fieldValues[field.id] = field.type === 'number' ? 0 : ''; });
+      return { stepStatus: stepStatus, fieldValues: fieldValues };
+    }
+
+    function syncProjectToConfig(project, currentConfig) {
+      const source = project || {};
+      const nextProject = {
+        id: source.id || generateId('project'),
+        topic: typeof source.topic === 'string' ? source.topic : '',
+        uploadDate: normalizeDateValue(source.uploadDate),
+        workingDate: normalizeDateValue(source.workingDate),
+        createdAt: Number(source.createdAt) || Date.now(),
+        forkData: {}
+      };
+      currentConfig.forks.forEach(function(fork) {
+        const existingForkData = source.forkData && source.forkData[fork.id] ? source.forkData[fork.id] : {};
+        const defaultForkData = buildDefaultForkData(fork);
+        const stepStatus = {};
+        const fieldValues = {};
+        fork.steps.forEach(function(step) {
+          const existingStatus = existingForkData.stepStatus ? existingForkData.stepStatus[step.id] : undefined;
+          stepStatus[step.id] = STATUSES.includes(existingStatus) ? existingStatus : defaultForkData.stepStatus[step.id];
+        });
+        fork.fields.forEach(function(field) {
+          const existingValue = existingForkData.fieldValues ? existingForkData.fieldValues[field.id] : undefined;
+          if (existingValue === undefined || existingValue === null) {
+            fieldValues[field.id] = defaultForkData.fieldValues[field.id];
+          } else if (field.type === 'date') {
+            fieldValues[field.id] = normalizeDateValue(existingValue);
+          } else {
+            fieldValues[field.id] = existingValue;
+          }
+        });
+        nextProject.forkData[fork.id] = { stepStatus: stepStatus, fieldValues: fieldValues };
+      });
+      return nextProject;
+    }
+
+    function migrateLegacyProject(legacyProject) {
+      const defaultConfig = createDefaultConfig();
+      const migrated = {
+        id: legacyProject && legacyProject.id ? legacyProject.id : generateId('project'),
+        topic: legacyProject && legacyProject.topic ? legacyProject.topic : '',
+        uploadDate: normalizeDateValue(legacyProject && legacyProject.uploadDate),
+        workingDate: normalizeDateValue(legacyProject && legacyProject.workingDate),
+        createdAt: legacyProject && legacyProject.createdAt ? legacyProject.createdAt : Date.now(),
+        forkData: {}
+      };
+      defaultConfig.forks.forEach(function(fork) {
+        const stepStatus = {};
+        const fieldValues = {};
+        fork.steps.forEach(function(step) {
+          const candidate = legacyProject ? legacyProject[step.id] : undefined;
+          stepStatus[step.id] = STATUSES.includes(candidate) ? candidate : 'Not started';
+        });
+        fork.fields.forEach(function(field) {
+          const candidate = legacyProject ? legacyProject[field.id] : undefined;
+          if (candidate === undefined || candidate === null || candidate === '') {
+            fieldValues[field.id] = field.type === 'number' ? 0 : '';
+          } else if (field.type === 'date') {
+            fieldValues[field.id] = normalizeDateValue(candidate);
+          } else {
+            fieldValues[field.id] = candidate;
+          }
+        });
+        migrated.forkData[fork.id] = { stepStatus: stepStatus, fieldValues: fieldValues };
+      });
+      return migrated;
+    }
+
+    function readStorageJson(key, fallbackValue) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return fallbackValue;
+        return JSON.parse(raw);
+      } catch (error) {
+        console.warn('Failed to read localStorage for', key, error);
+        return fallbackValue;
+      }
+    }
+
+    function loadConfig() {
+      const storedConfig = readStorageJson(CONFIG_STORAGE_KEY, null);
+      return normalizeConfig(storedConfig);
+    }
+
+    function loadProjects(currentConfig) {
+      const storedProjects = readStorageJson(PROJECTS_STORAGE_KEY, null);
+      if (Array.isArray(storedProjects)) {
+        return storedProjects.map(function(project) {
+          return syncProjectToConfig(project, currentConfig);
+        });
+      }
+      const legacyProjects = readStorageJson(LEGACY_PROJECTS_STORAGE_KEY, []);
+      if (Array.isArray(legacyProjects)) {
+        return legacyProjects.map(function(project) {
+          return syncProjectToConfig(migrateLegacyProject(project), currentConfig);
+        });
+      }
+      return [];
+    }
+
+    let config = loadConfig();
+    let projects = loadProjects(config);
+
+    function saveState() {
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
+      localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+    }
+
+    function ensureActiveTabs() {
+      const validForkIds = config.forks.map(function(fork) { return fork.id; });
+      const firstForkId = validForkIds[0];
+      projects.forEach(function(project) {
+        if (!activeTabs[project.id] || !validForkIds.includes(activeTabs[project.id])) {
+          activeTabs[project.id] = firstForkId;
+        }
+      });
+    }
+
+    function syncAllProjects() {
+      projects = projects.map(function(project) {
+        return syncProjectToConfig(project, config);
+      });
+      ensureActiveTabs();
+    }
+
+    syncAllProjects();
+    saveState();
+
+    function getProjectById(projectId) {
+      return projects.find(function(project) { return project.id === projectId; });
+    }
+
+    function getForkById(forkId) {
+      return config.forks.find(function(fork) { return fork.id === forkId; });
+    }
+
+    function getFieldById(forkId, fieldId) {
+      const fork = getForkById(forkId);
+      return fork ? fork.fields.find(function(field) { return field.id === fieldId; }) : null;
+    }
+
+    function getStepById(forkId, stepId) {
+      const fork = getForkById(forkId);
+      return fork ? fork.steps.find(function(step) { return step.id === stepId; }) : null;
+    }
+
+    function getForkStatus(project, fork) {
+      const forkState = project.forkData[fork.id];
+      const activeSteps = fork.steps.filter(function(step) {
+        const currentStatus = forkState && forkState.stepStatus ? forkState.stepStatus[step.id] : 'Not started';
+        return currentStatus !== 'Not needed';
+      });
+      if (activeSteps.length === 0) return 'Done';
+      if (activeSteps.some(function(step) { return forkState.stepStatus[step.id] === 'Cancelled'; })) return 'Cancelled';
+      if (activeSteps.some(function(step) { return forkState.stepStatus[step.id] === 'Pending'; })) return 'Pending';
+      if (activeSteps.every(function(step) { return forkState.stepStatus[step.id] === 'Done'; })) return 'Done';
+      if (activeSteps.every(function(step) { return forkState.stepStatus[step.id] === 'Not started'; })) return 'Not started';
+      return 'WIP';
+    }
+
+    function getBoxStyle(status) {
+      if (status === 'Done') return 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)] border-emerald-400';
+      if (status === 'Cancelled') return 'bg-red-800 border-red-600';
+      if (status === 'Pending') return 'bg-red-400 border-red-300';
+      if (status === 'WIP') return 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.5)] border-yellow-400';
+      return 'bg-transparent border-zinc-700/50';
+    }
+
+    function withConfigMutation(mutator) {
+      const draft = normalizeConfig(JSON.parse(JSON.stringify(config)));
+      mutator(draft);
+      config = normalizeConfig(draft);
+      syncAllProjects();
+      saveState();
+      render();
+    }
+
+    function createNewProject() {
+      return syncProjectToConfig({
+        id: generateId('project'),
+        topic: '',
+        uploadDate: '',
+        workingDate: '',
+        createdAt: Date.now(),
+        forkData: {}
+      }, config);
+    }
+
+    function addProject() {
+      playSound('pop');
+      const project = createNewProject();
+      projects.unshift(project);
+      expandedProjects[project.id] = true;
+      activeTabs[project.id] = config.forks[0] ? config.forks[0].id : null;
+      saveState();
+      render();
+    }
+
+    function updateProjectValue(projectId, field, value, shouldRender) {
+      const project = getProjectById(projectId);
+      if (!project) return;
+      project[field] = field === 'uploadDate' || field === 'workingDate' ? normalizeDateValue(value) : value;
+      saveState();
+      if (shouldRender !== false) render();
+    }
+
+    function updateStepStatus(projectId, forkId, stepId, status) {
+      const project = getProjectById(projectId);
+      if (!project || !STATUSES.includes(status)) return;
+      project.forkData[forkId].stepStatus[stepId] = status;
+      saveState();
+      render();
+    }
+
+    function updateForkFieldValue(projectId, forkId, fieldId, value, shouldRender) {
+      const project = getProjectById(projectId);
+      const field = getFieldById(forkId, fieldId);
+      if (!project || !field) return;
+      project.forkData[forkId].fieldValues[fieldId] = field.type === 'date' ? normalizeDateValue(value) : value;
+      saveState();
+      if (shouldRender !== false) render();
+    }
+
+    function bulkUpdate(projectId, forkId, value) {
+      const project = getProjectById(projectId);
+      const fork = getForkById(forkId);
+      if (!project || !fork || !STATUSES.includes(value)) return;
+      playSound(value === 'Done' ? 'done' : 'delete');
+      fork.steps.forEach(function(step) {
+        project.forkData[forkId].stepStatus[step.id] = value;
+      });
+      saveState();
+      closeModal();
+    }
+
+    function deleteProject() {
+      playSound('delete');
+      projects = projects.filter(function(project) {
+        return project.id !== modalData.projectId;
+      });
+      delete expandedProjects[modalData.projectId];
+      delete activeTabs[modalData.projectId];
+      saveState();
+      closeModal();
+    }
+
+    function toggleExpand(projectId) {
+      playSound('click');
+      expandedProjects[projectId] = !expandedProjects[projectId];
+      ensureActiveTabs();
+      render();
+    }
+
+    function switchTab(projectId, forkId) {
+      playSound('click');
+      activeTabs[projectId] = forkId;
+      render();
+    }
+
+    function openStatusModal(projectId, forkId, stepId) {
+      activeModal = 'status';
+      modalData = { projectId: projectId, forkId: forkId, stepId: stepId };
+      render();
+    }
+
+    function openBulkModal(projectId, forkId) {
+      activeModal = 'bulk';
+      modalData = { projectId: projectId, forkId: forkId };
+      render();
+    }
+
+    function openDeleteModal(projectId) {
+      activeModal = 'delete';
+      modalData = { projectId: projectId };
+      render();
+    }
+
+    function openCustomizeModal() {
+      activeModal = 'customize';
+      modalData = {};
+      render();
+    }
+
+    function closeModal() {
+      activeModal = null;
+      modalData = {};
+      render();
+    }
+
+    function startPress(event, projectId, forkId) {
+      if (event.type === 'touchstart') event.preventDefault();
+      pressTimer = setTimeout(function() {
+        playSound('longpress');
+        openBulkModal(projectId, forkId);
+      }, 500);
+    }
+
+    function cancelPress(event, projectId, forkId) {
+      if (pressTimer) clearTimeout(pressTimer);
+      if (event.type === 'mouseup' || event.type === 'touchend') {
+        switchTab(projectId, forkId);
+      }
+    }
+
+    function handlePrint() {
+      render();
+      setTimeout(function() { window.print(); }, 100);
+    }
+
+    function moveItem(list, currentIndex, direction) {
+      const targetIndex = currentIndex + direction;
+      if (currentIndex < 0 || targetIndex < 0 || targetIndex >= list.length) return;
+      const removed = list.splice(currentIndex, 1)[0];
+      list.splice(targetIndex, 0, removed);
+    }
+
+    function addFork() {
+      const fork = createFork({
+        name: 'New Fork',
+        icon: 'layers-3',
+        steps: [createStep(null, 'First Step')],
+      });
+      withConfigMutation(function(draft) {
+        draft.forks.push(fork);
+      });
+    }
+
+    function updateForkSetting(forkId, field, value) {
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        fork[field] = value;
+      });
+    }
+
+    function moveFork(forkId, direction) {
+      withConfigMutation(function(draft) {
+        const index = draft.forks.findIndex(function(fork) { return fork.id === forkId; });
+        moveItem(draft.forks, index, direction);
+      });
+    }
+
+    function removeFork(forkId) {
+      if (config.forks.length === 1) {
+        alert('Keep at least one fork in the workflow.');
+        return;
+      }
+      if (!window.confirm('Remove this fork from every project?')) return;
+      withConfigMutation(function(draft) {
+        draft.forks = draft.forks.filter(function(fork) {
+          return fork.id !== forkId;
+        });
+      });
+    }
+
+    function addStep(forkId) {
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        fork.steps.push(createStep(null, 'New Step'));
+      });
+    }
+
+    function updateStepLabel(forkId, stepId, value) {
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        const step = fork.steps.find(function(item) { return item.id === stepId; });
+        if (!step) return;
+        step.label = value;
+      });
+    }
+
+    function moveStep(forkId, stepId, direction) {
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        const index = fork.steps.findIndex(function(step) { return step.id === stepId; });
+        moveItem(fork.steps, index, direction);
+      });
+    }
+
+    function removeStep(forkId, stepId) {
+      if (!window.confirm('Remove this step from every project in this fork?')) return;
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        fork.steps = fork.steps.filter(function(step) {
+          return step.id !== stepId;
+        });
+      });
+    }
+
+    function addField(forkId) {
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        fork.fields.push(createField(null, 'New Field', 'text'));
+      });
+    }
+
+    function updateFieldConfig(forkId, fieldId, property, value) {
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        const field = fork.fields.find(function(item) { return item.id === fieldId; });
+        if (!field) return;
+        field[property] = property === 'type' ? (['text', 'number', 'date'].includes(value) ? value : 'text') : value;
+      });
+    }
+
+    function moveField(forkId, fieldId, direction) {
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        const index = fork.fields.findIndex(function(field) { return field.id === fieldId; });
+        moveItem(fork.fields, index, direction);
+      });
+    }
+
+    function removeField(forkId, fieldId) {
+      if (!window.confirm('Remove this field from every project in this fork?')) return;
+      withConfigMutation(function(draft) {
+        const fork = draft.forks.find(function(item) { return item.id === forkId; });
+        if (!fork) return;
+        fork.fields = fork.fields.filter(function(field) {
+          return field.id !== fieldId;
+        });
+      });
+    }
+
+    function downloadDataJson() {
+      playSound('pop');
+      const payload = { version: 2, config: config, projects: projects };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'workflow-data.json';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    }
+
+    async function handleUploadJson(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      try {
+        const contents = await file.text();
+        const parsed = JSON.parse(contents);
+        let nextConfig = config;
+        let nextProjects = [];
+        if (Array.isArray(parsed)) {
+          nextProjects = parsed.map(function(item) {
+            return item && item.forkData ? syncProjectToConfig(item, nextConfig) : syncProjectToConfig(migrateLegacyProject(item), nextConfig);
+          });
+        } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.projects)) {
+          nextConfig = parsed.config && Array.isArray(parsed.config.forks) ? normalizeConfig(parsed.config) : nextConfig;
+          nextProjects = parsed.projects.map(function(item) {
+            return item && item.forkData ? syncProjectToConfig(item, nextConfig) : syncProjectToConfig(migrateLegacyProject(item), nextConfig);
+          });
+        } else {
+          throw new Error('Expected an exported workflow file.');
+        }
+        config = nextConfig;
+        projects = nextProjects;
+        expandedProjects = {};
+        activeTabs = {};
+        syncAllProjects();
+        saveState();
+        render();
+        playSound('done');
+        alert('Workflow data restored from JSON.');
+      } catch (error) {
+        console.warn('JSON upload failed', error);
+        alert('Upload failed: ' + (error.message || 'Invalid JSON file.'));
+      } finally {
+        event.target.value = '';
+      }
+    }
+
+    function renderBrandMark(sizeClass) {
+      const className = sizeClass || 'w-11 h-11';
+      return `
+        <svg viewBox="0 0 96 96" class="${className}" aria-hidden="true" fill="none">
+          <defs>
+            <linearGradient id="wf-gradient" x1="14" y1="10" x2="84" y2="88" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#60a5fa"></stop>
+              <stop offset="0.55" stop-color="#818cf8"></stop>
+              <stop offset="1" stop-color="#22d3ee"></stop>
+            </linearGradient>
+          </defs>
+          <rect x="8" y="8" width="80" height="80" rx="24" fill="#0f172a"></rect>
+          <rect x="11" y="11" width="74" height="74" rx="21" stroke="url(#wf-gradient)" stroke-width="3" opacity="0.9"></rect>
+          <path d="M24 27L35 70L48 42L60 64L72 27" stroke="url(#wf-gradient)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path>
+          <circle cx="24" cy="27" r="4" fill="#60a5fa"></circle>
+          <circle cx="48" cy="42" r="4" fill="#818cf8"></circle>
+          <circle cx="72" cy="27" r="4" fill="#22d3ee"></circle>
+        </svg>
+      `;
+    }
+
+    function renderDateChip(projectId, field, value, label) {
+      return `
+        <label class="relative flex min-w-[160px] items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-3.5 py-2.5 cursor-pointer overflow-hidden">
+          <span class="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-500">${label}</span>
+          <span class="text-sm font-semibold text-indigo-200">${escapeHTML(formatDateDisplay(value))}</span>
+          <input
+            type="date"
+            value="${escapeHTML(normalizeDateValue(value))}"
+            oninput="updateProjectValue('${projectId}', '${field}', this.value)"
+            class="absolute inset-0 opacity-0 cursor-pointer [color-scheme:dark]"
+          />
+        </label>
+      `;
+    }
+
+    function renderProjectField(projectId, forkId, field) {
+      const project = getProjectById(projectId);
+      const currentValue = project.forkData[forkId].fieldValues[field.id];
+      if (field.type === 'date') {
+        return `
+          <label class="relative flex flex-col gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 cursor-pointer overflow-hidden">
+            <span class="text-[10px] font-medium uppercase tracking-[0.24em] text-zinc-500">${escapeHTML(field.label)}</span>
+            <span class="text-sm font-semibold text-zinc-200">${escapeHTML(formatDateDisplay(currentValue))}</span>
+            <input
+              type="date"
+              value="${escapeHTML(normalizeDateValue(currentValue))}"
+              oninput="updateForkFieldValue('${projectId}', '${forkId}', '${field.id}', this.value)"
+              class="absolute inset-0 opacity-0 cursor-pointer [color-scheme:dark]"
+            />
+          </label>
+        `;
+      }
+      return `
+        <div class="flex flex-col gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+          <span class="text-[10px] font-medium uppercase tracking-[0.24em] text-zinc-500">${escapeHTML(field.label)}</span>
+          <input
+            type="${field.type}"
+            value="${escapeHTML(currentValue)}"
+            oninput="updateForkFieldValue('${projectId}', '${forkId}', '${field.id}', this.value, false)"
+            onchange="updateForkFieldValue('${projectId}', '${forkId}', '${field.id}', this.value)"
+            placeholder="${field.type === 'number' ? '0' : ''}"
+            class="w-full bg-transparent text-sm font-semibold text-zinc-200 outline-none [color-scheme:dark]"
+          />
+        </div>
+      `;
+    }
+
+    function renderStatusField(projectId, fork, step, index) {
+      const project = getProjectById(projectId);
+      const value = project.forkData[fork.id].stepStatus[step.id] || 'Not started';
+      return `
+        <div onclick="openStatusModal('${projectId}', '${fork.id}', '${step.id}')" class="group flex cursor-pointer flex-col">
+          <span class="mb-1.5 ml-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 transition-colors group-hover:text-zinc-400">
+            <span class="rounded bg-zinc-800/50 px-1.5 py-0.5 text-[9px] font-mono text-zinc-400">${index + 1}</span>
+            ${escapeHTML(step.label)}
+          </span>
+          <div class="flex w-full items-center justify-between rounded-xl border px-4 py-3 text-xs font-bold transition-all duration-300 active:scale-95 ${STATUS_STYLES[value]}">
+            ${escapeHTML(value)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderHeader() {
+      return `
+        <header class="print-hidden sticky top-0 z-30 border-b border-zinc-800/80 bg-[#09090b]/80 px-4 py-4 backdrop-blur-xl md:px-6">
+          <div class="mx-auto flex max-w-7xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex items-center gap-4">
+              <div class="rounded-[1.6rem] border border-indigo-400/20 bg-zinc-950/80 p-2.5 shadow-[0_0_35px_rgba(79,70,229,0.18)]">
+                ${renderBrandMark('w-12 h-12')}
+              </div>
+              <div class="flex flex-col">
+                <h1 class="text-xl font-bold tracking-tight text-zinc-100 md:text-2xl">${APP_TITLE}</h1>
+                <p class="mt-0.5 text-[10px] font-mono uppercase tracking-[0.32em] text-zinc-500">Custom Production Workflow</p>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <button onclick="openCustomizeModal()" class="flex items-center gap-2 rounded-xl border border-transparent bg-zinc-900/70 px-4 py-2.5 text-zinc-300 transition-colors hover:bg-indigo-950/30 hover:text-indigo-300">
+                <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
+                <span class="text-xs font-semibold">Customize</span>
+              </button>
+              <button onclick="handlePrint()" class="flex items-center gap-2 rounded-xl border border-transparent bg-zinc-900/70 px-4 py-2.5 text-zinc-300 transition-colors hover:bg-indigo-950/30 hover:text-indigo-300">
+                <i data-lucide="printer" class="w-4 h-4"></i>
+                <span class="text-xs font-semibold">Print</span>
+              </button>
+              <button onclick="downloadDataJson()" class="flex items-center gap-2 rounded-xl border border-transparent bg-zinc-900/70 px-4 py-2.5 text-zinc-300 transition-colors hover:bg-indigo-950/30 hover:text-indigo-300">
+                <i data-lucide="download" class="w-4 h-4"></i>
+                <span class="text-xs font-semibold">Download</span>
+              </button>
+              <button onclick="document.getElementById('jsonUploadInput').click()" class="flex items-center gap-2 rounded-xl border border-transparent bg-zinc-900/70 px-4 py-2.5 text-zinc-300 transition-colors hover:bg-indigo-950/30 hover:text-indigo-300">
+                <i data-lucide="upload" class="w-4 h-4"></i>
+                <span class="text-xs font-semibold">Upload</span>
+              </button>
+              <button onclick="addProject()" class="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-[0_0_20px_rgba(79,70,229,0.3)] transition-all hover:bg-indigo-500 active:scale-95 md:px-5">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>New Project</span>
+              </button>
+            </div>
+          </div>
+        </header>
+      `;
+    }
+
+    function renderEmptyState() {
+      return `
+        <div class="print-hidden mt-10 flex flex-col items-center justify-center px-4 py-32 text-center fade-in">
+          <div class="mb-6 rounded-[2rem] border border-zinc-800 bg-zinc-900/85 p-6 shadow-[0_0_45px_rgba(79,70,229,0.08)]">
+            ${renderBrandMark('w-16 h-16')}
+          </div>
+          <h2 class="mb-3 text-3xl font-bold text-zinc-100">No Active Projects</h2>
+          <p class="max-w-lg text-sm leading-6 text-zinc-500">Create your first project, then customize forks, steps, and fields whenever the workflow changes.</p>
+          <button onclick="addProject()" class="mt-8 flex items-center gap-2 rounded-2xl bg-zinc-100 px-8 py-3.5 font-bold text-zinc-950 shadow-xl transition-all hover:bg-white active:scale-95">
+            <i data-lucide="plus" class="w-5 h-5"></i>
+            Start First Project
+          </button>
+        </div>
+      `;
+    }
+
+    function renderProject(project) {
+      const isExpanded = !!expandedProjects[project.id];
+      const activeTabId = activeTabs[project.id] || (config.forks[0] ? config.forks[0].id : null);
+      const activeFork = getForkById(activeTabId) || config.forks[0];
+      const forkStatuses = config.forks.map(function(fork) {
+        return { fork: fork, status: getForkStatus(project, fork) };
+      });
+      const allDone = forkStatuses.length > 0 && forkStatuses.every(function(item) {
+        return item.status === 'Done';
+      });
+
+      let content = '';
+      if (isExpanded && activeFork) {
+        const tabButtons = config.forks.map(function(fork) {
+          const isActive = activeFork.id === fork.id;
+          const activeClasses = isActive ? 'border-indigo-500 text-indigo-300 bg-indigo-500/5' : 'border-transparent text-zinc-500 hover:text-zinc-300 hover:border-zinc-700';
+          return `
+            <button
+              onmousedown="startPress(event, '${project.id}', '${fork.id}')"
+              onmouseup="cancelPress(event, '${project.id}', '${fork.id}')"
+              onmouseleave="cancelPress(event, '${project.id}', '${fork.id}')"
+              ontouchstart="startPress(event, '${project.id}', '${fork.id}')"
+              ontouchend="cancelPress(event, '${project.id}', '${fork.id}')"
+              class="flex select-none items-center gap-2 whitespace-nowrap border-b-2 px-5 py-3 text-sm font-bold transition-colors active:bg-zinc-800/30 ${activeClasses}"
+            >
+              <i data-lucide="${escapeHTML(fork.icon || 'layers-3')}" class="w-3.5 h-3.5"></i>
+              ${escapeHTML(fork.name)}
+            </button>
+          `;
+        }).join('');
+
+        const stepsHtml = activeFork.steps.length
+          ? activeFork.steps.map(function(step, index) {
+              return renderStatusField(project.id, activeFork, step, index);
+            }).join('')
+          : '<div class="col-span-full rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 px-5 py-10 text-center text-sm text-zinc-500">This fork has no steps yet. Open Customize to add them.</div>';
+
+        const fieldsHtml = activeFork.fields.length
+          ? `
+              <div class="mt-8 grid grid-cols-1 gap-4 rounded-[1.8rem] border border-zinc-800/50 bg-zinc-900/25 p-4 md:grid-cols-2 xl:grid-cols-4">
+                ${activeFork.fields.map(function(field) { return renderProjectField(project.id, activeFork.id, field); }).join('')}
+              </div>
+            `
+          : '';
+
+        content = `
+          <div class="relative z-10 border-t border-zinc-800/50 bg-[#0a0a0c] pb-6 slide-up">
+            <div class="hide-scrollbar flex overflow-x-auto border-b border-zinc-800 bg-[#121214] px-2 pt-1 sm:px-4">${tabButtons}</div>
+            <div class="px-4 pt-3 text-[10px] font-mono uppercase tracking-[0.28em] text-zinc-600 sm:px-6">Tap to switch. Long press a fork tab to bulk update all steps.</div>
+            <div class="p-4 sm:p-6">
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">${stepsHtml}</div>
+              ${fieldsHtml}
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="relative mb-5 overflow-hidden rounded-[2rem] border transition-all duration-500 ${allDone ? 'border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.14)]' : isExpanded ? 'border-indigo-500/30 shadow-[0_8px_30px_rgba(99,102,241,0.1)]' : 'border-zinc-800 hover:border-zinc-700'} bg-[#121214] print-hidden">
+          ${allDone ? '<div class="pointer-events-none absolute inset-0 bg-emerald-500/5"></div>' : ''}
+          <div class="relative z-10 flex cursor-pointer flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" onclick="toggleExpand('${project.id}')">
+            <div class="flex flex-1 flex-col gap-3">
+              <div class="flex items-start gap-4">
+                <div class="mt-1 flex flex-wrap gap-1.5" title="Fork progress">
+                  ${forkStatuses.map(function(item) {
+                    return `<div class="h-3 w-3 rounded-sm border transition-colors duration-500 ${getBoxStyle(item.status)}" title="${escapeHTML(item.fork.name)}"></div>`;
+                  }).join('')}
+                </div>
+                <div class="flex-1">
+                  <input
+                    type="text"
+                    value="${escapeHTML(project.topic)}"
+                    onclick="event.stopPropagation()"
+                    oninput="updateProjectValue('${project.id}', 'topic', this.value, false)"
+                    onchange="updateProjectValue('${project.id}', 'topic', this.value)"
+                    placeholder="Enter project title..."
+                    class="w-full border-b border-transparent bg-transparent py-1 text-xl font-bold text-zinc-100 outline-none transition-colors placeholder:text-zinc-700 hover:border-zinc-700 focus:border-indigo-500 sm:max-w-xl"
+                  />
+                  <div class="mt-3 flex flex-wrap gap-2.5" onclick="event.stopPropagation()">
+                    ${renderDateChip(project.id, 'workingDate', project.workingDate, 'WK')}
+                    ${renderDateChip(project.id, 'uploadDate', project.uploadDate, 'UP')}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 self-end sm:self-auto">
+              <button onclick="event.stopPropagation(); openDeleteModal('${project.id}')" class="rounded-xl p-3 text-zinc-600 transition-colors hover:bg-red-950/50 hover:text-red-400">
+                <i data-lucide="trash-2" class="w-4 h-4"></i>
+              </button>
+              <div class="rounded-xl bg-zinc-800/40 p-3 text-zinc-400 transition-colors hover:text-white">
+                <i data-lucide="${isExpanded ? 'slash' : 'plus'}" class="w-5 h-5 ${isExpanded ? 'rotate-90' : ''}"></i>
+              </div>
+            </div>
+          </div>
+          ${content}
+        </div>
+      `;
+    }
+
+    function renderStatusModal() {
+      const step = getStepById(modalData.forkId, modalData.stepId);
+      const project = getProjectById(modalData.projectId);
+      if (!step || !project) return '';
+      const currentValue = project.forkData[modalData.forkId].stepStatus[modalData.stepId];
+      const buttons = STATUSES.map(function(status) {
+        return `
+          <button
+            onclick="updateStepStatus('${modalData.projectId}', '${modalData.forkId}', '${modalData.stepId}', '${status}'); if('${status}' === 'Done') playSound('done'); else playSound('pop'); closeModal();"
+            class="rounded-2xl border py-4 text-xs font-bold transition-all active:scale-95 ${STATUS_STYLES[status]} ${currentValue === status ? 'ring-2 ring-white/20' : 'opacity-80 hover:opacity-100'}"
+          >${status}</button>
+        `;
+      }).join('');
+      return `
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-md fade-in" onclick="closeModal()">
+          <div class="w-full max-w-sm rounded-[2rem] border border-zinc-800 bg-[#121214] p-6 shadow-2xl zoom-in" onclick="event.stopPropagation()">
+            <h3 class="mb-6 border-b border-zinc-800 pb-4 text-center text-sm font-mono uppercase tracking-widest text-zinc-500">${escapeHTML(step.label)}</h3>
+            <div class="grid grid-cols-2 gap-3">${buttons}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBulkModal() {
+      const fork = getForkById(modalData.forkId);
+      if (!fork) return '';
+      return `
+        <div class="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 p-4 backdrop-blur-md fade-in sm:items-center" onclick="closeModal()">
+          <div class="mb-4 w-full max-w-sm rounded-[2rem] border border-zinc-800 bg-[#121214] p-6 shadow-2xl slide-up sm:mb-0 sm:zoom-in" onclick="event.stopPropagation()">
+            <h3 class="mb-2 text-center text-xl font-bold text-white">${escapeHTML(fork.name)} Actions</h3>
+            <p class="mb-8 text-center text-xs text-zinc-500">Update every step inside this fork for the selected project.</p>
+            <div class="flex flex-col gap-3">
+              <button onclick="bulkUpdate('${modalData.projectId}', '${modalData.forkId}', 'Done')" class="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 py-4 text-sm font-bold text-emerald-950 transition-colors hover:bg-emerald-400 active:scale-95">
+                <i data-lucide="check-circle-2" class="w-5 h-5"></i>Set All to Done
+              </button>
+              <button onclick="bulkUpdate('${modalData.projectId}', '${modalData.forkId}', 'Not needed')" class="flex w-full items-center justify-center gap-2 rounded-2xl bg-zinc-800 py-4 text-sm font-bold text-zinc-300 transition-colors hover:bg-zinc-700 active:scale-95">
+                <i data-lucide="slash" class="w-5 h-5"></i>Set All Not Needed
+              </button>
+              <button onclick="bulkUpdate('${modalData.projectId}', '${modalData.forkId}', 'Cancelled')" class="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-900/50 bg-red-950/50 py-4 text-sm font-bold text-red-500 transition-colors hover:bg-red-900/50 active:scale-95">
+                <i data-lucide="x-circle" class="w-5 h-5"></i>Set All Cancelled
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderDeleteModal() {
+      const project = getProjectById(modalData.projectId);
+      return `
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm fade-in">
+          <div class="w-full max-w-sm rounded-3xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl zoom-in">
+            <div class="mb-4 flex items-center gap-3 text-red-400">
+              <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+              <h3 class="text-xl font-bold">Delete Project?</h3>
+            </div>
+            <p class="mb-8 text-sm leading-relaxed text-zinc-400">This will permanently remove <span class="text-zinc-200">${escapeHTML(project && project.topic ? project.topic : 'this project')}</span> and its saved workflow data.</p>
+            <div class="flex justify-end gap-3">
+              <button onclick="closeModal()" class="rounded-xl px-5 py-2.5 text-sm font-bold text-zinc-300 hover:bg-zinc-800">Cancel</button>
+              <button onclick="deleteProject()" class="rounded-xl border border-red-500/50 bg-red-500/10 px-5 py-2.5 text-sm font-bold text-red-500 hover:bg-red-500 hover:text-white">Delete</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCustomizeModal() {
+      const forksHtml = config.forks.map(function(fork) {
+        const stepsHtml = fork.steps.length ? fork.steps.map(function(step, stepIndex) {
+          return `
+            <div class="grid grid-cols-[auto,1fr,auto] items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-3 py-3">
+              <span class="rounded-full bg-zinc-800 px-2 py-1 text-[10px] font-mono text-zinc-400">${stepIndex + 1}</span>
+              <input type="text" value="${escapeHTML(step.label)}" onchange="updateStepLabel('${fork.id}', '${step.id}', this.value)" class="min-w-0 bg-transparent text-sm font-medium text-zinc-100 outline-none" />
+              <div class="flex items-center gap-1">
+                <button onclick="moveStep('${fork.id}', '${step.id}', -1)" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"><i data-lucide="arrow-up" class="w-4 h-4"></i></button>
+                <button onclick="moveStep('${fork.id}', '${step.id}', 1)" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"><i data-lucide="arrow-down" class="w-4 h-4"></i></button>
+                <button onclick="removeStep('${fork.id}', '${step.id}')" class="rounded-lg p-2 text-zinc-500 hover:bg-red-950/50 hover:text-red-400"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+              </div>
+            </div>
+          `;
+        }).join('') : '<div class="rounded-2xl border border-dashed border-zinc-800 px-4 py-5 text-sm text-zinc-500">No steps yet. Add one below.</div>';
+
+        const fieldsHtml = fork.fields.length ? fork.fields.map(function(field, fieldIndex) {
+          return `
+            <div class="grid grid-cols-[auto,1fr,130px,auto] items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-3 py-3">
+              <span class="rounded-full bg-zinc-800 px-2 py-1 text-[10px] font-mono text-zinc-400">${fieldIndex + 1}</span>
+              <input type="text" value="${escapeHTML(field.label)}" onchange="updateFieldConfig('${fork.id}', '${field.id}', 'label', this.value)" class="min-w-0 bg-transparent text-sm font-medium text-zinc-100 outline-none" />
+              <select onchange="updateFieldConfig('${fork.id}', '${field.id}', 'type', this.value)" class="rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-semibold text-zinc-200 outline-none">
+                <option value="text" ${field.type === 'text' ? 'selected' : ''}>Text</option>
+                <option value="number" ${field.type === 'number' ? 'selected' : ''}>Number</option>
+                <option value="date" ${field.type === 'date' ? 'selected' : ''}>Date</option>
+              </select>
+              <div class="flex items-center gap-1">
+                <button onclick="moveField('${fork.id}', '${field.id}', -1)" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"><i data-lucide="arrow-up" class="w-4 h-4"></i></button>
+                <button onclick="moveField('${fork.id}', '${field.id}', 1)" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"><i data-lucide="arrow-down" class="w-4 h-4"></i></button>
+                <button onclick="removeField('${fork.id}', '${field.id}')" class="rounded-lg p-2 text-zinc-500 hover:bg-red-950/50 hover:text-red-400"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+              </div>
+            </div>
+          `;
+        }).join('') : '<div class="rounded-2xl border border-dashed border-zinc-800 px-4 py-5 text-sm text-zinc-500">No extra fields yet. Add one if this fork needs dates, counts, or notes.</div>';
+
+        return `
+          <div class="rounded-[2rem] border border-zinc-800 bg-[#0b0b0d] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
+            <div class="flex flex-col gap-4 border-b border-zinc-800 pb-5 lg:flex-row lg:items-center lg:justify-between">
+              <div class="flex flex-1 items-center gap-3">
+                <div class="rounded-2xl border border-indigo-400/20 bg-zinc-950 p-3 text-indigo-300"><i data-lucide="${escapeHTML(fork.icon || 'layers-3')}" class="w-5 h-5"></i></div>
+                <div class="grid flex-1 gap-3 md:grid-cols-[1fr,150px]">
+                  <input type="text" value="${escapeHTML(fork.name)}" onchange="updateForkSetting('${fork.id}', 'name', this.value)" class="rounded-2xl border border-zinc-700 bg-zinc-950/80 px-4 py-3 text-sm font-semibold text-zinc-100 outline-none" />
+                  <input type="text" value="${escapeHTML(fork.icon || 'layers-3')}" onchange="updateForkSetting('${fork.id}', 'icon', this.value)" class="rounded-2xl border border-zinc-700 bg-zinc-950/80 px-4 py-3 text-sm font-semibold text-zinc-100 outline-none" placeholder="lucide icon" />
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="moveFork('${fork.id}', -1)" class="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800">Move Up</button>
+                <button onclick="moveFork('${fork.id}', 1)" class="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800">Move Down</button>
+                <button onclick="removeFork('${fork.id}')" class="rounded-xl border border-red-900/50 bg-red-950/40 px-3 py-2 text-xs font-semibold text-red-400 hover:bg-red-900/60">Remove</button>
+              </div>
+            </div>
+            <div class="mt-5 grid gap-6 xl:grid-cols-2">
+              <div>
+                <div class="mb-3 flex items-center justify-between">
+                  <h4 class="text-sm font-bold text-zinc-100">Steps</h4>
+                  <button onclick="addStep('${fork.id}')" class="rounded-xl bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20">Add Step</button>
+                </div>
+                <div class="space-y-3">${stepsHtml}</div>
+              </div>
+              <div>
+                <div class="mb-3 flex items-center justify-between">
+                  <h4 class="text-sm font-bold text-zinc-100">Extra Fields</h4>
+                  <button onclick="addField('${fork.id}')" class="rounded-xl bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20">Add Field</button>
+                </div>
+                <div class="space-y-3">${fieldsHtml}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      return `
+        <div class="fixed inset-0 z-[100] bg-black/75 p-4 backdrop-blur-md fade-in" onclick="closeModal()">
+          <div class="mx-auto flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-zinc-800 bg-[#121214] shadow-2xl zoom-in" onclick="event.stopPropagation()">
+            <div class="flex items-start justify-between gap-4 border-b border-zinc-800 px-6 py-5">
+              <div>
+                <h3 class="text-2xl font-bold text-white">Customize WorkFlow</h3>
+                <p class="mt-1 max-w-2xl text-sm leading-6 text-zinc-500">Add or remove forks, reorder them, rename steps, and define the extra fields each fork needs. These changes apply to every project and are included in downloads.</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <button onclick="addFork()" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-500">Add Fork</button>
+                <button onclick="closeModal()" class="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800">Close</button>
+              </div>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 py-6">
+              <div class="space-y-5">${forksHtml}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderModals() {
+      if (!activeModal) return '';
+      if (activeModal === 'status') return renderStatusModal();
+      if (activeModal === 'bulk') return renderBulkModal();
+      if (activeModal === 'delete') return renderDeleteModal();
+      if (activeModal === 'customize') return renderCustomizeModal();
+      return '';
+    }
+
+    function renderPrintFork(project, fork, index) {
+      const cells = fork.steps.map(function(step, stepIndex) {
+        const value = project.forkData[fork.id].stepStatus[step.id] || 'Not started';
+        return `
+          <div class="flex flex-col">
+            <span class="text-[9px] uppercase tracking-widest text-gray-500">${stepIndex + 1}. ${escapeHTML(step.label)}</span>
+            <span class="mt-1 inline-block rounded border px-2 py-1 text-center text-[10px] font-semibold ${PRINT_STYLES[value]}">${escapeHTML(value)}</span>
+          </div>
+        `;
+      }).join('');
+
+      const fields = fork.fields.map(function(field) {
+        const rawValue = project.forkData[fork.id].fieldValues[field.id];
+        const displayValue = field.type === 'date' ? formatDateDisplay(rawValue, 'TBD') : (rawValue === '' || rawValue === null || rawValue === undefined ? 'TBD' : rawValue);
+        return `
+          <div class="rounded-lg border border-gray-200 bg-white px-3 py-2">
+            <span class="block text-[9px] uppercase tracking-widest text-gray-500">${escapeHTML(field.label)}</span>
+            <span class="mt-1 block text-xs font-semibold text-gray-800">${escapeHTML(displayValue)}</span>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="mb-6">
+          <h4 class="mb-3 border-b border-gray-200 pb-1 text-sm font-bold text-gray-800">${index + 1}. ${escapeHTML(fork.name)}</h4>
+          <div class="grid grid-cols-4 gap-3">${cells || '<div class="col-span-4 text-sm text-gray-500">No steps configured.</div>'}</div>
+          ${fields ? `<div class="mt-4 grid grid-cols-2 gap-3">${fields}</div>` : ''}
+        </div>
+      `;
+    }
+
+    function renderPrintView() {
+      return `
+        <div class="print-only mx-auto max-w-5xl py-8">
+          <div class="mb-10 flex items-center gap-4 border-b-2 border-indigo-600 pb-6">
+            <div class="rounded-2xl bg-indigo-600 p-3 text-white">${renderBrandMark('w-10 h-10')}</div>
+            <div>
+              <h1 class="text-3xl font-black tracking-tight text-gray-900">${APP_TITLE}</h1>
+              <p class="mt-1 text-sm font-mono font-bold uppercase tracking-widest text-indigo-600">Custom Workflow Export</p>
+            </div>
+          </div>
+          ${projects.map(function(project) {
+            return `
+              <div class="page-break-inside-avoid mb-12 rounded-2xl border border-gray-100 bg-gray-50/50 p-6">
+                <div class="mb-6 flex items-end justify-between border-b border-gray-300 pb-4">
+                  <h2 class="text-2xl font-bold text-gray-900">${escapeHTML(project.topic) || 'Untitled Project'}</h2>
+                  <div class="flex gap-6 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-mono text-gray-600 shadow-sm">
+                    <span><strong class="mr-2 text-indigo-600">WORKING:</strong> ${escapeHTML(formatDateDisplay(project.workingDate, 'TBD'))}</span>
+                    <span><strong class="mr-2 text-indigo-600">UPLOAD:</strong> ${escapeHTML(formatDateDisplay(project.uploadDate, 'TBD'))}</span>
+                  </div>
+                </div>
+                ${config.forks.map(function(fork, forkIndex) { return renderPrintFork(project, fork, forkIndex); }).join('')}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    function render() {
+      ensureActiveTabs();
+      const appDiv = document.getElementById('app');
+      let html = '';
+      html += renderHeader();
+      html += '<main class="print-hidden relative z-10 mx-auto max-w-7xl p-4 pb-20 md:p-8">';
+      html += projects.length ? projects.map(renderProject).join('') : renderEmptyState();
+      html += '</main>';
+      html += renderModals();
+      html += renderPrintView();
+      appDiv.innerHTML = html;
+      lucide.createIcons();
+    }
+
+    window.addEventListener('load', function() {
+      render();
+    });
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async function() {
+        try {
+          const registration = await navigator.serviceWorker.register('service-worker.js');
+          console.log('Service Worker registered:', registration);
+        } catch (error) {
+          console.warn('Service Worker registration failed:', error);
+        }
+      });
+    }
+  </script>
+</body>
+</html>
