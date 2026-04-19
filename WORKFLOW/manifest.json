@@ -2,7 +2,7 @@
   "name": "WorkFlow",
   "short_name": "WorkFlow",
   "description": "A customizable production workflow tracker.",
-  "start_url": "./workflow.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#09090b",

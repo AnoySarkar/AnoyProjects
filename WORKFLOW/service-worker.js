@@ -1,6 +1,7 @@
-const CACHE_NAME = 'workflow-cache-v2';
+const CACHE_NAME = 'workflow-cache-v3';
 const LOCAL_ASSETS = [
-  './workflow.html',
+  './',
+  './index.html',
   './manifest.json',
   './logo.svg',
   './icon-192.png',
@@ -56,7 +57,7 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => caches.match('./workflow.html'));
+        .catch(() => caches.match('./index.html'));
     })
   );
 });
