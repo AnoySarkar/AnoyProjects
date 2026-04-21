@@ -44,6 +44,22 @@
     .fade-in { animation: fadeIn 0.28s ease-out forwards; }
     .slide-up { animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     .zoom-in { animation: zoomIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .project-dragging { opacity: 0.42; }
+    .project-drop-before::before,
+    .project-drop-after::after {
+      content: '';
+      position: absolute;
+      left: 1rem;
+      right: 1rem;
+      height: 3px;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, rgba(99, 102, 241, 0.12), rgba(129, 140, 248, 0.95), rgba(34, 211, 238, 0.28));
+      box-shadow: 0 0 20px rgba(129, 140, 248, 0.35);
+      pointer-events: none;
+      z-index: 30;
+    }
+    .project-drop-before::before { top: -1px; }
+    .project-drop-after::after { bottom: -1px; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     @keyframes zoomIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
@@ -119,8 +135,13 @@
     const APP_TITLE = 'WorkFlow';
     const CONFIG_STORAGE_KEY = 'workflow_config_v2';
     const PROJECTS_STORAGE_KEY = 'workflow_projects_v2';
+    const WORKSPACES_STORAGE_KEY = 'workflow_workspaces_v1';
+    const WORKSPACE_CONFIGS_STORAGE_KEY = 'workflow_workspace_configs_v1';
+    const ACTIVE_WORKSPACE_STORAGE_KEY = 'workflow_active_workspace_v1';
     const LEGACY_PROJECTS_STORAGE_KEY = 'tk_workflow_data';
+    const DEFAULT_WORKSPACE_NAME = 'Main Workspace';
     const STATUSES = ['Not started', 'Started', 'Half way', 'Almost done', 'Done', 'Pending', 'Not needed', 'Cancelled'];
+    const COMPLETED_STATUSES = ['Done', 'Not needed', 'Cancelled'];
 
     const STATUS_STYLES = {
       'Not started': 'bg-zinc-900/50 text-zinc-500 border-zinc-800',
@@ -154,6 +175,14 @@
     let activeModal = null;
     let modalData = {};
     let pressTimer = null;
+    let dragState = {
+      draggedProjectId: null,
+      dropTargetId: null,
+      dropPosition: 'before',
+      justDragged: false
+    };
+    let projectSearchQuery = '';
+    let customizeScrollTop = 0;
 
     function generateId(prefix) {
       const safePrefix = prefix || 'id';
@@ -214,6 +243,25 @@
     function createField(id, label, type) {
       const normalizedType = ['text', 'number', 'date'].includes(type) ? type : 'text';
       return { id: id || generateId('field'), label: label || 'New Field', type: normalizedType };
+    }
+
+    function createWorkspace(definition) {
+      const source = definition || {};
+      const rawName = typeof source.name === 'string' ? source.name.trim() : '';
+      return {
+        id: source.id || generateId('workspace'),
+        name: rawName || DEFAULT_WORKSPACE_NAME,
+        createdAt: Number(source.createdAt) || Date.now(),
+      };
+    }
+
+    function normalizeAttachmentUrl(url) {
+      const raw = typeof url === 'string' ? url.trim() : '';
+      if (!raw) return '';
+      if (/^[a-z]+:\/\//i.test(raw)) return raw;
+      if (/^(docs|sheets)\.google\.com/i.test(raw)) return 'https://' + raw;
+      if (/^www\./i.test(raw)) return 'https://' + raw;
+      return raw;
     }
 
     function createFork(definition) {
@@ -283,6 +331,42 @@
       return { version: 2, forks: forks.length ? forks : createDefaultConfig().forks };
     }
 
+    function normalizeWorkspaces(rawWorkspaces) {
+      const source = Array.isArray(rawWorkspaces) ? rawWorkspaces : [];
+      const seen = {};
+      const workspaces = source.map(function(workspace) {
+        return createWorkspace(workspace);
+      }).filter(function(workspace) {
+        if (seen[workspace.id]) return false;
+        seen[workspace.id] = true;
+        return true;
+      });
+      return workspaces.length ? workspaces : [createWorkspace({ id: 'workspace_main', name: DEFAULT_WORKSPACE_NAME })];
+    }
+
+    function normalizeActivityEntry(entry, index) {
+      const source = entry || {};
+      if (!source.message) return null;
+      return {
+        id: source.id || generateId('activity_' + index),
+        message: String(source.message),
+        timestamp: Number(source.timestamp) || Date.now(),
+        signature: typeof source.signature === 'string' ? source.signature : '',
+      };
+    }
+
+    function normalizeAttachment(attachment, index) {
+      const source = attachment || {};
+      const label = typeof source.label === 'string' ? source.label.trim() : '';
+      const url = normalizeAttachmentUrl(source.url);
+      if (!label && !url) return null;
+      return {
+        id: source.id || generateId('attachment_' + index),
+        label: label || url || ('Reference ' + (index + 1)),
+        url: url || label,
+      };
+    }
+
     function buildDefaultForkData(fork) {
       const stepStatus = {};
       const fieldValues = {};
@@ -291,14 +375,24 @@
       return { stepStatus: stepStatus, fieldValues: fieldValues };
     }
 
-    function syncProjectToConfig(project, currentConfig) {
+    function syncProjectToConfig(project, currentConfig, currentWorkspaces) {
       const source = project || {};
+      const safeWorkspaces = normalizeWorkspaces(currentWorkspaces);
+      const workspaceIds = safeWorkspaces.map(function(workspace) { return workspace.id; });
+      const defaultWorkspaceId = workspaceIds[0];
       const nextProject = {
         id: source.id || generateId('project'),
         topic: typeof source.topic === 'string' ? source.topic : '',
         uploadDate: normalizeDateValue(source.uploadDate),
         workingDate: normalizeDateValue(source.workingDate),
         createdAt: Number(source.createdAt) || Date.now(),
+        lastEditedAt: Number(source.lastEditedAt) || Number(source.createdAt) || Date.now(),
+        workspaceId: workspaceIds.includes(source.workspaceId) ? source.workspaceId : defaultWorkspaceId,
+        pinned: !!source.pinned,
+        archived: !!source.archived,
+        notes: typeof source.notes === 'string' ? source.notes : '',
+        attachments: Array.isArray(source.attachments) ? source.attachments.map(normalizeAttachment).filter(Boolean) : [],
+        activityLog: Array.isArray(source.activityLog) ? source.activityLog.map(normalizeActivityEntry).filter(Boolean) : [],
         forkData: {}
       };
       currentConfig.forks.forEach(function(fork) {
@@ -333,6 +427,13 @@
         uploadDate: normalizeDateValue(legacyProject && legacyProject.uploadDate),
         workingDate: normalizeDateValue(legacyProject && legacyProject.workingDate),
         createdAt: legacyProject && legacyProject.createdAt ? legacyProject.createdAt : Date.now(),
+        lastEditedAt: legacyProject && legacyProject.createdAt ? legacyProject.createdAt : Date.now(),
+        workspaceId: 'workspace_main',
+        pinned: false,
+        archived: false,
+        notes: '',
+        attachments: [],
+        activityLog: [],
         forkData: {}
       };
       defaultConfig.forks.forEach(function(fork) {
@@ -373,28 +474,59 @@
       return normalizeConfig(storedConfig);
     }
 
-    function loadProjects(currentConfig) {
+    function loadWorkspaces() {
+      const storedWorkspaces = readStorageJson(WORKSPACES_STORAGE_KEY, null);
+      return normalizeWorkspaces(storedWorkspaces);
+    }
+
+    function loadWorkspaceConfigs(currentWorkspaces, fallbackConfig) {
+      const storedConfigs = readStorageJson(WORKSPACE_CONFIGS_STORAGE_KEY, {});
+      const configs = {};
+      currentWorkspaces.forEach(function(workspace, index) {
+        const fromStorage = storedConfigs && storedConfigs[workspace.id];
+        configs[workspace.id] = normalizeConfig(fromStorage || (index === 0 ? fallbackConfig : createDefaultConfig()));
+      });
+      return configs;
+    }
+
+    function loadActiveWorkspaceId(currentWorkspaces) {
+      const workspaceIds = currentWorkspaces.map(function(workspace) { return workspace.id; });
+      const storedWorkspaceId = localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+      return workspaceIds.includes(storedWorkspaceId) ? storedWorkspaceId : workspaceIds[0];
+    }
+
+    function loadProjects(currentConfig, currentWorkspaces, currentWorkspaceConfigs) {
       const storedProjects = readStorageJson(PROJECTS_STORAGE_KEY, null);
       if (Array.isArray(storedProjects)) {
         return storedProjects.map(function(project) {
-          return syncProjectToConfig(project, currentConfig);
+          const workspaceId = project && project.workspaceId ? project.workspaceId : currentWorkspaces[0].id;
+          const workspaceConfig = currentWorkspaceConfigs && currentWorkspaceConfigs[workspaceId] ? normalizeConfig(currentWorkspaceConfigs[workspaceId]) : currentConfig;
+          return syncProjectToConfig(project, workspaceConfig, currentWorkspaces);
         });
       }
       const legacyProjects = readStorageJson(LEGACY_PROJECTS_STORAGE_KEY, []);
       if (Array.isArray(legacyProjects)) {
         return legacyProjects.map(function(project) {
-          return syncProjectToConfig(migrateLegacyProject(project), currentConfig);
+          return syncProjectToConfig(migrateLegacyProject(project), currentConfig, currentWorkspaces);
         });
       }
       return [];
     }
 
     let config = loadConfig();
-    let projects = loadProjects(config);
+    let workspaces = loadWorkspaces();
+    let workspaceConfigs = loadWorkspaceConfigs(workspaces, config);
+    let activeWorkspaceId = loadActiveWorkspaceId(workspaces);
+    config = normalizeConfig(workspaceConfigs[activeWorkspaceId] || createDefaultConfig());
+    let projects = loadProjects(config, workspaces, workspaceConfigs);
 
     function saveState() {
-      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
+      workspaceConfigs[activeWorkspaceId] = normalizeConfig(config);
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(workspaceConfigs[workspaces[0].id] || config));
       localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+      localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(workspaces));
+      localStorage.setItem(WORKSPACE_CONFIGS_STORAGE_KEY, JSON.stringify(workspaceConfigs));
+      localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, activeWorkspaceId);
     }
 
     function ensureActiveTabs() {
@@ -407,10 +539,22 @@
       });
     }
 
+    function getConfigForWorkspace(workspaceId) {
+      if (!workspaceConfigs[workspaceId]) {
+        workspaceConfigs[workspaceId] = createDefaultConfig();
+      }
+      workspaceConfigs[workspaceId] = normalizeConfig(workspaceConfigs[workspaceId]);
+      return workspaceConfigs[workspaceId];
+    }
+
     function syncAllProjects() {
       projects = projects.map(function(project) {
-        return syncProjectToConfig(project, config);
+        return syncProjectToConfig(project, getConfigForWorkspace(project.workspaceId), workspaces);
       });
+      if (!workspaces.some(function(workspace) { return workspace.id === activeWorkspaceId; })) {
+        activeWorkspaceId = workspaces[0].id;
+      }
+      config = getConfigForWorkspace(activeWorkspaceId);
       ensureActiveTabs();
     }
 
@@ -419,6 +563,10 @@
 
     function getProjectById(projectId) {
       return projects.find(function(project) { return project.id === projectId; });
+    }
+
+    function getWorkspaceById(workspaceId) {
+      return workspaces.find(function(workspace) { return workspace.id === workspaceId; }) || workspaces[0];
     }
 
     function getForkById(forkId) {
@@ -457,11 +605,275 @@
       return 'bg-transparent border-zinc-700/50';
     }
 
+    function touchProject(project) {
+      if (!project) return;
+      project.lastEditedAt = Date.now();
+    }
+
+    function appendProjectActivity(project, message, signature) {
+      if (!project || !message) return;
+      project.activityLog = Array.isArray(project.activityLog) ? project.activityLog : [];
+      project.activityLog.unshift({
+        id: generateId('activity'),
+        message: message,
+        timestamp: Date.now(),
+        signature: signature || '',
+      });
+      touchProject(project);
+    }
+
+    function buildActivityMessage(scope, detail) {
+      const safeScope = String(scope || 'PROJECT').trim().toUpperCase();
+      return safeScope + ': ' + detail;
+    }
+
+    function removeProjectActivityBySignature(project, signature) {
+      if (!project || !signature || !Array.isArray(project.activityLog)) return;
+      project.activityLog = project.activityLog.filter(function(entry) {
+        return entry.signature !== signature;
+      });
+    }
+
+    function formatActivityTimestamp(value) {
+      const timestamp = Number(value) || Date.now();
+      return new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(new Date(timestamp));
+    }
+
+    function formatRelativeTime(value) {
+      const timestamp = Number(value);
+      if (!timestamp) return 'Just now';
+      const diffMs = Date.now() - timestamp;
+      const diffMinutes = Math.max(1, Math.round(diffMs / 60000));
+      if (diffMinutes < 60) return diffMinutes + 'm ago';
+      const diffHours = Math.round(diffMinutes / 60);
+      if (diffHours < 24) return diffHours + 'h ago';
+      const diffDays = Math.round(diffHours / 24);
+      if (diffDays < 7) return diffDays + 'd ago';
+      return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(timestamp));
+    }
+
+    function getProgressStats(project) {
+      const allSteps = config.forks.reduce(function(total, fork) {
+        return total + fork.steps.length;
+      }, 0);
+      if (!allSteps) return { done: 0, total: 0, percent: 0 };
+      let completedSteps = 0;
+      config.forks.forEach(function(fork) {
+        fork.steps.forEach(function(step) {
+          const value = project.forkData[fork.id] && project.forkData[fork.id].stepStatus ? project.forkData[fork.id].stepStatus[step.id] : 'Not started';
+          if (COMPLETED_STATUSES.includes(value)) completedSteps += 1;
+        });
+      });
+      return {
+        done: completedSteps,
+        total: allSteps,
+        percent: Math.round((completedSteps / allSteps) * 100),
+      };
+    }
+
+    function estimateCompletionLabel(project) {
+      const progress = getProgressStats(project);
+      if (!progress.total || progress.percent === 0) return 'ETA after progress starts';
+      if (project.uploadDate) return formatDateDisplay(project.uploadDate, 'TBD');
+      if (progress.percent >= 100) return 'Completed';
+      const fraction = progress.percent / 100;
+      const elapsedDays = Math.max(1, (Date.now() - Number(project.createdAt || Date.now())) / 86400000);
+      const projectedTotalDays = elapsedDays / fraction;
+      const remainingDays = Math.max(0, Math.ceil(projectedTotalDays - elapsedDays));
+      const estimatedDate = new Date(Date.now() + (remainingDays * 86400000));
+      return formatDateDisplay(estimatedDate.toISOString().slice(0, 10), 'TBD');
+    }
+
+    function matchesProjectSearch(project) {
+      if (!projectSearchQuery.trim()) return true;
+      return (project.topic || '').toLowerCase().includes(projectSearchQuery.trim().toLowerCase());
+    }
+
+    function getWorkspaceProjects(workspaceId) {
+      return projects.filter(function(project) {
+        return project.workspaceId === workspaceId;
+      });
+    }
+
+    function sortProjectsForDisplay(projectList) {
+      const pinnedProjects = [];
+      const regularProjects = [];
+      projectList.forEach(function(project) {
+        if (project.pinned) pinnedProjects.push(project);
+        else regularProjects.push(project);
+      });
+      return pinnedProjects.concat(regularProjects);
+    }
+
+    function getVisibleProjects(options) {
+      const settings = options || {};
+      const includeArchived = !!settings.archived;
+      return sortProjectsForDisplay(getWorkspaceProjects(activeWorkspaceId).filter(function(project) {
+        return project.archived === includeArchived && matchesProjectSearch(project);
+      }));
+    }
+
+    function getWorkspaceOverviewProjects() {
+      return sortProjectsForDisplay(getWorkspaceProjects(activeWorkspaceId));
+    }
+
+    function setActiveWorkspace(workspaceId) {
+      if (!workspaces.some(function(workspace) { return workspace.id === workspaceId; })) return;
+      workspaceConfigs[activeWorkspaceId] = normalizeConfig(config);
+      activeWorkspaceId = workspaceId;
+      config = getConfigForWorkspace(activeWorkspaceId);
+      saveState();
+      render();
+    }
+
+    function addWorkspace() {
+      const name = window.prompt('Workspace name?', 'New Workspace');
+      if (name === null) return;
+      const trimmedName = name.trim();
+      if (!trimmedName) return;
+      const workspace = createWorkspace({ name: trimmedName });
+      workspaces.push(workspace);
+      workspaceConfigs[workspace.id] = createDefaultConfig();
+      activeWorkspaceId = workspace.id;
+      config = getConfigForWorkspace(activeWorkspaceId);
+      saveState();
+      render();
+    }
+
+    function renameActiveWorkspace() {
+      const workspace = getWorkspaceById(activeWorkspaceId);
+      const nextName = window.prompt('Rename workspace', workspace.name);
+      if (nextName === null) return;
+      const trimmedName = nextName.trim();
+      if (!trimmedName) return;
+      workspace.name = trimmedName;
+      saveState();
+      render();
+    }
+
+    function deleteActiveWorkspace() {
+      if (workspaces.length === 1) {
+        alert('Keep at least one workspace.');
+        return;
+      }
+      const workspace = getWorkspaceById(activeWorkspaceId);
+      const targetWorkspace = workspaces.find(function(item) { return item.id !== activeWorkspaceId; });
+      if (!window.confirm('Delete "' + workspace.name + '"? Its projects will move to "' + targetWorkspace.name + '".')) return;
+      delete workspaceConfigs[activeWorkspaceId];
+      projects = projects.map(function(project) {
+        if (project.workspaceId !== activeWorkspaceId) return project;
+        project.workspaceId = targetWorkspace.id;
+        touchProject(project);
+        appendProjectActivity(project, buildActivityMessage('WORKSPACE', 'Moved to ' + targetWorkspace.name), 'workspace-move:' + targetWorkspace.id);
+        return syncProjectToConfig(project, getConfigForWorkspace(targetWorkspace.id), workspaces);
+      });
+      workspaces = workspaces.filter(function(item) {
+        return item.id !== activeWorkspaceId;
+      });
+      activeWorkspaceId = targetWorkspace.id;
+      config = getConfigForWorkspace(activeWorkspaceId);
+      saveState();
+      render();
+    }
+
+    function updateProjectWorkspace(projectId, workspaceId) {
+      const project = getProjectById(projectId);
+      if (!project || !workspaces.some(function(workspace) { return workspace.id === workspaceId; })) return;
+      const previousWorkspace = getWorkspaceById(project.workspaceId);
+      if (project.workspaceId === workspaceId) return;
+      project.workspaceId = workspaceId;
+      appendProjectActivity(project, buildActivityMessage('WORKSPACE', 'Changed from ' + previousWorkspace.name + ' to ' + getWorkspaceById(workspaceId).name), 'workspace-change:' + workspaceId);
+      touchProject(project);
+      const targetConfig = getConfigForWorkspace(workspaceId);
+      const syncedProject = syncProjectToConfig(project, targetConfig, workspaces);
+      projects = projects.map(function(item) {
+        return item.id === projectId ? syncedProject : item;
+      });
+      saveState();
+      render();
+    }
+
+    function toggleProjectPinned(projectId) {
+      const project = getProjectById(projectId);
+      if (!project) return;
+      project.pinned = !project.pinned;
+      touchProject(project);
+      saveState();
+      render();
+    }
+
+    function toggleProjectArchived(projectId) {
+      const project = getProjectById(projectId);
+      if (!project) return;
+      project.archived = !project.archived;
+      appendProjectActivity(project, buildActivityMessage('PROJECT', project.archived ? 'Archived' : 'Restored'), 'project-archived');
+      touchProject(project);
+      saveState();
+      render();
+    }
+
+    function updateProjectNotes(projectId, value, shouldRender) {
+      const project = getProjectById(projectId);
+      if (!project) return;
+      const previousValue = project.notes || '';
+      project.notes = value;
+      if (shouldRender !== false && previousValue !== value) {
+        appendProjectActivity(project, buildActivityMessage('PROJECT', 'Notes updated'), 'project-notes');
+      }
+      touchProject(project);
+      saveState();
+      if (shouldRender !== false) render();
+    }
+
+    function openProjectLog(projectId) {
+      activeModal = 'log';
+      modalData = { projectId: projectId };
+      render();
+    }
+
+    function addProjectAttachment(projectId) {
+      const project = getProjectById(projectId);
+      if (!project) return;
+      const label = window.prompt('Attachment label?', 'Script doc');
+      if (label === null) return;
+      const url = window.prompt('Attachment link or file/path reference?', 'https://');
+      if (url === null) return;
+      const normalized = normalizeAttachment({ label: label, url: url }, project.attachments.length);
+      if (!normalized) return;
+      project.attachments.push(normalized);
+      appendProjectActivity(project, buildActivityMessage('PROJECT', 'Attachment added: ' + normalized.label), 'attachment:' + normalized.id);
+      touchProject(project);
+      saveState();
+      render();
+    }
+
+    function removeProjectAttachment(projectId, attachmentId) {
+      const project = getProjectById(projectId);
+      if (!project) return;
+      project.attachments = project.attachments.filter(function(attachment) {
+        return attachment.id !== attachmentId;
+      });
+      appendProjectActivity(project, buildActivityMessage('PROJECT', 'Attachment removed'), 'attachment-removed:' + attachmentId);
+      touchProject(project);
+      saveState();
+      render();
+    }
+
     function withConfigMutation(mutator) {
       const draft = normalizeConfig(JSON.parse(JSON.stringify(config)));
       mutator(draft);
       config = normalizeConfig(draft);
-      syncAllProjects();
+      workspaceConfigs[activeWorkspaceId] = config;
+      projects = projects.map(function(project) {
+        return project.workspaceId === activeWorkspaceId ? syncProjectToConfig(project, config, workspaces) : project;
+      });
+      ensureActiveTabs();
       saveState();
       render();
     }
@@ -473,13 +885,20 @@
         uploadDate: '',
         workingDate: '',
         createdAt: Date.now(),
+        lastEditedAt: Date.now(),
+        workspaceId: activeWorkspaceId,
+        pinned: false,
+        archived: false,
+        notes: '',
+        attachments: [],
         forkData: {}
-      }, config);
+      }, config, workspaces);
     }
 
     function addProject() {
       playSound('pop');
       const project = createNewProject();
+      appendProjectActivity(project, buildActivityMessage('PROJECT', 'Created'), 'project-created');
       projects.unshift(project);
       expandedProjects[project.id] = true;
       activeTabs[project.id] = config.forks[0] ? config.forks[0].id : null;
@@ -490,7 +909,13 @@
     function updateProjectValue(projectId, field, value, shouldRender) {
       const project = getProjectById(projectId);
       if (!project) return;
+      const previousValue = project[field];
       project[field] = field === 'uploadDate' || field === 'workingDate' ? normalizeDateValue(value) : value;
+      if (shouldRender !== false && previousValue !== project[field]) {
+        const labels = { topic: 'Project title', uploadDate: 'Upload date', workingDate: 'Working date' };
+        appendProjectActivity(project, buildActivityMessage('PROJECT', (labels[field] || field) + ' updated to ' + (project[field] || 'blank')), 'project-field:' + field);
+      }
+      touchProject(project);
       saveState();
       if (shouldRender !== false) render();
     }
@@ -498,7 +923,17 @@
     function updateStepStatus(projectId, forkId, stepId, status) {
       const project = getProjectById(projectId);
       if (!project || !STATUSES.includes(status)) return;
+       const previousStatus = project.forkData[forkId].stepStatus[stepId];
+      if (previousStatus === status) return;
       project.forkData[forkId].stepStatus[stepId] = status;
+      const fork = getForkById(forkId);
+      const step = getStepById(forkId, stepId);
+      const stepLabel = step ? step.label : stepId;
+      const scopeLabel = fork ? fork.name : 'PROJECT';
+      const doneSignature = 'step-done:' + forkId + ':' + stepId;
+      if (status !== 'Done') removeProjectActivityBySignature(project, doneSignature);
+      appendProjectActivity(project, buildActivityMessage(scopeLabel, stepLabel + ' set to ' + status), status === 'Done' ? doneSignature : 'step-status:' + forkId + ':' + stepId + ':' + status);
+      touchProject(project);
       saveState();
       render();
     }
@@ -507,7 +942,13 @@
       const project = getProjectById(projectId);
       const field = getFieldById(forkId, fieldId);
       if (!project || !field) return;
+      const previousValue = project.forkData[forkId].fieldValues[fieldId];
       project.forkData[forkId].fieldValues[fieldId] = field.type === 'date' ? normalizeDateValue(value) : value;
+      if (shouldRender !== false && previousValue !== project.forkData[forkId].fieldValues[fieldId]) {
+        const fork = getForkById(forkId);
+        appendProjectActivity(project, buildActivityMessage(fork ? fork.name : 'PROJECT', field.label + ' updated to ' + (project.forkData[forkId].fieldValues[fieldId] || 'blank')), 'fork-field:' + forkId + ':' + fieldId);
+      }
+      touchProject(project);
       saveState();
       if (shouldRender !== false) render();
     }
@@ -520,6 +961,7 @@
       fork.steps.forEach(function(step) {
         project.forkData[forkId].stepStatus[step.id] = value;
       });
+      touchProject(project);
       saveState();
       closeModal();
     }
@@ -570,6 +1012,110 @@
       activeModal = 'customize';
       modalData = {};
       render();
+    }
+
+    function setProjectSearchQuery(value) {
+      projectSearchQuery = value || '';
+      render();
+    }
+
+    function isInteractiveElement(target) {
+      return !!(target && target.closest('input, button, label, select, textarea, a'));
+    }
+
+    function clearProjectDragClasses() {
+      document.querySelectorAll('[data-project-card]').forEach(function(card) {
+        card.classList.remove('project-dragging', 'project-drop-before', 'project-drop-after');
+      });
+    }
+
+    function getProjectDropPosition(element, clientY) {
+      const rect = element.getBoundingClientRect();
+      return clientY >= rect.top + rect.height / 2 ? 'after' : 'before';
+    }
+
+    function moveProject(draggedProjectId, targetProjectId, position) {
+      const fromIndex = projects.findIndex(function(project) { return project.id === draggedProjectId; });
+      const targetIndex = projects.findIndex(function(project) { return project.id === targetProjectId; });
+      if (fromIndex === -1 || targetIndex === -1 || draggedProjectId === targetProjectId) return;
+
+      const movedProject = projects.splice(fromIndex, 1)[0];
+      let insertAt = projects.findIndex(function(project) { return project.id === targetProjectId; });
+      if (position === 'after') insertAt += 1;
+      projects.splice(insertAt, 0, movedProject);
+      saveState();
+      render();
+    }
+
+    function handleProjectHeaderClick(projectId) {
+      if (dragState.justDragged) {
+        dragState.justDragged = false;
+        return;
+      }
+      toggleExpand(projectId);
+    }
+
+    function startProjectDrag(event, projectId) {
+      if (isInteractiveElement(event.target)) {
+        event.preventDefault();
+        return false;
+      }
+      dragState.draggedProjectId = projectId;
+      dragState.dropTargetId = null;
+      dragState.dropPosition = 'before';
+      dragState.justDragged = true;
+      clearProjectDragClasses();
+      const card = event.currentTarget.closest('[data-project-card]');
+      if (card) card.classList.add('project-dragging');
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', projectId);
+      }
+      return true;
+    }
+
+    function handleProjectDragOver(event, projectId) {
+      if (!dragState.draggedProjectId) return;
+      event.preventDefault();
+      if (dragState.draggedProjectId === projectId) return;
+
+      const card = event.currentTarget.closest('[data-project-card]');
+      if (!card) return;
+
+      const nextPosition = getProjectDropPosition(card, event.clientY);
+      if (dragState.dropTargetId === projectId && dragState.dropPosition === nextPosition) return;
+
+      clearProjectDragClasses();
+      const draggedCard = document.querySelector('[data-project-card="' + dragState.draggedProjectId + '"]');
+      if (draggedCard) draggedCard.classList.add('project-dragging');
+      card.classList.add(nextPosition === 'after' ? 'project-drop-after' : 'project-drop-before');
+      dragState.dropTargetId = projectId;
+      dragState.dropPosition = nextPosition;
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    }
+
+    function endProjectDrag() {
+      dragState.draggedProjectId = null;
+      dragState.dropTargetId = null;
+      dragState.dropPosition = 'before';
+      clearProjectDragClasses();
+      window.setTimeout(function() {
+        dragState.justDragged = false;
+      }, 0);
+    }
+
+    function handleProjectDrop(event, projectId) {
+      if (!dragState.draggedProjectId) return;
+      event.preventDefault();
+      const draggedProjectId = dragState.draggedProjectId;
+      const card = event.currentTarget.closest('[data-project-card]');
+      const dropPosition = dragState.dropTargetId === projectId && dragState.dropPosition
+        ? dragState.dropPosition
+        : (card ? getProjectDropPosition(card, event.clientY) : 'before');
+      endProjectDrag();
+      if (draggedProjectId !== projectId) {
+        moveProject(draggedProjectId, projectId, dropPosition);
+      }
     }
 
     function closeModal() {
@@ -722,7 +1268,7 @@
 
     function downloadDataJson() {
       playSound('pop');
-      const payload = { version: 2, config: config, projects: projects };
+      const payload = { version: 4, config: config, workspaceConfigs: workspaceConfigs, workspaces: workspaces, activeWorkspaceId: activeWorkspaceId, projects: projects };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -744,12 +1290,27 @@
         let nextProjects = [];
         if (Array.isArray(parsed)) {
           nextProjects = parsed.map(function(item) {
-            return item && item.forkData ? syncProjectToConfig(item, nextConfig) : syncProjectToConfig(migrateLegacyProject(item), nextConfig);
+            const normalizedItem = item && item.forkData ? item : migrateLegacyProject(item);
+            return syncProjectToConfig(normalizedItem, getConfigForWorkspace(normalizedItem.workspaceId || activeWorkspaceId), workspaces);
           });
         } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.projects)) {
           nextConfig = parsed.config && Array.isArray(parsed.config.forks) ? normalizeConfig(parsed.config) : nextConfig;
+          const nextWorkspaces = normalizeWorkspaces(parsed.workspaces);
+          workspaces = nextWorkspaces;
+          activeWorkspaceId = nextWorkspaces.some(function(workspace) { return workspace.id === parsed.activeWorkspaceId; }) ? parsed.activeWorkspaceId : nextWorkspaces[0].id;
+          workspaceConfigs = parsed.workspaceConfigs && typeof parsed.workspaceConfigs === 'object'
+            ? (function() {
+                const importedConfigs = {};
+                nextWorkspaces.forEach(function(workspace, index) {
+                  importedConfigs[workspace.id] = normalizeConfig(parsed.workspaceConfigs[workspace.id] || (index === 0 ? nextConfig : createDefaultConfig()));
+                });
+                return importedConfigs;
+              })()
+            : loadWorkspaceConfigs(nextWorkspaces, nextConfig);
+          nextConfig = getConfigForWorkspace(activeWorkspaceId);
           nextProjects = parsed.projects.map(function(item) {
-            return item && item.forkData ? syncProjectToConfig(item, nextConfig) : syncProjectToConfig(migrateLegacyProject(item), nextConfig);
+            const normalizedItem = item && item.forkData ? item : migrateLegacyProject(item);
+            return syncProjectToConfig(normalizedItem, getConfigForWorkspace(normalizedItem.workspaceId || activeWorkspaceId), nextWorkspaces);
           });
         } else {
           throw new Error('Expected an exported workflow file.');
@@ -794,9 +1355,9 @@
 
     function renderDateChip(projectId, field, value, label) {
       return `
-        <label class="relative flex min-w-[160px] items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-3.5 py-2.5 cursor-pointer overflow-hidden">
-          <span class="text-[10px] font-mono uppercase tracking-[0.3em] text-zinc-500">${label}</span>
-          <span class="text-sm font-semibold text-indigo-200">${escapeHTML(formatDateDisplay(value))}</span>
+        <label class="relative flex min-w-[132px] items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2 cursor-pointer overflow-hidden">
+          <span class="text-[9px] font-mono uppercase tracking-[0.24em] text-zinc-500">${label}</span>
+          <span class="text-xs font-semibold text-indigo-200 sm:text-sm">${escapeHTML(formatDateDisplay(value))}</span>
           <input
             type="date"
             value="${escapeHTML(normalizeDateValue(value))}"
@@ -895,19 +1456,62 @@
       `;
     }
 
-    function renderEmptyState() {
+    function renderEmptyState(title, body) {
       return `
-        <div class="print-hidden mt-10 flex flex-col items-center justify-center px-4 py-32 text-center fade-in">
+        <div class="print-hidden mt-6 flex flex-col items-center justify-center rounded-[2rem] border border-dashed border-zinc-800 bg-zinc-950/30 px-4 py-20 text-center fade-in">
           <div class="mb-6 rounded-[2rem] border border-zinc-800 bg-zinc-900/85 p-6 shadow-[0_0_45px_rgba(79,70,229,0.08)]">
             ${renderBrandMark('w-16 h-16')}
           </div>
-          <h2 class="mb-3 text-3xl font-bold text-zinc-100">No Active Projects</h2>
-          <p class="max-w-lg text-sm leading-6 text-zinc-500">Create your first project, then customize forks, steps, and fields whenever the workflow changes.</p>
+          <h2 class="mb-3 text-2xl font-bold text-zinc-100">${escapeHTML(title || 'No Projects Yet')}</h2>
+          <p class="max-w-lg text-sm leading-6 text-zinc-500">${escapeHTML(body || 'Create your first project, then customize forks, steps, and fields whenever the workflow changes.')}</p>
           <button onclick="addProject()" class="mt-8 flex items-center gap-2 rounded-2xl bg-zinc-100 px-8 py-3.5 font-bold text-zinc-950 shadow-xl transition-all hover:bg-white active:scale-95">
             <i data-lucide="plus" class="w-5 h-5"></i>
             Start First Project
           </button>
         </div>
+      `;
+    }
+
+    function renderWorkspacePanel() {
+      const workspaceProjects = getWorkspaceOverviewProjects();
+      const activeCount = workspaceProjects.filter(function(project) { return !project.archived; }).length;
+      const archivedCount = workspaceProjects.filter(function(project) { return project.archived; }).length;
+
+      return `
+        <section class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="activeModal='workspacePanel'; render()" class="flex items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-zinc-700 hover:text-white">
+              <i data-lucide="briefcase-business" class="w-4 h-4"></i>
+              <span>${escapeHTML(getWorkspaceById(activeWorkspaceId).name)}</span>
+              <span class="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-mono">${workspaceProjects.length}</span>
+            </button>
+            <button onclick="activeModal='overview'; render()" class="flex items-center gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3 text-sm font-semibold text-zinc-200 hover:border-zinc-700 hover:text-white">
+              <i data-lucide="layout-list" class="w-4 h-4"></i>
+              <span>Overview</span>
+              <span class="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-mono">${activeCount}/${archivedCount}</span>
+            </button>
+          </div>
+          <div class="relative flex-1">
+            <i data-lucide="search" class="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500"></i>
+            <input id="projectSearchInput" type="text" value="${escapeHTML(projectSearchQuery)}" oninput="setProjectSearchQuery(this.value)" placeholder="Quick search project title..." class="w-full rounded-2xl border border-zinc-800 bg-zinc-950/80 py-3 pl-11 pr-11 text-sm font-medium text-zinc-100 outline-none transition-colors focus:border-indigo-500" />
+            ${projectSearchQuery ? '<button onclick="setProjectSearchQuery(\'\')" class="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-2 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"><i data-lucide="x" class="w-4 h-4"></i></button>' : ''}
+          </div>
+        </section>
+      `;
+    }
+
+    function renderProjectSection(title, description, projectList, emptyMessage) {
+      return `
+        <section class="mb-8">
+          <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 class="text-2xl font-bold text-zinc-100">${escapeHTML(title)}</h2>
+              <p class="mt-1 text-sm text-zinc-500">${escapeHTML(description)}</p>
+            </div>
+            <div class="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-500">${projectList.length} project${projectList.length === 1 ? '' : 's'}</div>
+          </div>
+          ${projectList.length ? projectList.map(renderProject).join('') : '<div class="rounded-[1.8rem] border border-dashed border-zinc-800 bg-zinc-950/30 px-6 py-10 text-center text-sm text-zinc-500">' + escapeHTML(emptyMessage) + '</div>'}
+        </section>
       `;
     }
 
@@ -918,6 +1522,27 @@
       const forkStatuses = config.forks.map(function(fork) {
         return { fork: fork, status: getForkStatus(project, fork) };
       });
+      const progress = getProgressStats(project);
+      const attachmentItems = project.attachments.length ? project.attachments.map(function(attachment) {
+        const isLink = /^https?:\/\//i.test(attachment.url);
+        const body = isLink
+          ? '<a href="' + escapeHTML(attachment.url) + '" target="_blank" rel="noreferrer" class="truncate text-sm font-semibold text-indigo-200 hover:text-indigo-100">' + escapeHTML(attachment.label) + '</a>'
+          : '<div class="truncate text-sm font-semibold text-zinc-200">' + escapeHTML(attachment.label) + '</div>';
+        return `
+          <div class="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2.5">
+            <div class="min-w-0">
+              ${body}
+              <div class="mt-1 truncate text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-500">${escapeHTML(attachment.url)}</div>
+            </div>
+            <div class="flex items-center gap-1">
+              ${isLink ? '<a href="' + escapeHTML(attachment.url) + '" target="_blank" rel="noreferrer" onclick="event.stopPropagation()" class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-800 hover:text-indigo-200"><i data-lucide="external-link" class="w-4 h-4"></i></a>' : ''}
+              <button onclick="event.stopPropagation(); removeProjectAttachment('${project.id}', '${attachment.id}')" class="rounded-lg p-2 text-zinc-500 hover:bg-red-950/50 hover:text-red-400">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('') : '<div class="rounded-xl border border-dashed border-zinc-800 px-4 py-6 text-center text-sm text-zinc-500">Add links or file references for scripts, assets, and docs.</div>';
       const allDone = forkStatuses.length > 0 && forkStatuses.every(function(item) {
         return item.status === 'Done';
       });
@@ -963,23 +1588,62 @@
             <div class="p-4 sm:p-6">
               <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">${stepsHtml}</div>
               ${fieldsHtml}
+              <div class="mt-8 grid gap-4 xl:grid-cols-2">
+                <div class="rounded-[1.5rem] border border-zinc-800 bg-zinc-950/50 p-4">
+                  <div class="mb-3 flex items-center justify-between">
+                    <h4 class="text-sm font-bold text-zinc-100">Notes</h4>
+                    <span class="text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-500">Edited ${escapeHTML(formatRelativeTime(project.lastEditedAt))}</span>
+                  </div>
+                  <textarea
+                    onclick="event.stopPropagation()"
+                    oninput="updateProjectNotes('${project.id}', this.value, false)"
+                    onchange="updateProjectNotes('${project.id}', this.value)"
+                    placeholder="Comments, blockers, next steps..."
+                    class="min-h-[120px] w-full resize-y rounded-2xl border border-zinc-800 bg-zinc-900/70 px-4 py-3 text-sm text-zinc-200 outline-none transition-colors focus:border-indigo-500"
+                  >${escapeHTML(project.notes)}</textarea>
+                </div>
+                <div class="rounded-[1.5rem] border border-zinc-800 bg-zinc-950/50 p-4">
+                  <div class="mb-3 flex items-center justify-between gap-3">
+                    <h4 class="text-sm font-bold text-zinc-100">Attachments</h4>
+                    <button onclick="event.stopPropagation(); addProjectAttachment('${project.id}')" class="rounded-xl bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20">Add Attachment</button>
+                  </div>
+                  <div class="space-y-2">${attachmentItems}</div>
+                </div>
+              </div>
             </div>
           </div>
         `;
       }
 
       return `
-        <div class="relative mb-5 overflow-hidden rounded-[2rem] border transition-all duration-500 ${allDone ? 'border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.14)]' : isExpanded ? 'border-indigo-500/30 shadow-[0_8px_30px_rgba(99,102,241,0.1)]' : 'border-zinc-800 hover:border-zinc-700'} bg-[#121214] print-hidden">
+        <div
+          data-project-card="${project.id}"
+          class="relative mb-4 overflow-hidden rounded-[1.7rem] border transition-all duration-500 ${allDone ? 'border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.14)]' : isExpanded ? 'border-indigo-500/30 shadow-[0_8px_30px_rgba(99,102,241,0.1)]' : 'border-zinc-800 hover:border-zinc-700'} bg-[#121214] print-hidden"
+          ondragover="handleProjectDragOver(event, '${project.id}')"
+          ondrop="handleProjectDrop(event, '${project.id}')"
+        >
           ${allDone ? '<div class="pointer-events-none absolute inset-0 bg-emerald-500/5"></div>' : ''}
-          <div class="relative z-10 flex cursor-pointer flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" onclick="toggleExpand('${project.id}')">
-            <div class="flex flex-1 flex-col gap-3">
-              <div class="flex items-start gap-4">
-                <div class="mt-1 flex flex-wrap gap-1.5" title="Fork progress">
-                  ${forkStatuses.map(function(item) {
-                    return `<div class="h-3 w-3 rounded-sm border transition-colors duration-500 ${getBoxStyle(item.status)}" title="${escapeHTML(item.fork.name)}"></div>`;
-                  }).join('')}
+          <div
+            class="relative z-10 flex cursor-pointer flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:p-4"
+            draggable="true"
+            ondragstart="startProjectDrag(event, '${project.id}')"
+            ondragend="endProjectDrag()"
+            onclick="handleProjectHeaderClick('${project.id}')"
+            title="Drag to reorder this project"
+          >
+            <div class="flex min-w-0 flex-1 flex-col gap-2.5">
+              <div class="flex items-start gap-3">
+                <div class="mt-0.5 flex flex-col items-center gap-2 text-zinc-500">
+                  <div class="flex flex-wrap gap-1" title="Fork progress">
+                    ${forkStatuses.map(function(item) {
+                      return `<div class="h-2.5 w-2.5 rounded-[4px] border transition-colors duration-500 ${getBoxStyle(item.status)}" title="${escapeHTML(item.fork.name)}"></div>`;
+                    }).join('')}
+                  </div>
+                  <div class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-1.5 text-zinc-500">
+                    <i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i>
+                  </div>
                 </div>
-                <div class="flex-1">
+                <div class="min-w-0 flex-1">
                   <input
                     type="text"
                     value="${escapeHTML(project.topic)}"
@@ -987,21 +1651,31 @@
                     oninput="updateProjectValue('${project.id}', 'topic', this.value, false)"
                     onchange="updateProjectValue('${project.id}', 'topic', this.value)"
                     placeholder="Enter project title..."
-                    class="w-full border-b border-transparent bg-transparent py-1 text-xl font-bold text-zinc-100 outline-none transition-colors placeholder:text-zinc-700 hover:border-zinc-700 focus:border-indigo-500 sm:max-w-xl"
+                    class="w-full border-b border-transparent bg-transparent py-0.5 text-lg font-bold text-zinc-100 outline-none transition-colors placeholder:text-zinc-700 hover:border-zinc-700 focus:border-indigo-500 sm:max-w-xl sm:text-[1.15rem]"
                   />
-                  <div class="mt-3 flex flex-wrap gap-2.5" onclick="event.stopPropagation()">
-                    ${renderDateChip(project.id, 'workingDate', project.workingDate, 'WK')}
-                    ${renderDateChip(project.id, 'uploadDate', project.uploadDate, 'UP')}
+                  <div class="mt-2 flex items-center gap-3 text-[11px] font-semibold text-zinc-400" onclick="event.stopPropagation()">
+                    <span>${progress.percent}% complete</span>
+                    <span>${progress.done}/${progress.total} tasks</span>
+                    <span>Edited ${escapeHTML(formatRelativeTime(project.lastEditedAt))}</span>
                   </div>
                 </div>
               </div>
             </div>
-            <div class="flex items-center gap-2 self-end sm:self-auto">
-              <button onclick="event.stopPropagation(); openDeleteModal('${project.id}')" class="rounded-xl p-3 text-zinc-600 transition-colors hover:bg-red-950/50 hover:text-red-400">
+            <div class="flex items-center gap-1.5 self-end sm:self-auto">
+              <button onclick="event.stopPropagation(); openProjectLog('${project.id}')" class="rounded-lg p-2.5 text-zinc-600 transition-colors hover:bg-zinc-800 hover:text-cyan-300">
+                <i data-lucide="scroll-text" class="w-4 h-4"></i>
+              </button>
+              <button onclick="event.stopPropagation(); toggleProjectPinned('${project.id}')" class="rounded-lg p-2.5 transition-colors ${project.pinned ? 'text-amber-300 hover:bg-amber-500/10' : 'text-zinc-600 hover:bg-zinc-800 hover:text-amber-300'}">
+                <i data-lucide="star" class="w-4 h-4"></i>
+              </button>
+              <button onclick="event.stopPropagation(); toggleProjectArchived('${project.id}')" class="rounded-lg p-2.5 transition-colors ${project.archived ? 'text-cyan-300 hover:bg-cyan-500/10' : 'text-zinc-600 hover:bg-zinc-800 hover:text-cyan-300'}">
+                <i data-lucide="archive" class="w-4 h-4"></i>
+              </button>
+              <button onclick="event.stopPropagation(); openDeleteModal('${project.id}')" class="rounded-lg p-2.5 text-zinc-600 transition-colors hover:bg-red-950/50 hover:text-red-400">
                 <i data-lucide="trash-2" class="w-4 h-4"></i>
               </button>
-              <div class="rounded-xl bg-zinc-800/40 p-3 text-zinc-400 transition-colors hover:text-white">
-                <i data-lucide="${isExpanded ? 'slash' : 'plus'}" class="w-5 h-5 ${isExpanded ? 'rotate-90' : ''}"></i>
+              <div class="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2.5 text-zinc-400 transition-colors hover:text-white">
+                <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i>
               </div>
             </div>
           </div>
@@ -1070,6 +1744,35 @@
             <div class="flex justify-end gap-3">
               <button onclick="closeModal()" class="rounded-xl px-5 py-2.5 text-sm font-bold text-zinc-300 hover:bg-zinc-800">Cancel</button>
               <button onclick="deleteProject()" class="rounded-xl border border-red-500/50 bg-red-500/10 px-5 py-2.5 text-sm font-bold text-red-500 hover:bg-red-500 hover:text-white">Delete</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderLogModal() {
+      const project = getProjectById(modalData.projectId);
+      const entries = project && Array.isArray(project.activityLog) ? project.activityLog : [];
+      const entriesHtml = entries.length ? entries.map(function(entry) {
+        return `
+          <div class="rounded-2xl border border-zinc-800 bg-zinc-950/70 px-4 py-3">
+            <div class="text-sm font-medium text-zinc-200">${escapeHTML(entry.message)}</div>
+            <div class="mt-1 text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-500">${escapeHTML(formatActivityTimestamp(entry.timestamp))}</div>
+          </div>
+        `;
+      }).join('') : '<div class="rounded-2xl border border-dashed border-zinc-800 px-4 py-10 text-center text-sm text-zinc-500">No activity recorded yet.</div>';
+      return `
+        <div class="fixed inset-0 z-[100] bg-black/75 p-4 backdrop-blur-md fade-in" onclick="closeModal()">
+          <div class="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[2rem] border border-zinc-800 bg-[#121214] shadow-2xl zoom-in" onclick="event.stopPropagation()">
+            <div class="flex items-start justify-between gap-4 border-b border-zinc-800 px-6 py-5">
+              <div>
+                <h3 class="text-2xl font-bold text-white">Project Log</h3>
+                <p class="mt-1 text-sm text-zinc-500">${escapeHTML(project && project.topic ? project.topic : 'Untitled Project')}</p>
+              </div>
+              <button onclick="closeModal()" class="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800">Close</button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 py-6">
+              <div class="space-y-3">${entriesHtml}</div>
             </div>
           </div>
         </div>
@@ -1151,7 +1854,7 @@
           <div class="mx-auto flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-zinc-800 bg-[#121214] shadow-2xl zoom-in" onclick="event.stopPropagation()">
             <div class="flex items-start justify-between gap-4 border-b border-zinc-800 px-6 py-5">
               <div>
-                <h3 class="text-2xl font-bold text-white">Customize WorkFlow</h3>
+                <h3 class="text-2xl font-bold text-white">Customize ${escapeHTML(getWorkspaceById(activeWorkspaceId).name)}</h3>
                 <p class="mt-1 max-w-2xl text-sm leading-6 text-zinc-500">Add or remove forks, reorder them, rename steps, and define the extra fields each fork needs. These changes apply to every project and are included in downloads.</p>
               </div>
               <div class="flex items-center gap-3">
@@ -1159,8 +1862,99 @@
                 <button onclick="closeModal()" class="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800">Close</button>
               </div>
             </div>
-            <div class="flex-1 overflow-y-auto px-6 py-6">
+            <div id="customizeModalScroll" class="flex-1 overflow-y-auto px-6 py-6">
               <div class="space-y-5">${forksHtml}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderWorkspaceManagerModal() {
+      return `
+        <div class="fixed inset-0 z-[100] bg-black/75 p-4 backdrop-blur-md fade-in" onclick="closeModal()">
+          <div class="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] border border-zinc-800 bg-[#121214] shadow-2xl zoom-in" onclick="event.stopPropagation()">
+            <div class="flex items-start justify-between gap-4 border-b border-zinc-800 px-6 py-5">
+              <div>
+                <h3 class="text-2xl font-bold text-white">Workspaces</h3>
+                <p class="mt-1 text-sm text-zinc-500">Switch, create, rename, or delete workspaces without taking over the main screen.</p>
+              </div>
+              <div class="flex items-center gap-3">
+                <button onclick="addWorkspace()" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-500">Add Workspace</button>
+                <button onclick="closeModal()" class="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800">Close</button>
+              </div>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 py-6">
+              <div class="grid gap-4 md:grid-cols-2">
+                ${workspaces.map(function(workspace) {
+                  const isActive = workspace.id === activeWorkspaceId;
+                  const workspaceCount = getWorkspaceProjects(workspace.id).length;
+                  return `
+                    <div class="rounded-[1.6rem] border ${isActive ? 'border-indigo-500/50 bg-indigo-500/8' : 'border-zinc-800 bg-zinc-950/50'} p-4">
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <h4 class="text-lg font-bold ${isActive ? 'text-indigo-200' : 'text-zinc-100'}">${escapeHTML(workspace.name)}</h4>
+                          <p class="mt-1 text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-500">${workspaceCount} project${workspaceCount === 1 ? '' : 's'}</p>
+                        </div>
+                        ${isActive ? '<span class="rounded-full border border-indigo-500/40 bg-indigo-500/12 px-3 py-1 text-[10px] font-mono uppercase tracking-[0.2em] text-indigo-200">Active</span>' : ''}
+                      </div>
+                      <div class="mt-4 flex flex-wrap gap-2">
+                        <button onclick="setActiveWorkspace('${workspace.id}')" class="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold ${isActive ? 'text-indigo-200 border-indigo-500/40' : 'text-zinc-300 hover:bg-zinc-800'}">Open</button>
+                        ${isActive ? '<button onclick="renameActiveWorkspace()" class="rounded-xl border border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800">Rename</button>' : ''}
+                        ${isActive ? '<button onclick="deleteActiveWorkspace()" class="rounded-xl border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs font-semibold text-red-300 hover:bg-red-900/50 ' + (workspaces.length === 1 ? 'opacity-40 pointer-events-none' : '') + '">Delete</button>' : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderOverviewModal() {
+      const workspaceProjects = getWorkspaceOverviewProjects();
+      const activeCount = workspaceProjects.filter(function(project) { return !project.archived; }).length;
+      const archivedCount = workspaceProjects.filter(function(project) { return project.archived; }).length;
+      const pinnedCount = workspaceProjects.filter(function(project) { return project.pinned; }).length;
+      const overviewItems = workspaceProjects.length ? workspaceProjects.map(function(project) {
+        const progress = getProgressStats(project);
+        return `
+          <div class="flex items-center justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/60 px-4 py-3">
+            <div class="min-w-0">
+              <div class="truncate text-sm font-semibold text-zinc-100">${escapeHTML(project.topic || 'Untitled Project')}</div>
+              <div class="mt-1 text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-500">${project.archived ? 'Archived' : 'Active'}${project.pinned ? ' | Pinned' : ''}</div>
+            </div>
+            <div class="min-w-[88px] text-right">
+              <div class="text-sm font-bold text-indigo-200">${progress.percent}%</div>
+              <div class="mt-1 h-1.5 rounded-full bg-zinc-800">
+                <div class="h-full rounded-full bg-gradient-to-r from-indigo-400 to-cyan-400" style="width:${progress.percent}%"></div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('') : '<div class="rounded-2xl border border-dashed border-zinc-800 px-4 py-10 text-center text-sm text-zinc-500">No projects in this workspace yet.</div>';
+      return `
+        <div class="fixed inset-0 z-[100] bg-black/75 p-4 backdrop-blur-md fade-in" onclick="closeModal()">
+          <div class="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] border border-zinc-800 bg-[#121214] shadow-2xl zoom-in" onclick="event.stopPropagation()">
+            <div class="flex items-start justify-between gap-4 border-b border-zinc-800 px-6 py-5">
+              <div>
+                <h3 class="text-2xl font-bold text-white">Quick Overview</h3>
+                <p class="mt-1 text-sm text-zinc-500">${escapeHTML(getWorkspaceById(activeWorkspaceId).name)} workspace snapshot.</p>
+              </div>
+              <button onclick="closeModal()" class="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800">Close</button>
+            </div>
+            <div class="border-b border-zinc-800 px-6 py-4">
+              <div class="grid gap-3 sm:grid-cols-4">
+                <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 px-4 py-3"><div class="text-[10px] font-mono uppercase tracking-[0.26em] text-zinc-500">Total</div><div class="mt-2 text-2xl font-bold text-zinc-100">${workspaceProjects.length}</div></div>
+                <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 px-4 py-3"><div class="text-[10px] font-mono uppercase tracking-[0.26em] text-zinc-500">Active</div><div class="mt-2 text-2xl font-bold text-zinc-100">${activeCount}</div></div>
+                <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 px-4 py-3"><div class="text-[10px] font-mono uppercase tracking-[0.26em] text-zinc-500">Pinned</div><div class="mt-2 text-2xl font-bold text-zinc-100">${pinnedCount}</div></div>
+                <div class="rounded-2xl border border-zinc-800 bg-zinc-950/60 px-4 py-3"><div class="text-[10px] font-mono uppercase tracking-[0.26em] text-zinc-500">Archived</div><div class="mt-2 text-2xl font-bold text-zinc-100">${archivedCount}</div></div>
+              </div>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 py-6">
+              <div class="space-y-2">${overviewItems}</div>
             </div>
           </div>
         </div>
@@ -1172,6 +1966,9 @@
       if (activeModal === 'status') return renderStatusModal();
       if (activeModal === 'bulk') return renderBulkModal();
       if (activeModal === 'delete') return renderDeleteModal();
+      if (activeModal === 'log') return renderLogModal();
+      if (activeModal === 'workspacePanel') return renderWorkspaceManagerModal();
+      if (activeModal === 'overview') return renderOverviewModal();
       if (activeModal === 'customize') return renderCustomizeModal();
       return '';
     }
@@ -1208,16 +2005,19 @@
     }
 
     function renderPrintView() {
+      const printableProjects = getWorkspaceProjects(activeWorkspaceId).filter(function(project) {
+        return !project.archived;
+      });
       return `
         <div class="print-only mx-auto max-w-5xl py-8">
           <div class="mb-10 flex items-center gap-4 border-b-2 border-indigo-600 pb-6">
             <div class="rounded-2xl bg-indigo-600 p-3 text-white">${renderBrandMark('w-10 h-10')}</div>
             <div>
               <h1 class="text-3xl font-black tracking-tight text-gray-900">${APP_TITLE}</h1>
-              <p class="mt-1 text-sm font-mono font-bold uppercase tracking-widest text-indigo-600">Custom Workflow Export</p>
+              <p class="mt-1 text-sm font-mono font-bold uppercase tracking-widest text-indigo-600">${escapeHTML(getWorkspaceById(activeWorkspaceId).name)} Workspace Export</p>
             </div>
           </div>
-          ${projects.map(function(project) {
+          ${printableProjects.map(function(project) {
             return `
               <div class="page-break-inside-avoid mb-12 rounded-2xl border border-gray-100 bg-gray-50/50 p-6">
                 <div class="mb-6 flex items-end justify-between border-b border-gray-300 pb-4">
@@ -1237,16 +2037,50 @@
 
     function render() {
       ensureActiveTabs();
+      const searchWasFocused = document.activeElement && document.activeElement.id === 'projectSearchInput'
+        ? {
+            start: document.activeElement.selectionStart,
+            end: document.activeElement.selectionEnd
+          }
+        : null;
+      const previousCustomizeScroll = activeModal === 'customize'
+        ? (document.getElementById('customizeModalScroll') ? document.getElementById('customizeModalScroll').scrollTop : customizeScrollTop)
+        : customizeScrollTop;
+      const activeProjects = getVisibleProjects({ archived: false });
+      const archivedProjects = getVisibleProjects({ archived: true });
+      const currentWorkspaceProjects = getWorkspaceProjects(activeWorkspaceId);
       const appDiv = document.getElementById('app');
       let html = '';
       html += renderHeader();
       html += '<main class="print-hidden relative z-10 mx-auto max-w-7xl p-4 pb-20 md:p-8">';
-      html += projects.length ? projects.map(renderProject).join('') : renderEmptyState();
+      html += renderWorkspacePanel();
+      if (!currentWorkspaceProjects.length) {
+        html += renderEmptyState('No Projects In This Workspace', 'Create a project in this workspace or switch to another workspace from the tabs above.');
+      } else if (!activeProjects.length && !archivedProjects.length) {
+        html += renderEmptyState('No Search Matches', 'Try a different search term or clear the quick search to see all projects again.');
+      } else {
+        html += renderProjectSection('Active Projects', 'Pinned projects stay at the top. Drag the header to reorder within the list.', activeProjects, 'No active projects here right now.');
+        html += renderProjectSection('Archived Projects', 'Completed or paused work can live here without cluttering the active board.', archivedProjects, 'No archived projects in this workspace.');
+      }
       html += '</main>';
       html += renderModals();
       html += renderPrintView();
       appDiv.innerHTML = html;
       lucide.createIcons();
+      if (searchWasFocused) {
+        const searchInput = document.getElementById('projectSearchInput');
+        if (searchInput) {
+          searchInput.focus();
+          if (typeof searchWasFocused.start === 'number' && typeof searchWasFocused.end === 'number') {
+            searchInput.setSelectionRange(searchWasFocused.start, searchWasFocused.end);
+          }
+        }
+      }
+      if (activeModal === 'customize') {
+        customizeScrollTop = previousCustomizeScroll || 0;
+        const customizeContainer = document.getElementById('customizeModalScroll');
+        if (customizeContainer) customizeContainer.scrollTop = customizeScrollTop;
+      }
     }
 
     window.addEventListener('load', function() {
