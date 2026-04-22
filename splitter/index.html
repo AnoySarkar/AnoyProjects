@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>Smart Prompt Splitter</title>
-    <meta name="theme-color" content="#2563eb">
+    <meta name="theme-color" content="#020617">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Prompt Splitter">
     <meta name="description" content="Split long scripts into clean, copyable prompt sections with mobile-friendly controls.">
     <link rel="manifest" href="./manifest.webmanifest">
@@ -20,10 +20,21 @@
 
     <style>
         :root {
-            color-scheme: light;
-            --page-top: #f8fbff;
-            --page-bottom: #eef4ff;
-            --focus-ring: rgba(37, 99, 235, 0.18);
+            color-scheme: dark;
+            --page-top: #01030a;
+            --page-bottom: #020617;
+            --panel-bg: rgba(4, 10, 22, 0.82);
+            --panel-bg-strong: rgba(3, 8, 18, 0.94);
+            --panel-border: rgba(103, 232, 249, 0.16);
+            --panel-border-strong: rgba(103, 232, 249, 0.34);
+            --text-main: #ecfeff;
+            --text-soft: #c7f7ff;
+            --text-muted: #7dd3fc;
+            --text-dim: #52728a;
+            --accent: #22d3ee;
+            --accent-soft: #67e8f9;
+            --accent-lime: #a3e635;
+            --focus-ring: rgba(34, 211, 238, 0.32);
             --safe-top: env(safe-area-inset-top, 0px);
             --safe-right: env(safe-area-inset-right, 0px);
             --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -41,10 +52,26 @@
             min-height: 100dvh;
             overflow-x: hidden;
             touch-action: manipulation;
+            color: var(--text-main);
+            font-family: "Segoe UI Variable", "Segoe UI", "Bahnschrift", sans-serif;
             background:
-                radial-gradient(circle at top left, rgba(59, 130, 246, 0.15), transparent 28rem),
-                radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 25rem),
+                radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 26rem),
+                radial-gradient(circle at top right, rgba(163, 230, 53, 0.1), transparent 24rem),
+                radial-gradient(circle at bottom center, rgba(34, 211, 238, 0.08), transparent 30rem),
                 linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
+        }
+
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(103, 232, 249, 0.045) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(103, 232, 249, 0.045) 1px, transparent 1px);
+            background-size: 32px 32px;
+            mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 88%);
+            opacity: 0.42;
         }
 
         header,
@@ -101,26 +128,37 @@
         }
 
         .glass-panel {
-            background: rgba(255, 255, 255, 0.86);
+            background: linear-gradient(180deg, rgba(7, 15, 29, 0.9), rgba(4, 10, 22, 0.82));
             backdrop-filter: blur(20px);
-            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+            border-color: var(--panel-border) !important;
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.04),
+                0 20px 48px rgba(0, 0, 0, 0.42),
+                0 0 30px rgba(34, 211, 238, 0.06);
         }
 
         .soft-ring:focus-visible {
             outline: none;
-            box-shadow: 0 0 0 4px var(--focus-ring);
+            box-shadow:
+                0 0 0 2px rgba(2, 6, 23, 0.95),
+                0 0 0 4px var(--focus-ring),
+                0 0 22px rgba(34, 211, 238, 0.16);
         }
 
         .view-pill-active {
-            background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%);
-            color: white;
-            box-shadow: 0 10px 22px rgba(37, 99, 235, 0.18);
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-lime) 100%);
+            color: #041018 !important;
+            box-shadow: 0 0 0 1px rgba(163, 230, 53, 0.22), 0 10px 26px rgba(34, 211, 238, 0.18);
+        }
+
+        .view-pill-idle {
+            color: rgba(199, 247, 255, 0.72);
         }
 
         .copied-shell {
-            border-color: rgba(16, 185, 129, 0.36);
-            background: linear-gradient(180deg, rgba(236, 253, 245, 0.95), rgba(248, 250, 252, 0.94));
-            box-shadow: 0 16px 28px rgba(16, 185, 129, 0.10);
+            border-color: rgba(163, 230, 53, 0.34) !important;
+            background: linear-gradient(180deg, rgba(12, 22, 19, 0.94), rgba(7, 17, 15, 0.94));
+            box-shadow: 0 16px 30px rgba(163, 230, 53, 0.08);
         }
 
         @keyframes bounce-in {
@@ -150,6 +188,180 @@
             white-space: pre-wrap;
             overflow-wrap: anywhere;
             word-break: break-word;
+            color: var(--text-soft);
+        }
+
+        .chrome-btn {
+            min-height: 2.85rem;
+            border: 1px solid rgba(125, 211, 252, 0.16);
+            background: rgba(7, 15, 29, 0.92);
+            color: var(--text-soft);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        .chrome-btn:hover {
+            border-color: rgba(103, 232, 249, 0.34);
+            background: rgba(10, 21, 38, 0.98);
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 0 18px rgba(34, 211, 238, 0.12);
+        }
+
+        .chrome-btn.is-muted {
+            color: rgba(199, 247, 255, 0.58);
+            border-color: rgba(82, 114, 138, 0.28);
+        }
+
+        .neon-primary {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-lime) 100%);
+            border: 1px solid rgba(163, 230, 53, 0.3);
+            color: #03131a;
+            box-shadow:
+                0 12px 24px rgba(34, 211, 238, 0.18),
+                0 0 30px rgba(163, 230, 53, 0.1);
+        }
+
+        .neon-primary:hover {
+            filter: brightness(1.03);
+            box-shadow:
+                0 14px 28px rgba(34, 211, 238, 0.22),
+                0 0 36px rgba(163, 230, 53, 0.12);
+        }
+
+        .metric-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.45rem 0.7rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(103, 232, 249, 0.14);
+            background: rgba(8, 15, 29, 0.84);
+            color: rgba(236, 254, 255, 0.88);
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        .metric-chip i {
+            width: 0.85rem;
+            height: 0.85rem;
+            color: var(--accent-soft);
+        }
+
+        .mini-kicker {
+            color: var(--text-dim);
+            font-size: 0.72rem;
+            letter-spacing: 0.24em;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.3rem 0.55rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(103, 232, 249, 0.14);
+            background: rgba(255, 255, 255, 0.03);
+            color: rgba(199, 247, 255, 0.72);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .status-chip--done {
+            border-color: rgba(163, 230, 53, 0.24);
+            background: rgba(163, 230, 53, 0.08);
+            color: rgba(217, 249, 157, 0.9);
+        }
+
+        .toggle-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.8rem;
+            height: 1.8rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(103, 232, 249, 0.16);
+            background: rgba(255, 255, 255, 0.03);
+            color: rgba(199, 247, 255, 0.76);
+        }
+
+        .meta-chip {
+            display: inline-flex;
+            max-width: 100%;
+            align-items: center;
+            border-radius: 0.85rem;
+            border: 1px solid rgba(34, 211, 238, 0.18);
+            background: rgba(34, 211, 238, 0.08);
+            padding: 0.35rem 0.6rem;
+            color: rgba(165, 243, 252, 0.95);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            word-break: break-all;
+        }
+
+        #toast {
+            background: rgba(3, 10, 22, 0.96);
+            border: 1px solid rgba(103, 232, 249, 0.16);
+            color: var(--text-main);
+        }
+
+        #inputText {
+            color: var(--text-main);
+        }
+
+        #inputText::placeholder {
+            color: rgba(82, 114, 138, 0.9);
+        }
+
+        #settingsModal {
+            background: rgba(1, 4, 10, 0.72);
+            backdrop-filter: blur(10px);
+        }
+
+        #settingsModal input,
+        #settingsModal select {
+            background: rgba(3, 10, 22, 0.92) !important;
+            border-color: rgba(103, 232, 249, 0.16) !important;
+            color: var(--text-main) !important;
+        }
+
+        #settingsModal input::placeholder {
+            color: rgba(82, 114, 138, 0.88);
+        }
+
+        #tabsContainer,
+        #subTabsContainer {
+            background: rgba(5, 11, 22, 0.92);
+            border-color: rgba(103, 232, 249, 0.14) !important;
+        }
+
+        #resultsMeta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.55rem;
+            margin-top: 0.8rem;
+        }
+
+        #emptyState h3,
+        #resultsSummary,
+        #settingsTitle {
+            color: var(--text-main) !important;
+        }
+
+        #emptyState,
+        #copyTabBtn,
+        #resetProgressBtn {
+            border-color: rgba(103, 232, 249, 0.14) !important;
+        }
+
+        #copyTabBtn,
+        #resetProgressBtn {
+            background: rgba(7, 15, 29, 0.92);
+            color: var(--text-soft);
         }
 
         @media (max-width: 640px) {
@@ -166,22 +378,22 @@
         }
     </style>
 </head>
-<body class="min-h-screen text-slate-800 font-sans antialiased">
+<body class="min-h-screen bg-slate-950 text-slate-100 antialiased">
 
     <div id="toast" class="fixed top-4 right-4 z-50 bg-slate-800/95 text-white px-5 py-3 rounded-2xl shadow-2xl items-center gap-2 animate-bounce-in hidden">
         <i data-lucide="check" class="text-green-400 w-[18px] h-[18px]"></i>
         <span id="toastMsg" class="font-medium"></span>
     </div>
 
-    <header class="glass-panel border-b border-white/70 sticky top-0 z-40">
+    <header class="glass-panel sticky top-0 z-40 border-b border-cyan-400/10">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="flex items-center gap-3">
-                <div class="w-11 h-11 rounded-2xl bg-white shadow-lg shadow-slate-200/90 border border-white/90 flex items-center justify-center overflow-hidden">
+                <div class="w-11 h-11 rounded-2xl bg-slate-950/90 shadow-[0_0_24px_rgba(34,211,238,0.12)] border border-cyan-400/20 flex items-center justify-center overflow-hidden">
                     <svg viewBox="0 0 64 64" class="w-8 h-8" aria-hidden="true">
                         <defs>
                             <linearGradient id="logoBg" x1="0%" y1="0%" x2="100%" y2="100%">
-                                <stop offset="0%" stop-color="#2563eb"></stop>
-                                <stop offset="100%" stop-color="#0ea5e9"></stop>
+                                <stop offset="0%" stop-color="#22d3ee"></stop>
+                                <stop offset="100%" stop-color="#a3e635"></stop>
                             </linearGradient>
                         </defs>
                         <rect x="8" y="8" width="48" height="48" rx="14" fill="url(#logoBg)"></rect>
@@ -193,108 +405,114 @@
                     </svg>
                 </div>
                 <div>
-                    <h1 class="text-lg sm:text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-700 to-cyan-600">
-                        Smart Prompt Splitter
+                    <p class="mini-kicker">Neon Splitter</p>
+                    <h1 class="text-lg sm:text-xl font-bold text-cyan-50 tracking-[0.04em]">
+                        Prompt Splitter
                     </h1>
-                    <p class="text-xs sm:text-sm text-slate-500">Track copied progress, batch prompts, and install it like an app.</p>
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full sm:w-auto">
-                <button id="settingsBtn" type="button" aria-label="Open settings" class="soft-ring w-full text-sm font-medium text-slate-700 bg-white/90 hover:bg-white px-4 py-2.5 rounded-full transition-colors border border-slate-200 flex items-center justify-center gap-2 shadow-sm">
+            <div class="grid grid-cols-4 gap-2 w-full sm:w-auto">
+                <button id="settingsBtn" type="button" aria-label="Open rules" title="Rules" class="chrome-btn soft-ring w-full text-sm font-medium px-3 py-2.5 rounded-2xl transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="settings-2" class="w-4 h-4"></i>
-                    Settings
+                    <span class="hidden sm:inline">Rules</span>
                 </button>
-                <button id="soundToggle" type="button" class="soft-ring w-full text-sm font-medium text-slate-700 bg-white/90 hover:bg-white px-4 py-2.5 rounded-full transition-colors border border-slate-200 flex items-center justify-center gap-2 shadow-sm">
+                <button id="soundToggle" type="button" aria-label="Toggle audio" title="Audio" class="chrome-btn soft-ring w-full text-sm font-medium px-3 py-2.5 rounded-2xl transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="volume-2" class="w-4 h-4"></i>
-                    <span id="soundToggleText">Sound On</span>
+                    <span id="soundToggleText" class="hidden sm:inline">Audio</span>
                 </button>
-                <button id="installBtn" type="button" class="soft-ring hidden w-full text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-4 py-2.5 rounded-full transition-colors border border-emerald-200 items-center justify-center gap-2 shadow-sm">
+                <button id="installBtn" type="button" aria-label="Install app" title="Install" class="chrome-btn soft-ring hidden w-full text-sm font-medium px-3 py-2.5 rounded-2xl transition-colors items-center justify-center gap-2">
                     <i data-lucide="download" class="w-4 h-4"></i>
-                    Install App
+                    <span class="hidden sm:inline">Install</span>
                 </button>
-                <button onclick="loadExample()" class="soft-ring w-full text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 px-4 py-2.5 rounded-full transition-colors flex items-center justify-center gap-2 shadow-sm">
+                <button id="exampleBtn" onclick="loadExample()" aria-label="Load demo" title="Demo" class="chrome-btn soft-ring w-full text-sm font-medium px-3 py-2.5 rounded-2xl transition-colors flex items-center justify-center gap-2">
                     <i data-lucide="sparkles" class="w-4 h-4"></i>
-                    Load Example
+                    <span class="hidden sm:inline">Demo</span>
                 </button>
             </div>
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 pb-10">
-        <div class="grid lg:grid-cols-12 gap-4 sm:gap-8">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 pb-10">
+        <div class="grid lg:grid-cols-12 gap-4 sm:gap-5">
 
-            <div class="lg:col-span-5 min-w-0 flex flex-col gap-4 sm:gap-6">
-                <div class="glass-panel rounded-3xl border border-white/70 flex flex-col flex-grow overflow-hidden">
-                    <div class="p-4 border-b border-slate-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="lg:col-span-5 min-w-0 flex flex-col gap-4">
+                <div class="glass-panel rounded-[1.8rem] border flex flex-col flex-grow overflow-hidden">
+                    <div class="p-4 border-b border-cyan-400/10 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div class="flex items-center gap-2">
-                            <i data-lucide="file-text" class="w-5 h-5 text-slate-500"></i>
-                            <h2 class="text-lg font-semibold">Paste Your Script</h2>
+                            <i data-lucide="file-text" class="w-5 h-5 text-cyan-300"></i>
+                            <h2 class="text-base font-semibold text-cyan-50">Script</h2>
                         </div>
 
                         <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                             <input type="file" id="fileUpload" accept=".txt,.docx" class="hidden" onchange="handleFileUpload(event)">
-                            <button onclick="document.getElementById('fileUpload').click()" title="Upload .docx or .txt" class="soft-ring flex items-center justify-center gap-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 hover:text-blue-600 px-3 py-2 rounded-xl transition-colors">
+                            <button id="uploadBtn" onclick="document.getElementById('fileUpload').click()" title="Upload .docx or .txt" class="chrome-btn soft-ring flex items-center justify-center gap-2 text-sm font-medium px-3 py-2 rounded-2xl transition-colors">
                                 <i data-lucide="upload" class="w-4 h-4"></i>
-                                Upload Doc
+                                Add
                             </button>
-                            <button onclick="handleClearAll()" title="Clear All" class="soft-ring p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors justify-self-end sm:justify-self-auto">
+                            <button id="clearBtn" onclick="handleClearAll()" title="Clear" class="chrome-btn soft-ring p-2 rounded-2xl transition-colors justify-self-end sm:justify-self-auto">
                                 <i data-lucide="trash-2" class="w-5 h-5"></i>
                             </button>
                         </div>
                     </div>
 
-                    <textarea id="inputText" placeholder="Paste text or upload a document... (Press Ctrl+Enter to Extract)" class="soft-ring w-full flex-grow min-h-[38vh] sm:min-h-[300px] p-4 sm:p-6 resize-none text-sm text-slate-700 bg-transparent"></textarea>
+                    <textarea id="inputText" placeholder="Paste script" class="soft-ring w-full flex-grow min-h-[38vh] sm:min-h-[300px] p-4 sm:p-5 resize-none text-sm bg-transparent"></textarea>
 
-                    <div class="p-4 border-t border-slate-100 bg-slate-50/80 rounded-b-3xl">
-                        <button onclick="processText()" class="soft-ring w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-2xl shadow-lg shadow-blue-200/70 transition-all flex items-center justify-center gap-2">
-                            <i data-lucide="layout-template" class="w-5 h-5"></i>
-                            Extract &amp; Split
+                    <div class="p-4 border-t border-cyan-400/10 bg-slate-950/20 rounded-b-[1.8rem]">
+                        <button id="processBtn" onclick="processText()" class="neon-primary soft-ring w-full py-3.5 px-4 font-semibold rounded-2xl transition-all flex items-center justify-center gap-2">
+                            <i data-lucide="scissors" class="w-5 h-5"></i>
+                            Split
                         </button>
                     </div>
                 </div>
             </div>
 
             <div class="lg:col-span-7 min-w-0">
-                <div id="emptyState" class="glass-panel border-2 border-dashed border-slate-200 rounded-3xl h-full min-h-[320px] sm:min-h-[400px] flex flex-col items-center justify-center text-slate-400 p-6 sm:p-8 text-center">
-                    <i data-lucide="layout-template" class="w-12 h-12 mb-4 opacity-50"></i>
-                    <h3 class="text-lg font-semibold text-slate-600 mb-2">No Data Extracted Yet</h3>
-                    <p class="max-w-sm">Paste your script or upload a Word doc on the left, define your rules, and click Extract to organize your prompts.</p>
+                <div id="emptyState" class="glass-panel border border-dashed rounded-[1.8rem] h-full min-h-[320px] sm:min-h-[400px] flex flex-col items-center justify-center p-6 text-center">
+                    <i data-lucide="zap" class="w-11 h-11 mb-4 text-cyan-300/70"></i>
+                    <h3 class="text-lg font-semibold">Ready</h3>
                 </div>
 
                 <div id="resultsArea" class="hidden min-w-0 flex-col h-full min-h-[320px] gap-3">
-                    <div class="glass-panel min-w-0 rounded-3xl border border-white/70 p-4 sm:p-5">
+                    <div class="glass-panel min-w-0 rounded-[1.8rem] border p-4">
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                             <div>
-                                <p class="text-xs uppercase tracking-[0.2em] text-slate-400 font-semibold">Results Workspace</p>
-                                <h3 id="resultsSummary" class="text-lg font-semibold text-slate-800 mt-1">0 prompts ready</h3>
-                                <p id="resultsMeta" class="text-sm text-slate-500 mt-1">Extract some prompts to see your copy progress.</p>
+                                <p class="mini-kicker">Workspace</p>
+                                <h3 id="resultsSummary" class="text-lg font-semibold mt-1">0 Prompts</h3>
+                                <div id="resultsMeta" class="mt-3"></div>
                             </div>
 
                             <div class="flex flex-col sm:flex-row gap-2 sm:items-center">
-                                <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 border border-slate-200 w-full sm:w-auto">
-                                    <button id="viewTabsBtn" type="button" class="soft-ring px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0">Tabbed View</button>
-                                    <button id="viewGlobalBtn" type="button" class="soft-ring px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0">Global List</button>
+                                <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-950/50 border border-cyan-400/10 w-full sm:w-auto">
+                                    <button id="viewTabsBtn" type="button" class="soft-ring view-pill-idle px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0 inline-flex items-center justify-center gap-2">
+                                        <i data-lucide="layout-template" class="w-4 h-4"></i>
+                                        <span>Tabs</span>
+                                    </button>
+                                    <button id="viewGlobalBtn" type="button" class="soft-ring view-pill-idle px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0 inline-flex items-center justify-center gap-2">
+                                        <i data-lucide="rows-3" class="w-4 h-4"></i>
+                                        <span>Flow</span>
+                                    </button>
                                 </div>
-                                <button id="resetProgressBtn" type="button" class="soft-ring hidden px-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50">
-                                    Reset Progress
+                                <button id="resetProgressBtn" type="button" class="chrome-btn soft-ring hidden px-4 py-2.5 rounded-2xl text-sm font-medium inline-flex items-center justify-center gap-2">
+                                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                                    Reset
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <div id="tabsContainer" class="flex overflow-x-auto hide-scrollbar bg-white/90 rounded-t-3xl border border-slate-200 border-b-0 snap-x snap-mandatory"></div>
-                    <div id="subTabsContainer" class="flex overflow-x-auto hide-scrollbar bg-slate-50/90 border-x border-slate-200 border-b px-3 sm:px-4 py-3 gap-2 hidden"></div>
+                    <div id="tabsContainer" class="flex overflow-x-auto hide-scrollbar rounded-t-[1.6rem] border border-b-0 snap-x snap-mandatory"></div>
+                    <div id="subTabsContainer" class="flex overflow-x-auto hide-scrollbar border-x border-b px-3 sm:px-4 py-3 gap-2 hidden"></div>
 
-                    <div class="glass-panel min-w-0 border border-slate-200 rounded-3xl flex-grow p-4 sm:p-6">
+                    <div class="glass-panel min-w-0 border rounded-[1.8rem] flex-grow p-4 sm:p-5">
                         <div id="copyTabContainer" class="flex justify-end items-center mb-4 hidden">
-                            <button id="copyTabBtn" class="soft-ring flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm bg-slate-800 text-white hover:bg-slate-700 border border-transparent">
+                            <button id="copyTabBtn" class="chrome-btn soft-ring flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 rounded-2xl text-sm font-medium transition-all">
                                 <span class="copy-tab-icon"><i data-lucide="files" class="w-4 h-4"></i></span>
-                                <span id="copyTabText">Copy Current B-roll</span>
+                                <span id="copyTabText">Copy B-roll</span>
                             </button>
                         </div>
 
-                        <div id="blocksContainer" class="min-w-0 space-y-4 sm:space-y-6"></div>
+                        <div id="blocksContainer" class="min-w-0 space-y-3 sm:space-y-4"></div>
                     </div>
                 </div>
             </div>
@@ -302,50 +520,59 @@
     </main>
 
     <div id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" class="fixed inset-0 z-50 hidden items-end justify-center bg-slate-950/35 p-3 sm:items-center sm:p-6">
-        <div class="glass-panel animate-rise-in w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-[2rem] border border-white/70 shadow-2xl">
-            <div class="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+        <div class="glass-panel animate-rise-in w-full max-w-xl max-h-[90vh] overflow-hidden rounded-[2rem] border shadow-2xl">
+            <div class="flex items-start justify-between gap-4 border-b border-cyan-400/10 px-5 py-4 sm:px-6">
                 <div>
-                    <p class="text-xs uppercase tracking-[0.2em] text-slate-400 font-semibold">Settings</p>
-                    <h2 id="settingsTitle" class="mt-1 text-xl font-semibold text-slate-900">Splitting Rules</h2>
-                    <p class="mt-1 text-sm text-slate-500">Adjust your extraction rules here. Changes save automatically.</p>
+                    <p class="mini-kicker">Controls</p>
+                    <h2 id="settingsTitle" class="mt-1 text-xl font-semibold">Rules</h2>
                 </div>
-                <button id="closeSettingsBtn" type="button" aria-label="Close settings" class="soft-ring inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 hover:text-slate-700">
+                <button id="closeSettingsBtn" type="button" aria-label="Close settings" class="chrome-btn soft-ring inline-flex h-11 w-11 items-center justify-center rounded-2xl">
                     <i data-lucide="x" class="w-5 h-5"></i>
                 </button>
             </div>
 
             <div class="space-y-4 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
                 <div>
-                    <label class="block text-sm font-medium text-slate-600 mb-1">Tab Separation Method</label>
-                    <select id="splitMethod" onchange="toggleMainDelimiter()" class="soft-ring w-full px-4 py-3 bg-slate-50/90 border border-slate-200 rounded-xl transition-all text-sm font-medium">
-                        <option value="smart">Smart Auto-Detect (e.g. "2a", "12", "3b [DONE]")</option>
-                        <option value="keyword">Specific Keyword Splitter</option>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                        <i data-lucide="layout-template" class="w-4 h-4 text-cyan-300"></i>
+                        Tabs
+                    </label>
+                    <select id="splitMethod" onchange="toggleMainDelimiter()" class="soft-ring w-full px-4 py-3 rounded-xl transition-all text-sm font-medium">
+                        <option value="smart">Smart</option>
+                        <option value="keyword">Keyword</option>
                     </select>
-                    <p class="text-xs text-slate-400 mt-1">Smart mode automatically isolates short numbered headings as new tabs.</p>
                 </div>
 
                 <div id="keywordContainer" class="hidden">
-                    <label class="block text-sm font-medium text-slate-600 mb-1">Keyword Splitter</label>
-                    <input type="text" id="mainDelimiter" placeholder="e.g. Video" class="soft-ring w-full px-4 py-3 bg-slate-50/90 border border-slate-200 rounded-xl transition-all">
-                    <p class="text-xs text-slate-400 mt-1">Creates a new tab every time this word appears.</p>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                        <i data-lucide="type" class="w-4 h-4 text-cyan-300"></i>
+                        Split Key
+                    </label>
+                    <input type="text" id="mainDelimiter" placeholder="Video" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-slate-600 mb-1">Content Extractors (Comma separated)</label>
-                    <input type="text" id="subDelimiters" placeholder="e.g. IMAGE PROMPT:, VIDEO PROMPT:" class="soft-ring w-full px-4 py-3 bg-slate-50/90 border border-slate-200 rounded-xl transition-all">
-                    <p class="text-xs text-slate-400 mt-1">Grabs the text after these keywords for easy copying.</p>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                        <i data-lucide="braces" class="w-4 h-4 text-cyan-300"></i>
+                        Prompts
+                    </label>
+                    <input type="text" id="subDelimiters" placeholder="IMAGE PROMPT:, VIDEO PROMPT:" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-slate-600 mb-1">Item Boundary (Prevents Bleed-over)</label>
-                    <input type="text" id="itemDelimiter" placeholder="e.g. B-roll" class="soft-ring w-full px-4 py-3 bg-slate-50/90 border border-slate-200 rounded-xl transition-all">
-                    <p class="text-xs text-slate-400 mt-1">Stops the current prompt if this word appears.</p>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                        <i data-lucide="layers-3" class="w-4 h-4 text-cyan-300"></i>
+                        B-roll
+                    </label>
+                    <input type="text" id="itemDelimiter" placeholder="B-roll" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-slate-600 mb-1">Ignore Sections Containing</label>
-                    <input type="text" id="ignoreDelimiter" placeholder="e.g. [DONE], skip" class="soft-ring w-full px-4 py-3 bg-slate-50/90 border border-slate-200 rounded-xl transition-all">
-                    <p class="text-xs text-slate-400 mt-1">Skips the entire tab or video if it contains this exact text.</p>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                        <i data-lucide="ban" class="w-4 h-4 text-cyan-300"></i>
+                        Ignore
+                    </label>
+                    <input type="text" id="ignoreDelimiter" placeholder="[DONE]" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
             </div>
         </div>
@@ -552,12 +779,67 @@
             return Math.abs(hash).toString(36);
         }
 
-        function buildCopyKey(sectionTitle, itemTitle, blockTitle, content) {
-            return `copy-${hashText([sectionTitle, itemTitle, blockTitle, content].join('||'))}`;
+        function buildCopyKey(sectionTitle, itemTitle, blockTitle, content, metaTag = '') {
+            return `copy-${hashText([sectionTitle, itemTitle, blockTitle, metaTag, content].join('||'))}`;
         }
 
         function isCopied(block) {
             return !!state.copiedBlockKeys[block.copyKey];
+        }
+
+        function findBlockById(blockId) {
+            return getAllBlocks().find((block) => block.id === blockId) || null;
+        }
+
+        function isMetadataLine(line) {
+            return /^\[[^\]]+\]$/.test((line || '').trim());
+        }
+
+        function isDecorativeLine(line) {
+            const trimmed = (line || '').trim();
+            return !!trimmed && /^[^\p{L}\p{N}]+$/u.test(trimmed);
+        }
+
+        function extractNearestMetadataLine(text) {
+            const lines = (text || '').split('\n');
+
+            for (let index = lines.length - 1; index >= 0; index--) {
+                const line = lines[index].trim();
+                if (!line) continue;
+                if (isDecorativeLine(line)) continue;
+                return isMetadataLine(line) ? line : '';
+            }
+
+            return '';
+        }
+
+        function stripTrailingPromptArtifacts(text) {
+            const lines = (text || '').split('\n');
+
+            while (lines.length) {
+                const line = (lines[lines.length - 1] || '').trim();
+                if (!line) {
+                    lines.pop();
+                    continue;
+                }
+                if (isMetadataLine(line) || isDecorativeLine(line)) {
+                    lines.pop();
+                    continue;
+                }
+                break;
+            }
+
+            return lines.join('\n').trim();
+        }
+
+        function formatBlockForCopy(block) {
+            if (!block) return '';
+
+            const parts = [];
+            if (block.metaTag) parts.push(block.metaTag);
+            parts.push(`${block.title}:`);
+            if (block.content) parts.push(block.content);
+            return parts.join('\n').trim();
         }
 
         function getAllBlocks() {
@@ -602,8 +884,8 @@
         function syncViewToggle() {
             DOM.viewTabsBtn.classList.toggle('view-pill-active', state.viewMode === 'tabbed');
             DOM.viewGlobalBtn.classList.toggle('view-pill-active', state.viewMode === 'global');
-            DOM.viewTabsBtn.classList.toggle('text-slate-600', state.viewMode !== 'tabbed');
-            DOM.viewGlobalBtn.classList.toggle('text-slate-600', state.viewMode !== 'global');
+            DOM.viewTabsBtn.classList.toggle('view-pill-idle', state.viewMode !== 'tabbed');
+            DOM.viewGlobalBtn.classList.toggle('view-pill-idle', state.viewMode !== 'global');
         }
 
         function toggleMainDelimiter() {
@@ -629,10 +911,8 @@
         }
 
         function syncSoundToggle() {
-            DOM.soundToggleText.textContent = state.soundEnabled ? 'Sound On' : 'Sound Off';
-            DOM.soundToggle.classList.toggle('bg-blue-50', state.soundEnabled);
-            DOM.soundToggle.classList.toggle('text-blue-700', state.soundEnabled);
-            DOM.soundToggle.classList.toggle('border-blue-200', state.soundEnabled);
+            DOM.soundToggleText.textContent = state.soundEnabled ? 'Audio' : 'Muted';
+            DOM.soundToggle.classList.toggle('is-muted', !state.soundEnabled);
             const icon = DOM.soundToggle.querySelector('i');
             icon.setAttribute('data-lucide', state.soundEnabled ? 'volume-2' : 'volume-x');
             lucide.createIcons();
@@ -769,10 +1049,9 @@
         }
 
         function copyBlock(blockId) {
-            const text = state.contentMap[blockId];
-            const blockKey = state.blockKeyMap[blockId];
-            if (!text || !blockKey) return;
-            copyTextAndMark(text, [blockKey], 'Prompt copied and marked.');
+            const block = findBlockById(blockId);
+            if (!block || !block.copyKey) return;
+            copyTextAndMark(formatBlockForCopy(block), [block.copyKey], 'Prompt copied and marked.');
         }
 
         function copyItemGroup(tabId, itemId) {
@@ -781,7 +1060,7 @@
             const item = tab.items.find((entry) => entry.id === itemId);
             if (!item || !item.blocks.length) return;
 
-            const text = item.blocks.map((block) => `${block.title}:\n${block.content}`).join('\n\n');
+            const text = item.blocks.map((block) => formatBlockForCopy(block)).join('\n\n');
             const blockKeys = item.blocks.map((block) => block.copyKey);
             copyTextAndMark(text.trim(), blockKeys, `"${item.title}" copied and tracked.`);
         }
@@ -791,7 +1070,7 @@
             if (!globalItems.length) return;
 
             const sections = globalItems.map((item) => {
-                const body = item.blocks.map((block) => `${block.title}:\n${block.content}`).join('\n\n');
+                const body = item.blocks.map((block) => formatBlockForCopy(block)).join('\n\n');
                 return `${item.tabTitle} - ${item.itemTitle}\n\n${body}`;
             });
 
@@ -889,7 +1168,7 @@
             let rawChunks = [];
 
             if (splitMethod === 'smart') {
-                const headerRegex = /^((?:\*\*|\*|#)?\s*(?:Video\s+|Tab\s+|Scene\s+)?\d{1,3}[a-z]?\s*(?:\u2705|\[DONE\]|\u2714\uFE0F?|\bdone\b)?\s*)$/gim;
+                const headerRegex = /^((?:\*\*|\*|#)?\s*(?:Video\s+|Tab\s+|Scene\s+)?\d{1,3}[a-z]?(?:\s*(?:\u2705|\[DONE\]|\u2714\uFE0F?|\bdone\b|[^\p{L}\p{N}\r\n]+))*\s*)$/gimu;
                 const splitPieces = text.split(headerRegex);
 
                 let currentChunk = splitPieces[0];
@@ -967,15 +1246,20 @@
                             const next = uniqueIndices[index + 1];
                             const start = current.index + current.matchText.length;
                             const end = next ? next.index : itemText.length;
+                            const previous = uniqueIndices[index - 1];
+                            const preambleStart = previous ? previous.index + previous.matchText.length : 0;
+                            const preamble = itemText.substring(preambleStart, current.index);
+                            const metaTag = extractNearestMetadataLine(preamble);
 
-                            let content = itemText.substring(start, end).trim();
+                            let content = stripTrailingPromptArtifacts(itemText.substring(start, end).trim());
                             content = content.replace(/[\*\#\-\s]+$/, '');
 
                             const blockId = `block-${chunkIndex}-${itemIndex}-${index}`;
-                            const copyKey = buildCopyKey(title, itemTitle, current.delim.toUpperCase(), content);
+                            const copyKey = buildCopyKey(title, itemTitle, current.delim.toUpperCase(), content, metaTag);
                             extractedBlocks.push({
                                 id: blockId,
                                 title: current.delim.toUpperCase(),
+                                metaTag,
                                 content,
                                 copyKey
                             });
@@ -1048,37 +1332,43 @@
             const copied = isCopied(block);
             const compact = !!options.compact;
             const isExpanded = !!state.expandedBlocks[block.id];
-            const cardClass = copied ? 'copied-shell' : 'bg-slate-50/90 border-slate-200';
+            const cardClass = copied ? 'copied-shell' : 'border border-cyan-400/12 bg-slate-950/55 shadow-[0_16px_34px_rgba(0,0,0,0.3)]';
             const badge = copied
-                ? '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-emerald-700 bg-emerald-100 border border-emerald-200"><i data-lucide="check" class="w-3.5 h-3.5"></i> Copied previously</span>'
-                : '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-slate-500 bg-white border border-slate-200">Waiting to copy</span>';
+                ? '<span class="status-chip status-chip--done"><i data-lucide="check" class="w-3.5 h-3.5"></i>Copied</span>'
+                : '<span class="status-chip">Queued</span>';
             const buttonLabel = copied ? 'Copy Again' : 'Copy';
-            const toggleLabel = isExpanded ? 'Hide Prompt' : 'Show Prompt';
 
             return `
-                <div class="relative group rounded-2xl border overflow-hidden shadow-sm ${cardClass}">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 bg-white/70 border-b border-inherit">
-                        <div class="min-w-0">
+                <div class="relative group rounded-[1.4rem] border overflow-hidden ${cardClass}">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 bg-white/[0.03] border-b border-white/8">
+                        <div
+                            class="min-w-0 flex-1 cursor-pointer"
+                            role="button"
+                            tabindex="0"
+                            aria-expanded="${isExpanded ? 'true' : 'false'}"
+                            onclick="toggleCollapse('${block.id}')"
+                            onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleCollapse('${block.id}'); }"
+                        >
                             <div class="flex flex-wrap items-center gap-2">
-                                <h4 class="font-bold text-slate-700 tracking-wide text-sm uppercase">${block.title}</h4>
+                                <h4 class="font-bold text-cyan-50 tracking-[0.12em] text-sm uppercase">${block.title}</h4>
                                 ${badge}
+                                <span class="toggle-chip" aria-hidden="true">
+                                    <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5"></i>
+                                </span>
                             </div>
-                            ${options.meta ? `<p class="text-xs text-slate-500 mt-2">${options.meta}</p>` : ''}
+                            ${block.metaTag ? `<p class="meta-chip mt-2">${escapeHtml(block.metaTag)}</p>` : ''}
+                            ${options.meta ? `<p class="text-[11px] text-cyan-100/50 mt-2 uppercase tracking-[0.18em]">${options.meta}</p>` : ''}
                         </div>
                         <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                            <button onclick="toggleCollapse('${block.id}')" class="soft-ring w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all shadow-sm bg-white border border-slate-200 text-slate-600 hover:bg-slate-100">
-                                <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4"></i>
-                                ${toggleLabel}
-                            </button>
-                            <button onclick="triggerCopy('${block.id}')" class="soft-ring w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all shadow-sm ${copied ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200' : 'bg-white border border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200'}">
+                            <button onclick="event.stopPropagation(); triggerCopy('${block.id}')" class="chrome-btn soft-ring w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-medium transition-all ${copied ? 'text-lime-200 border-lime-400/20 bg-lime-400/10 hover:bg-lime-400/14' : ''}">
                                 <i data-lucide="copy" class="w-4 h-4"></i>
                                 ${buttonLabel}
                             </button>
                         </div>
                     </div>
                     <div class="${compact ? 'p-4' : 'p-4 sm:p-5'} ${isExpanded ? 'block' : 'hidden'}">
-                        <div class="prompt-content text-slate-600 text-sm leading-relaxed min-w-0">
-                            ${block.content ? escapeHtml(block.content) : '<span class="text-slate-400 italic">No content found after this header.</span>'}
+                        <div class="prompt-content text-sm leading-relaxed min-w-0">
+                            ${block.content ? escapeHtml(block.content) : '<span class="text-cyan-100/40 italic">No prompt found.</span>'}
                         </div>
                     </div>
                 </div>
@@ -1088,10 +1378,10 @@
         function renderTabbedView() {
             DOM.tabsContainer.classList.remove('hidden');
             DOM.tabsContainer.innerHTML = state.parsedData.map((tab) => `
-                <button onclick="switchTab('${tab.id}')" class="snap-start whitespace-nowrap px-4 sm:px-6 py-4 font-semibold text-sm transition-colors border-b-2 flex-shrink-0 ${
+                <button onclick="switchTab('${tab.id}')" class="snap-start whitespace-nowrap px-4 sm:px-5 py-3.5 font-semibold text-sm transition-colors border-b-2 flex-shrink-0 ${
                     state.activeTabId === tab.id
-                        ? 'text-blue-600 border-blue-600 bg-blue-50/50'
-                        : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-50'
+                        ? 'text-cyan-50 border-cyan-300 bg-cyan-400/8'
+                        : 'text-cyan-100/60 border-transparent hover:text-cyan-50 hover:bg-white/[0.03]'
                 }">${tab.title}</button>
             `).join('');
 
@@ -1100,7 +1390,7 @@
             if (!activeTabData || !activeTabData.items || activeTabData.items.length === 0) {
                 DOM.subTabsContainer.classList.add('hidden');
                 DOM.copyTabContainer.classList.add('hidden');
-                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-slate-500">Could not extract matching headers.</div>';
+                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-cyan-100/45">No prompts found.</div>';
                 return;
             }
 
@@ -1109,11 +1399,11 @@
                 const isActive = state.activeSubTabIds[state.activeTabId] === item.id;
                 const copiedCount = item.blocks.filter((block) => isCopied(block)).length;
                 return `
-                    <button onclick="switchSubTab('${item.id}')" class="whitespace-nowrap px-4 py-2.5 font-medium text-xs rounded-xl transition-colors border ${
+                    <button onclick="switchSubTab('${item.id}')" class="whitespace-nowrap px-4 py-2 font-medium text-xs rounded-2xl transition-colors border ${
                         isActive
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }">${item.title}${copiedCount ? ` • ${copiedCount}/${item.blocks.length}` : ''}</button>
+                            ? 'bg-cyan-400/14 text-cyan-50 border-cyan-300/35 shadow-[0_0_18px_rgba(34,211,238,0.08)]'
+                            : 'bg-white/[0.03] text-cyan-100/70 border-cyan-400/10 hover:bg-white/[0.06]'
+                    }">${item.title}${copiedCount ? ` ${copiedCount}/${item.blocks.length}` : ''}</button>
                 `;
             }).join('');
 
@@ -1121,18 +1411,18 @@
 
             if (!activeItem || !activeItem.blocks || activeItem.blocks.length === 0) {
                 DOM.copyTabContainer.classList.add('hidden');
-                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-slate-500">Could not extract matching headers for this item.</div>';
+                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-cyan-100/45">No prompts in this b-roll.</div>';
                 return;
             }
 
             DOM.copyTabContainer.classList.remove('hidden');
-            DOM.copyTabText.textContent = 'Copy Current B-roll';
+            DOM.copyTabText.textContent = 'Copy B-roll';
             DOM.copyTabBtn.querySelector('.copy-tab-icon').innerHTML = '<i data-lucide="files" class="w-4 h-4"></i>';
 
             DOM.blocksContainer.innerHTML = activeItem.blocks.map((block) => {
                 if (state.expandedBlocks[block.id] === undefined) state.expandedBlocks[block.id] = false;
                 return renderBlockCard(block, {
-                    meta: `${activeTabData.title} • ${activeItem.title}`
+                    meta: `${activeTabData.title} / ${activeItem.title}`
                 });
             }).join('');
         }
@@ -1144,30 +1434,29 @@
             const globalItems = getGlobalItems();
             if (!globalItems.length) {
                 DOM.copyTabContainer.classList.add('hidden');
-                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-slate-500">No extracted items available for the global list.</div>';
+                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-cyan-100/45">No visible prompts.</div>';
                 return;
             }
 
             DOM.copyTabContainer.classList.remove('hidden');
-            DOM.copyTabText.textContent = 'Copy All Visible Prompts';
+            DOM.copyTabText.textContent = 'Copy Visible';
             DOM.copyTabBtn.querySelector('.copy-tab-icon').innerHTML = '<i data-lucide="files" class="w-4 h-4"></i>';
 
             DOM.blocksContainer.innerHTML = globalItems.map((item) => {
                 const copiedCount = item.blocks.filter((block) => isCopied(block)).length;
                 const allCopied = copiedCount === item.blocks.length;
                 return `
-                    <div class="rounded-3xl border ${allCopied ? 'border-emerald-200 bg-emerald-50/60 shadow-emerald-100/60' : 'border-slate-200 bg-white/90'} shadow-sm p-4 sm:p-5">
+                    <div class="rounded-[1.6rem] border ${allCopied ? 'copied-shell' : 'border-cyan-400/12 bg-slate-950/55'} shadow-sm p-4">
                         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                             <div class="min-w-0">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">${item.tabTitle}</span>
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">${item.itemTitle}</span>
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${allCopied ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-white text-slate-500 border border-slate-200'}">${copiedCount}/${item.blocks.length} copied</span>
+                                    <span class="status-chip">${item.tabTitle}</span>
+                                    <span class="status-chip">${item.itemTitle}</span>
+                                    <span class="status-chip ${allCopied ? 'status-chip--done' : ''}">${copiedCount}/${item.blocks.length}</span>
                                 </div>
-                                <p class="text-sm text-slate-500 mt-2">Continuous workflow view for moving through every extracted B-roll without hopping tabs.</p>
                             </div>
-                            <button onclick="copyItemGroup('${item.tabId}','${item.itemId}')" class="soft-ring w-full lg:w-auto px-4 py-2.5 rounded-2xl text-sm font-medium ${allCopied ? 'bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200' : 'bg-slate-900 text-white hover:bg-slate-800 border border-slate-900'}">
-                                ${allCopied ? 'Copy Again' : 'Copy This B-roll'}
+                            <button onclick="copyItemGroup('${item.tabId}','${item.itemId}')" class="chrome-btn soft-ring w-full lg:w-auto px-4 py-2.5 rounded-2xl text-sm font-medium ${allCopied ? 'text-lime-200 border-lime-400/20 bg-lime-400/10 hover:bg-lime-400/14' : ''}">
+                                ${allCopied ? 'Copy Again' : 'Copy B-roll'}
                             </button>
                         </div>
 
@@ -1194,8 +1483,12 @@
             DOM.resultsArea.classList.add('flex');
 
             const stats = getProgressStats();
-            DOM.resultsSummary.textContent = `${stats.totalPrompts} prompts across ${stats.totalItems} B-rolls`;
-            DOM.resultsMeta.textContent = `${stats.copiedPrompts}/${stats.totalPrompts} prompts copied • ${stats.fullyCopiedItems}/${stats.totalItems} B-rolls fully covered`;
+            DOM.resultsSummary.textContent = `${stats.totalPrompts} Prompts`;
+            DOM.resultsMeta.innerHTML = `
+                <span class="metric-chip"><i data-lucide="copy"></i>${stats.copiedPrompts}/${stats.totalPrompts} copied</span>
+                <span class="metric-chip"><i data-lucide="layers-3"></i>${stats.totalItems} b-rolls</span>
+                <span class="metric-chip"><i data-lucide="check"></i>${stats.fullyCopiedItems} done</span>
+            `;
             DOM.resetProgressBtn.classList.toggle('hidden', stats.copiedPrompts === 0);
 
             if (state.viewMode === 'global') {
