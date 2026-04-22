@@ -858,6 +858,44 @@
             }).filter((entry) => entry.blocks && entry.blocks.length > 0);
         }
 
+        function findBlockContext(blockId) {
+            for (let tabIndex = 0; tabIndex < state.parsedData.length; tabIndex++) {
+                const tab = state.parsedData[tabIndex];
+                for (let itemIndex = 0; itemIndex < tab.items.length; itemIndex++) {
+                    const item = tab.items[itemIndex];
+                    const blockIndex = item.blocks.findIndex((block) => block.id === blockId);
+                    if (blockIndex !== -1) {
+                        return { tab, item, tabIndex, itemIndex, blockIndex };
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        function moveToNextBroll(fromContext) {
+            if (!fromContext || state.viewMode !== 'tabbed') return false;
+
+            for (let tabIndex = fromContext.tabIndex; tabIndex < state.parsedData.length; tabIndex++) {
+                const tab = state.parsedData[tabIndex];
+                const startItemIndex = tabIndex === fromContext.tabIndex ? fromContext.itemIndex + 1 : 0;
+
+                for (let itemIndex = startItemIndex; itemIndex < tab.items.length; itemIndex++) {
+                    const nextItem = tab.items[itemIndex];
+                    if (!nextItem || !nextItem.blocks || !nextItem.blocks.length) continue;
+
+                    state.activeTabId = tab.id;
+                    state.activeSubTabIds[tab.id] = nextItem.id;
+                    state.expandedBlocks = {};
+                    persistExtractedState();
+                    renderUI();
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         function getProgressStats() {
             const blocks = getAllBlocks();
             const items = getGlobalItems();
@@ -1048,10 +1086,18 @@
             copyItemGroup(activeTab.id, activeItem.id);
         }
 
-        function copyBlock(blockId) {
+        async function copyBlock(blockId) {
             const block = findBlockById(blockId);
             if (!block || !block.copyKey) return;
-            copyTextAndMark(formatBlockForCopy(block), [block.copyKey], 'Prompt copied and marked.');
+
+            const blockContext = findBlockContext(blockId);
+            const copied = await copyTextAndMark(formatBlockForCopy(block), [block.copyKey], 'Prompt copied and marked.');
+            if (!copied || !blockContext) return;
+
+            const isLastPromptInBroll = blockContext.blockIndex === blockContext.item.blocks.length - 1;
+            if (isLastPromptInBroll) {
+                moveToNextBroll(blockContext);
+            }
         }
 
         function copyItemGroup(tabId, itemId) {
