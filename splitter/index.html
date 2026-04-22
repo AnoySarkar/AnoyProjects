@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>Smart Prompt Splitter</title>
     <meta name="theme-color" content="#2563eb">
     <meta name="mobile-web-app-capable" content="yes">
@@ -24,17 +24,56 @@
             --page-top: #f8fbff;
             --page-bottom: #eef4ff;
             --focus-ring: rgba(37, 99, 235, 0.18);
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-right: env(safe-area-inset-right, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-left: env(safe-area-inset-left, 0px);
         }
 
         html {
             -webkit-tap-highlight-color: transparent;
+            -webkit-text-size-adjust: 100%;
+            overflow-x: hidden;
+            background: var(--page-bottom);
         }
 
         body {
+            min-height: 100dvh;
+            overflow-x: hidden;
+            touch-action: manipulation;
             background:
                 radial-gradient(circle at top left, rgba(59, 130, 246, 0.15), transparent 28rem),
                 radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 25rem),
                 linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
+        }
+
+        header,
+        main,
+        #toast,
+        #settingsModal {
+            padding-left: max(0px, var(--safe-left));
+            padding-right: max(0px, var(--safe-right));
+        }
+
+        header {
+            padding-top: max(0px, var(--safe-top));
+        }
+
+        main {
+            padding-bottom: calc(2.5rem + var(--safe-bottom));
+        }
+
+        #toast {
+            top: calc(1rem + var(--safe-top));
+        }
+
+        #settingsModal {
+            padding-top: calc(0.75rem + var(--safe-top));
+            padding-bottom: calc(0.75rem + var(--safe-bottom));
+        }
+
+        #settingsModal > div {
+            max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 1.5rem);
         }
 
         button,
@@ -44,6 +83,13 @@
             font: inherit;
         }
 
+        img,
+        svg,
+        canvas,
+        video {
+            max-width: 100%;
+        }
+
         .hide-scrollbar::-webkit-scrollbar {
             display: none;
         }
@@ -51,6 +97,7 @@
         .hide-scrollbar {
             -ms-overflow-style: none;
             scrollbar-width: none;
+            overscroll-behavior-x: contain;
         }
 
         .glass-panel {
@@ -99,12 +146,22 @@
             overflow: hidden;
         }
 
+        .prompt-content {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
         @media (max-width: 640px) {
             #toast {
                 left: 1rem;
                 right: 1rem;
                 top: auto;
-                bottom: 1rem;
+                bottom: calc(1rem + var(--safe-bottom));
+            }
+
+            #settingsModal > div {
+                max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 0.75rem);
             }
         }
     </style>
@@ -167,7 +224,7 @@
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 pb-10">
         <div class="grid lg:grid-cols-12 gap-4 sm:gap-8">
 
-            <div class="lg:col-span-5 flex flex-col gap-4 sm:gap-6">
+            <div class="lg:col-span-5 min-w-0 flex flex-col gap-4 sm:gap-6">
                 <div class="glass-panel rounded-3xl border border-white/70 flex flex-col flex-grow overflow-hidden">
                     <div class="p-4 border-b border-slate-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div class="flex items-center gap-2">
@@ -198,15 +255,15 @@
                 </div>
             </div>
 
-            <div class="lg:col-span-7">
+            <div class="lg:col-span-7 min-w-0">
                 <div id="emptyState" class="glass-panel border-2 border-dashed border-slate-200 rounded-3xl h-full min-h-[320px] sm:min-h-[400px] flex flex-col items-center justify-center text-slate-400 p-6 sm:p-8 text-center">
                     <i data-lucide="layout-template" class="w-12 h-12 mb-4 opacity-50"></i>
                     <h3 class="text-lg font-semibold text-slate-600 mb-2">No Data Extracted Yet</h3>
                     <p class="max-w-sm">Paste your script or upload a Word doc on the left, define your rules, and click Extract to organize your prompts.</p>
                 </div>
 
-                <div id="resultsArea" class="hidden flex-col h-full min-h-[320px] gap-3">
-                    <div class="glass-panel rounded-3xl border border-white/70 p-4 sm:p-5">
+                <div id="resultsArea" class="hidden min-w-0 flex-col h-full min-h-[320px] gap-3">
+                    <div class="glass-panel min-w-0 rounded-3xl border border-white/70 p-4 sm:p-5">
                         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                             <div>
                                 <p class="text-xs uppercase tracking-[0.2em] text-slate-400 font-semibold">Results Workspace</p>
@@ -215,9 +272,9 @@
                             </div>
 
                             <div class="flex flex-col sm:flex-row gap-2 sm:items-center">
-                                <div class="inline-flex p-1 rounded-2xl bg-slate-100 border border-slate-200">
-                                    <button id="viewTabsBtn" type="button" class="soft-ring px-4 py-2 text-sm font-medium rounded-xl transition-all">Tabbed View</button>
-                                    <button id="viewGlobalBtn" type="button" class="soft-ring px-4 py-2 text-sm font-medium rounded-xl transition-all">Global List</button>
+                                <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-100 border border-slate-200 w-full sm:w-auto">
+                                    <button id="viewTabsBtn" type="button" class="soft-ring px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0">Tabbed View</button>
+                                    <button id="viewGlobalBtn" type="button" class="soft-ring px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0">Global List</button>
                                 </div>
                                 <button id="resetProgressBtn" type="button" class="soft-ring hidden px-4 py-2.5 rounded-2xl border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50">
                                     Reset Progress
@@ -229,7 +286,7 @@
                     <div id="tabsContainer" class="flex overflow-x-auto hide-scrollbar bg-white/90 rounded-t-3xl border border-slate-200 border-b-0 snap-x snap-mandatory"></div>
                     <div id="subTabsContainer" class="flex overflow-x-auto hide-scrollbar bg-slate-50/90 border-x border-slate-200 border-b px-3 sm:px-4 py-3 gap-2 hidden"></div>
 
-                    <div class="glass-panel border border-slate-200 rounded-3xl flex-grow p-4 sm:p-6">
+                    <div class="glass-panel min-w-0 border border-slate-200 rounded-3xl flex-grow p-4 sm:p-6">
                         <div id="copyTabContainer" class="flex justify-end items-center mb-4 hidden">
                             <button id="copyTabBtn" class="soft-ring flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 rounded-xl text-sm font-medium transition-all shadow-sm bg-slate-800 text-white hover:bg-slate-700 border border-transparent">
                                 <span class="copy-tab-icon"><i data-lucide="files" class="w-4 h-4"></i></span>
@@ -237,7 +294,7 @@
                             </button>
                         </div>
 
-                        <div id="blocksContainer" class="space-y-4 sm:space-y-6"></div>
+                        <div id="blocksContainer" class="min-w-0 space-y-4 sm:space-y-6"></div>
                     </div>
                 </div>
             </div>
@@ -1020,7 +1077,7 @@
                         </div>
                     </div>
                     <div class="${compact ? 'p-4' : 'p-4 sm:p-5'} ${isExpanded ? 'block' : 'hidden'}">
-                        <div class="text-slate-600 text-sm whitespace-pre-wrap leading-relaxed">
+                        <div class="prompt-content text-slate-600 text-sm leading-relaxed min-w-0">
                             ${block.content ? escapeHtml(block.content) : '<span class="text-slate-400 italic">No content found after this header.</span>'}
                         </div>
                     </div>
