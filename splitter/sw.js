@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smart-prompt-splitter-v3';
+const CACHE_NAME = 'smart-prompt-splitter-v5';
 const APP_SHELL = [
   './',
   './index.html',

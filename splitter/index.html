@@ -103,6 +103,13 @@
             max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 1.5rem);
         }
 
+        .settings-scroll {
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding-bottom: calc(1.25rem + var(--safe-bottom));
+        }
+
         button,
         input,
         select,
@@ -323,13 +330,15 @@
         }
 
         #settingsModal input,
-        #settingsModal select {
+        #settingsModal select,
+        #settingsModal textarea {
             background: rgba(3, 10, 22, 0.92) !important;
             border-color: rgba(103, 232, 249, 0.16) !important;
             color: var(--text-main) !important;
         }
 
-        #settingsModal input::placeholder {
+        #settingsModal input::placeholder,
+        #settingsModal textarea::placeholder {
             color: rgba(82, 114, 138, 0.88);
         }
 
@@ -520,7 +529,7 @@
     </main>
 
     <div id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" class="fixed inset-0 z-50 hidden items-end justify-center bg-slate-950/35 p-3 sm:items-center sm:p-6">
-        <div class="glass-panel animate-rise-in w-full max-w-xl max-h-[90vh] overflow-hidden rounded-[2rem] border shadow-2xl">
+        <div class="glass-panel animate-rise-in flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] border shadow-2xl">
             <div class="flex items-start justify-between gap-4 border-b border-cyan-400/10 px-5 py-4 sm:px-6">
                 <div>
                     <p class="mini-kicker">Controls</p>
@@ -531,7 +540,7 @@
                 </button>
             </div>
 
-            <div class="space-y-4 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
+            <div class="settings-scroll space-y-4 px-5 py-5 sm:px-6 sm:py-6">
                 <div>
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="layout-template" class="w-4 h-4 text-cyan-300"></i>
@@ -574,6 +583,45 @@
                     </label>
                     <input type="text" id="ignoreDelimiter" placeholder="[DONE]" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
+
+                <div class="pt-2 border-t border-cyan-400/10 space-y-4">
+                    <div>
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                            <i data-lucide="arrow-up-from-line" class="w-4 h-4 text-cyan-300"></i>
+                            Prefix
+                        </label>
+                        <textarea id="prefixText" rows="3" placeholder="Text added before prompt content" class="soft-ring w-full px-4 py-3 rounded-xl transition-all resize-y"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                            <i data-lucide="arrow-down-to-line" class="w-4 h-4 text-cyan-300"></i>
+                            Suffix
+                        </label>
+                        <textarea id="suffixText" rows="3" placeholder="Text added after prompt content" class="soft-ring w-full px-4 py-3 rounded-xl transition-all resize-y"></textarea>
+                    </div>
+
+                    <div>
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                            <i data-lucide="filter" class="w-4 h-4 text-cyan-300"></i>
+                            Apply To
+                        </label>
+                        <select id="affixTarget" onchange="toggleAffixSpecific()" class="soft-ring w-full px-4 py-3 rounded-xl transition-all text-sm font-medium">
+                            <option value="all">All Prompts</option>
+                            <option value="image">Image Prompts</option>
+                            <option value="video">Video Prompts</option>
+                            <option value="specific">Specific Label</option>
+                        </select>
+                    </div>
+
+                    <div id="affixSpecificContainer" class="hidden">
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                            <i data-lucide="tag" class="w-4 h-4 text-cyan-300"></i>
+                            Specific Label
+                        </label>
+                        <input type="text" id="affixSpecific" placeholder="IMAGE PROMPT" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -600,6 +648,11 @@
             subDelimiters: document.getElementById('subDelimiters'),
             itemDelimiter: document.getElementById('itemDelimiter'),
             ignoreDelimiter: document.getElementById('ignoreDelimiter'),
+            prefixText: document.getElementById('prefixText'),
+            suffixText: document.getElementById('suffixText'),
+            affixTarget: document.getElementById('affixTarget'),
+            affixSpecific: document.getElementById('affixSpecific'),
+            affixSpecificContainer: document.getElementById('affixSpecificContainer'),
             emptyState: document.getElementById('emptyState'),
             resultsArea: document.getElementById('resultsArea'),
             tabsContainer: document.getElementById('tabsContainer'),
@@ -695,11 +748,16 @@
             DOM.subDelimiters.value = localStorage.getItem('sps_subDelimiters') || 'IMAGE PROMPT:, VIDEO PROMPT:';
             DOM.itemDelimiter.value = localStorage.getItem('sps_itemDelimiter') || 'B-roll';
             DOM.ignoreDelimiter.value = localStorage.getItem('sps_ignoreDelimiter') || '[DONE]';
+            DOM.prefixText.value = localStorage.getItem('sps_prefixText') || '';
+            DOM.suffixText.value = localStorage.getItem('sps_suffixText') || '';
+            DOM.affixTarget.value = localStorage.getItem('sps_affixTarget') || 'all';
+            DOM.affixSpecific.value = localStorage.getItem('sps_affixSpecific') || '';
             state.soundEnabled = localStorage.getItem('sps_soundEnabled') !== 'false';
             state.viewMode = localStorage.getItem('sps_viewMode') || 'tabbed';
             state.copiedBlockKeys = loadCopiedProgress();
 
             toggleMainDelimiter();
+            toggleAffixSpecific();
             syncSoundToggle();
             syncViewToggle();
             registerPWA();
@@ -712,6 +770,15 @@
                 localStorage.setItem('sps_subDelimiters', DOM.subDelimiters.value);
                 localStorage.setItem('sps_itemDelimiter', DOM.itemDelimiter.value);
                 localStorage.setItem('sps_ignoreDelimiter', DOM.ignoreDelimiter.value);
+                localStorage.setItem('sps_prefixText', DOM.prefixText.value);
+                localStorage.setItem('sps_suffixText', DOM.suffixText.value);
+                localStorage.setItem('sps_affixTarget', DOM.affixTarget.value);
+                localStorage.setItem('sps_affixSpecific', DOM.affixSpecific.value);
+            };
+
+            const saveDecoratorSettings = () => {
+                saveToLocal();
+                if (state.parsedData.length > 0) renderUI();
             };
 
             DOM.inputText.addEventListener('input', saveToLocal);
@@ -723,6 +790,13 @@
             DOM.subDelimiters.addEventListener('input', saveToLocal);
             DOM.itemDelimiter.addEventListener('input', saveToLocal);
             DOM.ignoreDelimiter.addEventListener('input', saveToLocal);
+            DOM.prefixText.addEventListener('input', saveDecoratorSettings);
+            DOM.suffixText.addEventListener('input', saveDecoratorSettings);
+            DOM.affixTarget.addEventListener('change', () => {
+                toggleAffixSpecific();
+                saveDecoratorSettings();
+            });
+            DOM.affixSpecific.addEventListener('input', saveDecoratorSettings);
             DOM.settingsBtn.addEventListener('click', openSettings);
             DOM.closeSettingsBtn.addEventListener('click', closeSettings);
             DOM.settingsModal.addEventListener('click', (event) => {
@@ -832,13 +906,57 @@
             return lines.join('\n').trim();
         }
 
+        function normalizePromptLabel(text) {
+            return (text || '').trim().replace(/:+$/, '').toUpperCase();
+        }
+
+        function getAffixSettings() {
+            return {
+                prefix: DOM.prefixText.value.trim(),
+                suffix: DOM.suffixText.value.trim(),
+                target: DOM.affixTarget.value,
+                specific: normalizePromptLabel(DOM.affixSpecific.value)
+            };
+        }
+
+        function shouldDecorateBlock(block, settings = getAffixSettings()) {
+            if (!block) return false;
+            if (!settings.prefix && !settings.suffix) return false;
+
+            const blockTitle = normalizePromptLabel(block.title);
+            if (settings.target === 'all') return true;
+            if (settings.target === 'image') return blockTitle === 'IMAGE PROMPT';
+            if (settings.target === 'video') return blockTitle === 'VIDEO PROMPT';
+            if (settings.target === 'specific') return !!settings.specific && blockTitle === settings.specific;
+            return false;
+        }
+
+        function getDecoratedBlockContent(block) {
+            if (!block) return '';
+
+            const settings = getAffixSettings();
+            let content = (block.content || '').trim();
+            if (!shouldDecorateBlock(block, settings)) return content;
+
+            if (settings.prefix) {
+                content = content ? `${settings.prefix}\n${content}` : settings.prefix;
+            }
+
+            if (settings.suffix) {
+                content = content ? `${content}\n${settings.suffix}` : settings.suffix;
+            }
+
+            return content.trim();
+        }
+
         function formatBlockForCopy(block) {
             if (!block) return '';
 
             const parts = [];
             if (block.metaTag) parts.push(block.metaTag);
             parts.push(`${block.title}:`);
-            if (block.content) parts.push(block.content);
+            const decoratedContent = getDecoratedBlockContent(block);
+            if (decoratedContent) parts.push(decoratedContent);
             return parts.join('\n').trim();
         }
 
@@ -931,6 +1049,14 @@
                 DOM.keywordContainer.classList.remove('hidden');
             } else {
                 DOM.keywordContainer.classList.add('hidden');
+            }
+        }
+
+        function toggleAffixSpecific() {
+            if (DOM.affixTarget.value === 'specific') {
+                DOM.affixSpecificContainer.classList.remove('hidden');
+            } else {
+                DOM.affixSpecificContainer.classList.add('hidden');
             }
         }
 
@@ -1378,6 +1504,7 @@
             const copied = isCopied(block);
             const compact = !!options.compact;
             const isExpanded = !!state.expandedBlocks[block.id];
+            const decoratedContent = getDecoratedBlockContent(block);
             const cardClass = copied ? 'copied-shell' : 'border border-cyan-400/12 bg-slate-950/55 shadow-[0_16px_34px_rgba(0,0,0,0.3)]';
             const badge = copied
                 ? '<span class="status-chip status-chip--done"><i data-lucide="check" class="w-3.5 h-3.5"></i>Copied</span>'
@@ -1414,7 +1541,7 @@
                     </div>
                     <div class="${compact ? 'p-4' : 'p-4 sm:p-5'} ${isExpanded ? 'block' : 'hidden'}">
                         <div class="prompt-content text-sm leading-relaxed min-w-0">
-                            ${block.content ? escapeHtml(block.content) : '<span class="text-cyan-100/40 italic">No prompt found.</span>'}
+                            ${decoratedContent ? escapeHtml(decoratedContent) : '<span class="text-cyan-100/40 italic">No prompt found.</span>'}
                         </div>
                     </div>
                 </div>
