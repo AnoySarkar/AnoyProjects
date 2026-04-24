@@ -1053,6 +1053,119 @@
       closeModal();
     }
 
+    function getTextBatchTargets() {
+      const targets = [
+        { value: 'topic', label: 'Project title', kind: 'project', field: 'topic' },
+        { value: 'notes', label: 'Notes', kind: 'project', field: 'notes' }
+      ];
+      config.forks.forEach(function(fork) {
+        fork.fields.forEach(function(field) {
+          if (field.type !== 'text') return;
+          targets.push({
+            value: 'forkField:' + fork.id + ':' + field.id,
+            label: fork.name + ' -> ' + field.label,
+            kind: 'forkField',
+            forkId: fork.id,
+            fieldId: field.id
+          });
+        });
+      });
+      return targets;
+    }
+
+    function getTextBatchTargetByValue(value) {
+      return getTextBatchTargets().find(function(target) {
+        return target.value === value;
+      }) || null;
+    }
+
+    function getTextBatchScopeProjects(scope, projectId) {
+      const workspaceProjects = getWorkspaceProjects(activeWorkspaceId);
+      if (scope === 'specific') {
+        return workspaceProjects.filter(function(project) {
+          return project.id === projectId;
+        });
+      }
+      if (scope === 'active') {
+        return workspaceProjects.filter(function(project) {
+          return !project.archived;
+        });
+      }
+      if (scope === 'archived') {
+        return workspaceProjects.filter(function(project) {
+          return project.archived;
+        });
+      }
+      return workspaceProjects;
+    }
+
+    function openTextBatchModal() {
+      const workspaceProjects = getWorkspaceProjects(activeWorkspaceId);
+      const targets = getTextBatchTargets();
+      activeModal = 'textBatch';
+      modalData = {
+        operation: 'suffix',
+        target: targets[0] ? targets[0].value : 'topic',
+        scope: 'all',
+        text: '',
+        projectId: workspaceProjects[0] ? workspaceProjects[0].id : ''
+      };
+      render();
+    }
+
+    function updateTextBatchModal(field, value) {
+      modalData[field] = value;
+      render();
+    }
+
+    function applyTextBatch() {
+      const text = typeof modalData.text === 'string' ? modalData.text : '';
+      const operation = modalData.operation === 'prefix' ? 'prefix' : 'suffix';
+      const target = getTextBatchTargetByValue(modalData.target);
+      const selectedProjects = getTextBatchScopeProjects(modalData.scope, modalData.projectId);
+      if (!text) {
+        alert('Enter the text to add first.');
+        return;
+      }
+      if (!target) {
+        alert('Choose where to add the text.');
+        return;
+      }
+      if (!selectedProjects.length) {
+        alert('No matching projects found in this workspace.');
+        return;
+      }
+      let updatedCount = 0;
+      selectedProjects.forEach(function(project) {
+        let currentValue = '';
+        let nextValue = '';
+        if (target.kind === 'project') {
+          currentValue = typeof project[target.field] === 'string' ? project[target.field] : '';
+          nextValue = operation === 'prefix' ? text + currentValue : currentValue + text;
+          if (nextValue === currentValue) return;
+          project[target.field] = nextValue;
+        } else {
+          const forkState = project.forkData[target.forkId];
+          if (!forkState || !forkState.fieldValues) return;
+          currentValue = typeof forkState.fieldValues[target.fieldId] === 'string' ? forkState.fieldValues[target.fieldId] : '';
+          nextValue = operation === 'prefix' ? text + currentValue : currentValue + text;
+          if (nextValue === currentValue) return;
+          forkState.fieldValues[target.fieldId] = nextValue;
+        }
+        appendProjectActivity(project, buildActivityMessage('BULK', 'Added ' + operation + ' text to ' + target.label), 'bulk-text:' + target.value + ':' + operation);
+        touchProject(project);
+        updatedCount += 1;
+      });
+      if (!updatedCount) {
+        alert('Nothing changed. Check the scope and target you selected.');
+        return;
+      }
+      saveState();
+      playSound('done');
+      alert('Updated ' + updatedCount + ' project' + (updatedCount === 1 ? '' : 's') + '.');
+      closeModal();
+    }
+
     function deleteProject() {
       playSound('delete');
       projects = projects.filter(function(project) {
@@ -1383,6 +1496,7 @@
       try {
         const contents = await file.text();
         const parsed = JSON.parse(contents);
+        const restoredManagedStorage = restoreManagedStorage(parsed && parsed.storage);
         let nextConfig = config;
         let nextProjects = [];
         if (Array.isArray(parsed)) {
@@ -1391,7 +1505,7 @@
             return syncProjectToConfig(normalizedItem, getConfigForWorkspace(normalizedItem.workspaceId || activeWorkspaceId), workspaces);
           });
           applyUiState({});
-        } else if (restoreManagedStorage(parsed && parsed.storage)) {
+        } else if (restoredManagedStorage) {
           if ((!parsed.storage || typeof parsed.storage[UI_STATE_STORAGE_KEY] !== 'string') && parsed && parsed.uiState) {
             localStorage.setItem(UI_STATE_STORAGE_KEY, JSON.stringify(normalizeUiState(parsed.uiState)));
           }
@@ -1419,7 +1533,7 @@
         } else {
           throw new Error('Expected an exported workflow file.');
         }
-        if (!Array.isArray(parsed) && !restoreManagedStorage(parsed && parsed.storage)) {
+        if (!Array.isArray(parsed) && !restoredManagedStorage) {
           config = nextConfig;
           projects = nextProjects;
           syncAllProjects();
@@ -1541,6 +1655,10 @@
               <button onclick="openCustomizeModal()" class="flex items-center gap-2 rounded-xl border border-transparent bg-zinc-900/70 px-4 py-2.5 text-zinc-300 transition-colors hover:bg-indigo-950/30 hover:text-indigo-300">
                 <i data-lucide="sliders-horizontal" class="w-4 h-4"></i>
                 <span class="text-xs font-semibold">Customize</span>
+              </button>
+              <button onclick="openTextBatchModal()" class="flex items-center gap-2 rounded-xl border border-transparent bg-zinc-900/70 px-4 py-2.5 text-zinc-300 transition-colors hover:bg-indigo-950/30 hover:text-indigo-300">
+                <i data-lucide="type" class="w-4 h-4"></i>
+                <span class="text-xs font-semibold">Text Tool</span>
               </button>
               <button onclick="handlePrint()" class="flex items-center gap-2 rounded-xl border border-transparent bg-zinc-900/70 px-4 py-2.5 text-zinc-300 transition-colors hover:bg-indigo-950/30 hover:text-indigo-300">
                 <i data-lucide="printer" class="w-4 h-4"></i>
@@ -1839,6 +1957,80 @@
       `;
     }
 
+    function renderTextBatchModal() {
+      const targets = getTextBatchTargets();
+      const target = getTextBatchTargetByValue(modalData.target) || targets[0] || null;
+      const workspaceProjects = getWorkspaceProjects(activeWorkspaceId);
+      const selectedProjects = getTextBatchScopeProjects(modalData.scope, modalData.projectId);
+      return `
+        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md fade-in" onclick="closeModal()">
+          <div class="w-full max-w-2xl rounded-[2rem] border border-zinc-800 bg-[#121214] p-6 shadow-2xl zoom-in" onclick="event.stopPropagation()">
+            <div class="flex items-start justify-between gap-4 border-b border-zinc-800 pb-5">
+              <div>
+                <h3 class="text-2xl font-bold text-white">Prefix / Suffix Text</h3>
+                <p class="mt-1 text-sm text-zinc-500">Apply text updates inside ${escapeHTML(getWorkspaceById(activeWorkspaceId).name)}. Choose where it should go and whether it applies to all projects or one specific project.</p>
+              </div>
+              <button type="button" onclick="closeModal()" class="rounded-xl border border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-800">Close</button>
+            </div>
+            <div class="mt-6 grid gap-5 md:grid-cols-2">
+              <div class="rounded-[1.6rem] border border-zinc-800 bg-zinc-950/50 p-4">
+                <div class="text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-500">Add As</div>
+                <div class="mt-3 grid grid-cols-2 gap-3">
+                  <button type="button" onclick="updateTextBatchModal('operation', 'prefix')" class="rounded-2xl border px-4 py-3 text-sm font-bold ${modalData.operation === 'prefix' ? 'border-indigo-500 bg-indigo-500/10 text-indigo-200' : 'border-zinc-800 text-zinc-300 hover:bg-zinc-900'}">Prefix</button>
+                  <button type="button" onclick="updateTextBatchModal('operation', 'suffix')" class="rounded-2xl border px-4 py-3 text-sm font-bold ${modalData.operation === 'suffix' ? 'border-indigo-500 bg-indigo-500/10 text-indigo-200' : 'border-zinc-800 text-zinc-300 hover:bg-zinc-900'}">Suffix</button>
+                </div>
+                <label class="mt-4 block">
+                  <span class="text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-500">Text To Add</span>
+                  <input type="text" value="${escapeHTML(modalData.text || '')}" oninput="updateTextBatchModal('text', this.value)" placeholder="Enter prefix or suffix text" class="mt-2 w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-100 outline-none focus:border-indigo-500" />
+                </label>
+                <label class="mt-4 block">
+                  <span class="text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-500">Where To Add It</span>
+                  <select onchange="updateTextBatchModal('target', this.value)" class="mt-2 w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-100 outline-none focus:border-indigo-500">
+                    ${targets.map(function(item) {
+                      return '<option value="' + escapeHTML(item.value) + '" ' + (target && target.value === item.value ? 'selected' : '') + '>' + escapeHTML(item.label) + '</option>';
+                    }).join('')}
+                  </select>
+                </label>
+              </div>
+              <div class="rounded-[1.6rem] border border-zinc-800 bg-zinc-950/50 p-4">
+                <label class="block">
+                  <span class="text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-500">Apply To</span>
+                  <select onchange="updateTextBatchModal('scope', this.value)" class="mt-2 w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-100 outline-none focus:border-indigo-500">
+                    <option value="all" ${modalData.scope === 'all' ? 'selected' : ''}>All projects in this workspace</option>
+                    <option value="active" ${modalData.scope === 'active' ? 'selected' : ''}>Only active projects</option>
+                    <option value="archived" ${modalData.scope === 'archived' ? 'selected' : ''}>Only archived projects</option>
+                    <option value="specific" ${modalData.scope === 'specific' ? 'selected' : ''}>One specific project</option>
+                  </select>
+                </label>
+                ${modalData.scope === 'specific' ? `
+                  <label class="mt-4 block">
+                    <span class="text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-500">Specific Project</span>
+                    <select onchange="updateTextBatchModal('projectId', this.value)" class="mt-2 w-full rounded-2xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm font-semibold text-zinc-100 outline-none focus:border-indigo-500">
+                      ${workspaceProjects.map(function(project) {
+                        return '<option value="' + escapeHTML(project.id) + '" ' + (modalData.projectId === project.id ? 'selected' : '') + '>' + escapeHTML(project.topic || 'Untitled Project') + '</option>';
+                      }).join('')}
+                    </select>
+                  </label>
+                ` : ''}
+                <div class="mt-4 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
+                  <div class="text-[10px] font-mono uppercase tracking-[0.24em] text-zinc-500">Summary</div>
+                  <div class="mt-3 space-y-2 text-sm text-zinc-300">
+                    <p><span class="text-zinc-500">Mode:</span> ${modalData.operation === 'prefix' ? 'Prefix' : 'Suffix'}</p>
+                    <p><span class="text-zinc-500">Target:</span> ${escapeHTML(target ? target.label : 'Project title')}</p>
+                    <p><span class="text-zinc-500">Matching projects:</span> ${selectedProjects.length}</p>
+                  </div>
+                </div>
+                <button type="button" onclick="applyTextBatch()" class="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3.5 text-sm font-bold text-white hover:bg-indigo-500 active:scale-95">
+                  <i data-lucide="wand-sparkles" class="w-4 h-4"></i>
+                  Apply Text
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderDeleteModal() {
       const project = getProjectById(modalData.projectId);
       return `
@@ -2073,6 +2265,7 @@
       if (!activeModal) return '';
       if (activeModal === 'status') return renderStatusModal();
       if (activeModal === 'bulk') return renderBulkModal();
+      if (activeModal === 'textBatch') return renderTextBatchModal();
       if (activeModal === 'delete') return renderDeleteModal();
       if (activeModal === 'log') return renderLogModal();
       if (activeModal === 'workspacePanel') return renderWorkspaceManagerModal();
