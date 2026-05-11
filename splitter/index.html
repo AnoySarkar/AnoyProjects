@@ -517,7 +517,7 @@
                         <div id="copyTabContainer" class="flex justify-end items-center mb-4 hidden">
                             <button id="copyTabBtn" class="chrome-btn soft-ring flex items-center justify-center gap-2 w-full sm:w-auto px-4 py-2.5 rounded-2xl text-sm font-medium transition-all">
                                 <span class="copy-tab-icon"><i data-lucide="files" class="w-4 h-4"></i></span>
-                                <span id="copyTabText">Copy B-roll</span>
+                                <span id="copyTabText">Copy Roll</span>
                             </button>
                         </div>
 
@@ -571,9 +571,9 @@
                 <div>
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="layers-3" class="w-4 h-4 text-cyan-300"></i>
-                        B-roll
+                        A/B Roll
                     </label>
-                    <input type="text" id="itemDelimiter" placeholder="B-roll" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
+                    <input type="text" id="itemDelimiter" placeholder="B-roll, A-roll" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
                 <div>
@@ -746,7 +746,7 @@
             DOM.splitMethod.value = localStorage.getItem('sps_splitMethod') || 'smart';
             DOM.mainDelimiter.value = localStorage.getItem('sps_mainDelimiter') || 'Video';
             DOM.subDelimiters.value = localStorage.getItem('sps_subDelimiters') || 'IMAGE PROMPT:, VIDEO PROMPT:';
-            DOM.itemDelimiter.value = localStorage.getItem('sps_itemDelimiter') || 'B-roll';
+            DOM.itemDelimiter.value = localStorage.getItem('sps_itemDelimiter') || 'B-roll, A-roll';
             DOM.ignoreDelimiter.value = localStorage.getItem('sps_ignoreDelimiter') || '[DONE]';
             DOM.prefixText.value = localStorage.getItem('sps_prefixText') || '';
             DOM.suffixText.value = localStorage.getItem('sps_suffixText') || '';
@@ -906,8 +906,207 @@
             return lines.join('\n').trim();
         }
 
+        const NUMBER_WORDS = {
+            zero: 0,
+            one: 1,
+            two: 2,
+            three: 3,
+            four: 4,
+            five: 5,
+            six: 6,
+            seven: 7,
+            eight: 8,
+            nine: 9,
+            ten: 10,
+            eleven: 11,
+            twelve: 12,
+            thirteen: 13,
+            fourteen: 14,
+            fifteen: 15,
+            sixteen: 16,
+            seventeen: 17,
+            eighteen: 18,
+            nineteen: 19,
+            twenty: 20
+        };
+
+        function parseMetadataTag(metaTag) {
+            const match = /^\[([^:\]]+)(?::\s*(.+))?\]$/.exec((metaTag || '').trim());
+            if (!match) return { code: '', label: '' };
+
+            return {
+                code: match[1].trim(),
+                label: (match[2] || '').trim()
+            };
+        }
+
         function normalizePromptLabel(text) {
-            return (text || '').trim().replace(/:+$/, '').toUpperCase();
+            return (text || '')
+                .replace(/^\s*(?:[-*]\s*)?(?:\*\*|\*)?\s*/, '')
+                .replace(/\s*(?:\*\*|\*)?\s*$/, '')
+                .trim()
+                .replace(/:+$/, '')
+                .replace(/\s+/g, ' ')
+                .toUpperCase();
+        }
+
+        function getPromptLabels(subDelims) {
+            return subDelims.split(',').map((entry) => normalizePromptLabel(entry)).filter(Boolean);
+        }
+
+        function isPromptLabelLine(line, promptLabels = []) {
+            const normalized = normalizePromptLabel(line);
+            return !!normalized && promptLabels.includes(normalized);
+        }
+
+        function extractFirstMetadataLine(text) {
+            const lines = (text || '').split('\n');
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line) continue;
+                if (isMetadataLine(line)) return line;
+            }
+            return '';
+        }
+
+        function buildItemHeaderMatchers(itemDelim) {
+            const rawTokens = itemDelim.split(',').map((entry) => entry.trim()).filter(Boolean);
+            const matchers = [];
+            let includeSmartRollMatcher = false;
+
+            rawTokens.forEach((token) => {
+                const normalized = token.replace(/[^a-z0-9]/gi, '').toUpperCase();
+                if (!normalized) return;
+
+                if (['AROLL', 'BROLL', 'ROLL'].includes(normalized)) {
+                    includeSmartRollMatcher = true;
+                    return;
+                }
+
+                const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                matchers.push(new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*\\*|\\*)?\\s*(?:${escaped})\\b[^:]*:?\\s*(?:\\*\\*|\\*)?\\s*$`, 'i'));
+            });
+
+            if (includeSmartRollMatcher) {
+                matchers.unshift(/^\s*(?:[-*]\s*)?(?:\*\*|\*)?\s*(?:A\s*[- ]?\s*ROLL|B\s*[- ]?\s*ROLL|AROLL|BROLL)\b[^:]*:?\s*(?:\*\*|\*)?\s*$/i);
+            }
+
+            return matchers;
+        }
+
+        function isItemHeaderLine(line, matchers) {
+            const trimmed = (line || '').trim();
+            if (!trimmed || !matchers.length) return false;
+            return matchers.some((matcher) => matcher.test(trimmed));
+        }
+
+        function splitItemSections(chunk, itemDelim) {
+            if (!itemDelim) return [chunk];
+
+            const matchers = buildItemHeaderMatchers(itemDelim);
+            if (!matchers.length) return [chunk];
+
+            const lines = chunk.split('\n');
+            const headerIndexes = [];
+
+            lines.forEach((line, index) => {
+                if (isItemHeaderLine(line, matchers)) {
+                    headerIndexes.push(index);
+                }
+            });
+
+            if (!headerIndexes.length) return [chunk];
+
+            const items = [];
+            headerIndexes.forEach((startIndex, position) => {
+                const endIndex = position + 1 < headerIndexes.length ? headerIndexes[position + 1] : lines.length;
+                const itemText = lines.slice(startIndex, endIndex).join('\n').trim();
+                if (itemText) items.push(itemText);
+            });
+
+            return items.length ? items : [chunk];
+        }
+
+        function extractScriptLine(itemText, promptLabels = []) {
+            const lines = (itemText || '').split('\n').slice(1);
+
+            for (const rawLine of lines) {
+                const line = rawLine.trim();
+                if (!line) continue;
+                if (isMetadataLine(line)) continue;
+                if (isDecorativeLine(line)) continue;
+                if (isPromptLabelLine(line, promptLabels)) break;
+                return line.replace(/^[\*\#\s]+|[\*\#\s]+$/g, '');
+            }
+
+            return '';
+        }
+
+        function findPromptSections(itemText, promptLabels = []) {
+            const sections = [];
+            const lines = (itemText || '').split('\n');
+            let offset = 0;
+
+            lines.forEach((line) => {
+                const normalized = normalizePromptLabel(line);
+                if (normalized && promptLabels.includes(normalized)) {
+                    const lineStart = offset;
+                    const lineEnd = offset + line.length;
+                    sections.push({
+                        delim: normalized,
+                        index: lineStart,
+                        contentStart: itemText[lineEnd] === '\n' ? lineEnd + 1 : lineEnd
+                    });
+                }
+
+                offset += line.length + 1;
+            });
+
+            return sections;
+        }
+
+        function parseDurationToken(token) {
+            if (!token) return null;
+            const cleaned = token.toLowerCase().replace(/[^a-z0-9.]/g, '');
+            if (!cleaned) return null;
+            if (/^\d+(?:\.\d+)?$/.test(cleaned)) return Number(cleaned);
+            return NUMBER_WORDS[cleaned] ?? null;
+        }
+
+        function inferVideoDurationSeconds(text) {
+            if (!text) return null;
+
+            const durationRegex = /\b(\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*(?:-| )?(?:sec|secs|second|seconds)\b/gi;
+            let maxSeconds = null;
+
+            for (const match of text.matchAll(durationRegex)) {
+                const value = parseDurationToken(match[1]);
+                if (value === null) continue;
+                maxSeconds = maxSeconds === null ? value : Math.max(maxSeconds, value);
+            }
+
+            return maxSeconds;
+        }
+
+        function formatDurationLabel(seconds) {
+            if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return '';
+            return Number.isInteger(seconds) ? `${seconds} sec` : `${seconds} sec`;
+        }
+
+        function inferItemDurationLabel(blocks = []) {
+            const videoBlock = blocks.find((block) => normalizePromptLabel(block.title) === 'VIDEO PROMPT');
+            const seconds = inferVideoDurationSeconds(videoBlock ? videoBlock.content : '');
+            return formatDurationLabel(seconds);
+        }
+
+        function getBlockFooterLines(block) {
+            if (!block) return [];
+
+            const footer = [];
+            if (block.scriptLine) footer.push(`Line: ${block.scriptLine}`);
+            if (block.durationLabel) footer.push(`Duration: ${block.durationLabel}`);
+            if (block.taraCode) footer.push(`Tara Code: ${block.taraCode}`);
+            return footer;
         }
 
         function getAffixSettings() {
@@ -957,6 +1156,8 @@
             parts.push(`${block.title}:`);
             const decoratedContent = getDecoratedBlockContent(block);
             if (decoratedContent) parts.push(decoratedContent);
+            const footerLines = getBlockFooterLines(block);
+            if (footerLines.length) parts.push(footerLines.join('\n'));
             return parts.join('\n').trim();
         }
 
@@ -1320,7 +1521,7 @@
         function processText() {
             primeAudio();
 
-            const text = DOM.inputText.value;
+            const text = DOM.inputText.value.replace(/\r\n?/g, '\n');
             const splitMethod = DOM.splitMethod.value;
             const mainDelim = DOM.mainDelimiter.value.trim();
             const subDelims = DOM.subDelimiters.value;
@@ -1355,15 +1556,7 @@
                 rawChunks = text.split(mainDelimRegex).filter((chunk) => chunk.trim().length > 0);
             }
 
-            const subDelimsArray = subDelims.split(',').map((entry) => entry.trim()).filter(Boolean);
-            const subDelimMatchers = subDelimsArray.map((delimiter) => {
-                const cleanDelim = delimiter.replace(/[^a-zA-Z0-9\s]/g, '').trim();
-                const escaped = cleanDelim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                return {
-                    clean: cleanDelim,
-                    regex: new RegExp(`(${escaped})[^a-zA-Z0-9]*`, 'gi')
-                };
-            });
+            const promptLabels = getPromptLabels(subDelims);
 
             state.contentMap = {};
             state.blockKeyMap = {};
@@ -1383,13 +1576,7 @@
                 }
 
                 const parsedItems = [];
-                let items = [chunk];
-
-                if (itemDelim) {
-                    const escapedItemDelim = itemDelim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const itemRegex = new RegExp(`(?=${escapedItemDelim})`, 'gi');
-                    items = chunk.split(itemRegex).filter((part) => part.trim().length > 0);
-                }
+                const items = splitItemSections(chunk, itemDelim);
 
                 items.forEach((itemText, itemIndex) => {
                     const extractedBlocks = [];
@@ -1398,45 +1585,47 @@
                         itemTitle = `${itemDelim || 'Item'} ${itemIndex + 1}`;
                     }
 
-                    if (subDelimMatchers.length > 0) {
-                        const foundIndices = [];
+                    const itemMetaTag = extractFirstMetadataLine(itemText);
+                    const itemMetadata = parseMetadataTag(itemMetaTag);
+                    const scriptLine = extractScriptLine(itemText, promptLabels);
 
-                        subDelimMatchers.forEach(({ clean, regex }) => {
-                            const matches = [...itemText.matchAll(regex)];
-                            matches.forEach((match) => {
-                                foundIndices.push({ delim: clean, index: match.index, matchText: match[0] });
-                            });
-                        });
+                    if (promptLabels.length > 0) {
+                        const promptSections = findPromptSections(itemText, promptLabels);
 
-                        foundIndices.sort((a, b) => a.index - b.index);
-                        const uniqueIndices = foundIndices.filter((entry, position, array) => {
-                            return !position || entry.index !== array[position - 1].index;
-                        });
-
-                        for (let index = 0; index < uniqueIndices.length; index++) {
-                            const current = uniqueIndices[index];
-                            const next = uniqueIndices[index + 1];
-                            const start = current.index + current.matchText.length;
+                        for (let index = 0; index < promptSections.length; index++) {
+                            const current = promptSections[index];
+                            const next = promptSections[index + 1];
                             const end = next ? next.index : itemText.length;
-                            const previous = uniqueIndices[index - 1];
-                            const preambleStart = previous ? previous.index + previous.matchText.length : 0;
+                            const previous = promptSections[index - 1];
+                            const preambleStart = previous ? previous.contentStart : 0;
                             const preamble = itemText.substring(preambleStart, current.index);
-                            const metaTag = extractNearestMetadataLine(preamble);
+                            const metaTag = extractNearestMetadataLine(preamble) || itemMetaTag;
+                            const blockMetadata = parseMetadataTag(metaTag);
 
-                            let content = stripTrailingPromptArtifacts(itemText.substring(start, end).trim());
+                            let content = stripTrailingPromptArtifacts(itemText.substring(current.contentStart, end).trim());
                             content = content.replace(/[\*\#\-\s]+$/, '');
 
                             const blockId = `block-${chunkIndex}-${itemIndex}-${index}`;
-                            const copyKey = buildCopyKey(title, itemTitle, current.delim.toUpperCase(), content, metaTag);
+                            const copyKey = buildCopyKey(title, itemTitle, current.delim, content, metaTag);
                             extractedBlocks.push({
                                 id: blockId,
-                                title: current.delim.toUpperCase(),
+                                title: current.delim,
                                 metaTag,
+                                taraCode: blockMetadata.code || itemMetadata.code,
+                                taraLabel: blockMetadata.label || itemMetadata.label,
+                                scriptLine,
                                 content,
                                 copyKey
                             });
                             state.contentMap[blockId] = content;
                             state.blockKeyMap[blockId] = copyKey;
+                        }
+
+                        const durationLabel = inferItemDurationLabel(extractedBlocks);
+                        if (durationLabel) {
+                            extractedBlocks.forEach((block) => {
+                                block.durationLabel = durationLabel;
+                            });
                         }
                     }
 
@@ -1505,6 +1694,10 @@
             const compact = !!options.compact;
             const isExpanded = !!state.expandedBlocks[block.id];
             const decoratedContent = getDecoratedBlockContent(block);
+            const headerMeta = [
+                block.taraCode ? `<span class="meta-chip mt-2">Tara ${escapeHtml(block.taraCode)}</span>` : '',
+                block.durationLabel ? `<span class="meta-chip mt-2">${escapeHtml(block.durationLabel)}</span>` : ''
+            ].filter(Boolean).join('');
             const cardClass = copied ? 'copied-shell' : 'border border-cyan-400/12 bg-slate-950/55 shadow-[0_16px_34px_rgba(0,0,0,0.3)]';
             const badge = copied
                 ? '<span class="status-chip status-chip--done"><i data-lucide="check" class="w-3.5 h-3.5"></i>Copied</span>'
@@ -1529,7 +1722,9 @@
                                     <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5"></i>
                                 </span>
                             </div>
-                            ${block.metaTag ? `<p class="meta-chip mt-2">${escapeHtml(block.metaTag)}</p>` : ''}
+                            ${headerMeta ? `<div class="mt-2 flex flex-wrap gap-2">${headerMeta}</div>` : ''}
+                            ${block.scriptLine ? `<p class="text-xs text-cyan-100/72 mt-2 leading-relaxed">${escapeHtml(block.scriptLine)}</p>` : ''}
+                            ${block.taraLabel ? `<p class="text-[11px] text-cyan-100/46 mt-1">${escapeHtml(block.taraLabel)}</p>` : ''}
                             ${options.meta ? `<p class="text-[11px] text-cyan-100/50 mt-2 uppercase tracking-[0.18em]">${options.meta}</p>` : ''}
                         </div>
                         <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -1584,12 +1779,12 @@
 
             if (!activeItem || !activeItem.blocks || activeItem.blocks.length === 0) {
                 DOM.copyTabContainer.classList.add('hidden');
-                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-cyan-100/45">No prompts in this b-roll.</div>';
+                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-cyan-100/45">No prompts in this roll.</div>';
                 return;
             }
 
             DOM.copyTabContainer.classList.remove('hidden');
-            DOM.copyTabText.textContent = 'Copy B-roll';
+            DOM.copyTabText.textContent = 'Copy Roll';
             DOM.copyTabBtn.querySelector('.copy-tab-icon').innerHTML = '<i data-lucide="files" class="w-4 h-4"></i>';
 
             DOM.blocksContainer.innerHTML = activeItem.blocks.map((block) => {
@@ -1629,7 +1824,7 @@
                                 </div>
                             </div>
                             <button onclick="copyItemGroup('${item.tabId}','${item.itemId}')" class="chrome-btn soft-ring w-full lg:w-auto px-4 py-2.5 rounded-2xl text-sm font-medium ${allCopied ? 'text-lime-200 border-lime-400/20 bg-lime-400/10 hover:bg-lime-400/14' : ''}">
-                                ${allCopied ? 'Copy Again' : 'Copy B-roll'}
+                                ${allCopied ? 'Copy Again' : 'Copy Roll'}
                             </button>
                         </div>
 
@@ -1659,7 +1854,7 @@
             DOM.resultsSummary.textContent = `${stats.totalPrompts} Prompts`;
             DOM.resultsMeta.innerHTML = `
                 <span class="metric-chip"><i data-lucide="copy"></i>${stats.copiedPrompts}/${stats.totalPrompts} copied</span>
-                <span class="metric-chip"><i data-lucide="layers-3"></i>${stats.totalItems} b-rolls</span>
+                <span class="metric-chip"><i data-lucide="layers-3"></i>${stats.totalItems} rolls</span>
                 <span class="metric-chip"><i data-lucide="check"></i>${stats.fullyCopiedItems} done</span>
             `;
             DOM.resetProgressBtn.classList.toggle('hidden', stats.copiedPrompts === 0);
