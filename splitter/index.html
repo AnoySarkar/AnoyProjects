@@ -940,6 +940,14 @@
             };
         }
 
+        function extractTaraCode(...sources) {
+            for (const source of sources) {
+                const match = /\b(TARA\d{3,})\b/i.exec(source || '');
+                if (match) return match[1].toUpperCase();
+            }
+            return '';
+        }
+
         function normalizePromptLabel(text) {
             return (text || '')
                 .replace(/^\s*(?:[-*]\s*)?(?:\*\*|\*)?\s*/, '')
@@ -1028,7 +1036,11 @@
         }
 
         function extractScriptLine(itemText, promptLabels = []) {
-            const lines = (itemText || '').split('\n').slice(1);
+            const headerlessText = (itemText || '').split('\n').slice(1).join('\n');
+            const quotedMatch = /"([^"\n]+)"/.exec(headerlessText);
+            if (quotedMatch) return quotedMatch[1].trim();
+
+            const lines = headerlessText.split('\n');
 
             for (const rawLine of lines) {
                 const line = rawLine.trim();
@@ -1076,13 +1088,26 @@
         function inferVideoDurationSeconds(text) {
             if (!text) return null;
 
-            const durationRegex = /\b(\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*(?:-| )?(?:sec|secs|second|seconds)\b/gi;
             let maxSeconds = null;
 
-            for (const match of text.matchAll(durationRegex)) {
-                const value = parseDurationToken(match[1]);
-                if (value === null) continue;
+            const pushDuration = (value) => {
+                if (value === null || value === undefined || Number.isNaN(value)) return;
                 maxSeconds = maxSeconds === null ? value : Math.max(maxSeconds, value);
+            };
+
+            const shortTimestampRangeRegex = /\b(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)?\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b(?=\s*:|:|\b)/gi;
+            for (const match of text.matchAll(shortTimestampRangeRegex)) {
+                pushDuration(Number(match[2]));
+            }
+
+            const wordOrNumericRangeRegex = /\b(?:timeframe\s+)?(\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*(?:to|-)\s*(\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*(?:s|sec|secs|second|seconds)?(?=\b|:)/gi;
+            for (const match of text.matchAll(wordOrNumericRangeRegex)) {
+                pushDuration(parseDurationToken(match[2]));
+            }
+
+            const explicitDurationRegex = /\b(\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*(?:-| )?(?:s|sec|secs|second|seconds)(?=\b|:)/gi;
+            for (const match of text.matchAll(explicitDurationRegex)) {
+                pushDuration(parseDurationToken(match[1]));
             }
 
             return maxSeconds;
@@ -1090,23 +1115,13 @@
 
         function formatDurationLabel(seconds) {
             if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return '';
-            return Number.isInteger(seconds) ? `${seconds} sec` : `${seconds} sec`;
+            return Number.isInteger(seconds) ? `${seconds}s` : `${seconds}s`;
         }
 
         function inferItemDurationLabel(blocks = []) {
             const videoBlock = blocks.find((block) => normalizePromptLabel(block.title) === 'VIDEO PROMPT');
             const seconds = inferVideoDurationSeconds(videoBlock ? videoBlock.content : '');
             return formatDurationLabel(seconds);
-        }
-
-        function getBlockFooterLines(block) {
-            if (!block) return [];
-
-            const footer = [];
-            if (block.scriptLine) footer.push(`Line: ${block.scriptLine}`);
-            if (block.durationLabel) footer.push(`Duration: ${block.durationLabel}`);
-            if (block.taraCode) footer.push(`Tara Code: ${block.taraCode}`);
-            return footer;
         }
 
         function getAffixSettings() {
@@ -1151,13 +1166,12 @@
         function formatBlockForCopy(block) {
             if (!block) return '';
 
-            const parts = [];
-            if (block.metaTag) parts.push(block.metaTag);
-            parts.push(`${block.title}:`);
-            const decoratedContent = getDecoratedBlockContent(block);
+            let decoratedContent = getDecoratedBlockContent(block);
+            if (normalizePromptLabel(block.title) === 'VIDEO PROMPT' && block.durationLabel) {
+                decoratedContent = decoratedContent ? `${decoratedContent}\n${block.durationLabel}` : block.durationLabel;
+            }
+            const parts = [`${block.title}:`];
             if (decoratedContent) parts.push(decoratedContent);
-            const footerLines = getBlockFooterLines(block);
-            if (footerLines.length) parts.push(footerLines.join('\n'));
             return parts.join('\n').trim();
         }
 
@@ -1588,6 +1602,7 @@
                     const itemMetaTag = extractFirstMetadataLine(itemText);
                     const itemMetadata = parseMetadataTag(itemMetaTag);
                     const scriptLine = extractScriptLine(itemText, promptLabels);
+                    const itemTaraCode = extractTaraCode(itemText, itemMetaTag, itemMetadata.code);
 
                     if (promptLabels.length > 0) {
                         const promptSections = findPromptSections(itemText, promptLabels);
@@ -1604,6 +1619,7 @@
 
                             let content = stripTrailingPromptArtifacts(itemText.substring(current.contentStart, end).trim());
                             content = content.replace(/[\*\#\-\s]+$/, '');
+                            const taraCode = extractTaraCode(metaTag, preamble, content, itemTaraCode, blockMetadata.code);
 
                             const blockId = `block-${chunkIndex}-${itemIndex}-${index}`;
                             const copyKey = buildCopyKey(title, itemTitle, current.delim, content, metaTag);
@@ -1611,7 +1627,7 @@
                                 id: blockId,
                                 title: current.delim,
                                 metaTag,
-                                taraCode: blockMetadata.code || itemMetadata.code,
+                                taraCode,
                                 taraLabel: blockMetadata.label || itemMetadata.label,
                                 scriptLine,
                                 content,
@@ -1624,7 +1640,9 @@
                         const durationLabel = inferItemDurationLabel(extractedBlocks);
                         if (durationLabel) {
                             extractedBlocks.forEach((block) => {
-                                block.durationLabel = durationLabel;
+                                if (normalizePromptLabel(block.title) === 'VIDEO PROMPT') {
+                                    block.durationLabel = durationLabel;
+                                }
                             });
                         }
                     }
