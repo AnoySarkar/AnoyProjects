@@ -1019,6 +1019,16 @@
                         </div>
                     </div>
 
+                    <div class="px-4 pt-3 pb-0">
+                        <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                            <input type="url" id="docUrlInput" placeholder="Paste doc link" class="soft-ring min-w-0 w-full px-3 py-2.5 rounded-2xl text-sm">
+                            <button id="docUrlBtn" type="button" onclick="handleDocumentLink()" class="chrome-btn soft-ring px-4 py-2 rounded-2xl text-sm font-medium flex items-center justify-center gap-2">
+                                <i data-lucide="link" class="w-4 h-4"></i>
+                                Load
+                            </button>
+                        </div>
+                    </div>
+
                     <textarea id="inputText" placeholder="Paste script" class="soft-ring w-full flex-grow min-h-[38vh] sm:min-h-[300px] p-4 sm:p-5 resize-none text-sm bg-transparent"></textarea>
 
                     <div class="p-4 border-t border-cyan-400/10 bg-slate-950/20 rounded-b-[1.8rem]">
@@ -1146,6 +1156,14 @@
 
                 <div class="settings-block">
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                        <i data-lucide="ban" class="w-4 h-4 text-cyan-300"></i>
+                        Ignore
+                    </label>
+                    <input type="text" id="ignoreDelimiter" placeholder="[DONE]" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
+                </div>
+
+                <div class="settings-block">
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="arrow-right-circle" class="w-4 h-4 text-cyan-300"></i>
                         Auto Next
                     </label>
@@ -1201,6 +1219,7 @@
             mainDelimiter: 'Video',
             subDelimiters: 'IMAGE PROMPT:, VIDEO PROMPT:',
             itemDelimiter: 'B-roll, A-roll',
+            ignoreDelimiter: '[DONE]',
             affixRules: [],
             autoAdvanceMode: 'last',
             rollSearch: '',
@@ -1231,11 +1250,14 @@
         const DOM = {
             fileUpload: document.getElementById('fileUpload'),
             inputText: document.getElementById('inputText'),
+            docUrlInput: document.getElementById('docUrlInput'),
+            docUrlBtn: document.getElementById('docUrlBtn'),
             splitMethod: document.getElementById('splitMethod'),
             keywordContainer: document.getElementById('keywordContainer'),
             mainDelimiter: document.getElementById('mainDelimiter'),
             subDelimiters: document.getElementById('subDelimiters'),
             itemDelimiter: document.getElementById('itemDelimiter'),
+            ignoreDelimiter: document.getElementById('ignoreDelimiter'),
             autoAdvanceMode: document.getElementById('autoAdvanceMode'),
             affixRulesContainer: document.getElementById('affixRulesContainer'),
             addAffixRuleBtn: document.getElementById('addAffixRuleBtn'),
@@ -1406,6 +1428,7 @@
                 mainDelimiter: localStorage.getItem('sps_mainDelimiter') || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter,
                 subDelimiters: localStorage.getItem('sps_subDelimiters') || DEFAULT_WORKSPACE_SETTINGS.subDelimiters,
                 itemDelimiter: localStorage.getItem('sps_itemDelimiter') || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter,
+                ignoreDelimiter: localStorage.getItem('sps_ignoreDelimiter') || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter,
                 affixRules: normalizeAffixRules([], {
                     prefixText: localStorage.getItem('sps_prefixText') || '',
                     suffixText: localStorage.getItem('sps_suffixText') || '',
@@ -1446,6 +1469,7 @@
                 mainDelimiter: DOM.mainDelimiter.value,
                 subDelimiters: DOM.subDelimiters.value,
                 itemDelimiter: DOM.itemDelimiter.value,
+                ignoreDelimiter: DOM.ignoreDelimiter.value,
                 affixRules: getAffixRules(),
                 autoAdvanceMode: DOM.autoAdvanceMode.value,
                 rollSearch: DOM.rollSearchInput.value,
@@ -1478,6 +1502,7 @@
             DOM.mainDelimiter.value = workspace.mainDelimiter || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter;
             DOM.subDelimiters.value = workspace.subDelimiters || DEFAULT_WORKSPACE_SETTINGS.subDelimiters;
             DOM.itemDelimiter.value = workspace.itemDelimiter || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter;
+            DOM.ignoreDelimiter.value = workspace.ignoreDelimiter || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter;
             DOM.autoAdvanceMode.value = workspace.autoAdvanceMode || DEFAULT_WORKSPACE_SETTINGS.autoAdvanceMode;
             DOM.rollSearchInput.value = workspace.rollSearch || '';
             renderAffixRules(workspace.affixRules || []);
@@ -1536,6 +1561,7 @@
                 mainDelimiter: DOM.mainDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter,
                 subDelimiters: DOM.subDelimiters.value || DEFAULT_WORKSPACE_SETTINGS.subDelimiters,
                 itemDelimiter: DOM.itemDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter,
+                ignoreDelimiter: DOM.ignoreDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter,
                 affixRules: getAffixRules(),
                 autoAdvanceMode: DOM.autoAdvanceMode.value || DEFAULT_WORKSPACE_SETTINGS.autoAdvanceMode,
                 rollSearch: DOM.rollSearchInput.value || '',
@@ -1646,6 +1672,7 @@
             DOM.mainDelimiter.addEventListener('input', saveToLocal);
             DOM.subDelimiters.addEventListener('input', saveToLocal);
             DOM.itemDelimiter.addEventListener('input', saveToLocal);
+            DOM.ignoreDelimiter.addEventListener('input', saveToLocal);
             DOM.autoAdvanceMode.addEventListener('change', saveToLocal);
             DOM.addAffixRuleBtn.addEventListener('click', addAffixRule);
             DOM.rollSearchInput.addEventListener('input', () => {
@@ -1678,6 +1705,11 @@
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
                     processText();
                 }
+            });
+            DOM.docUrlInput.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                handleDocumentLink();
             });
             document.addEventListener('keydown', (event) => {
                 if (event.key === 'Escape') {
@@ -2754,6 +2786,86 @@
             event.target.value = '';
         }
 
+        function getLinkedDocumentRequest(rawUrl) {
+            const url = new URL(rawUrl);
+            const googleDocMatch = url.href.match(/docs\.google\.com\/document\/d\/([^/]+)/i);
+            const googleDriveMatch = url.href.match(/drive\.google\.com\/file\/d\/([^/]+)/i);
+
+            if (googleDocMatch) {
+                return {
+                    url: `https://docs.google.com/document/d/${googleDocMatch[1]}/export?format=docx`,
+                    type: 'docx'
+                };
+            }
+
+            if (googleDriveMatch) {
+                return {
+                    url: `https://drive.google.com/uc?export=download&id=${googleDriveMatch[1]}`,
+                    type: 'auto'
+                };
+            }
+
+            return {
+                url: url.href,
+                type: url.pathname.toLowerCase().endsWith('.docx') ? 'docx' : 'auto'
+            };
+        }
+
+        function looksLikeDocx(response, requestType) {
+            const contentType = response.headers.get('content-type') || '';
+            const contentDisposition = response.headers.get('content-disposition') || '';
+
+            return requestType === 'docx'
+                || contentType.includes('wordprocessingml')
+                || contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                || /\.docx(?:[";]|$)/i.test(contentDisposition);
+        }
+
+        async function handleDocumentLink() {
+            primeAudio();
+
+            const rawUrl = DOM.docUrlInput.value.trim();
+            if (!rawUrl) {
+                showToast('Paste a document link first.', 'error');
+                return;
+            }
+
+            let request;
+            try {
+                request = getLinkedDocumentRequest(rawUrl);
+            } catch (error) {
+                showToast('That does not look like a valid link.', 'error');
+                return;
+            }
+
+            DOM.docUrlBtn.disabled = true;
+            DOM.docUrlBtn.classList.add('opacity-70');
+            showToast('Fetching document...');
+
+            try {
+                const response = await fetch(request.url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                if (looksLikeDocx(response, request.type)) {
+                    const arrayBuffer = await response.arrayBuffer();
+                    const result = await mammoth.extractRawText({ arrayBuffer });
+                    DOM.inputText.value = result.value;
+                    showToast('Linked Word document extracted!', 'success');
+                } else {
+                    DOM.inputText.value = await response.text();
+                    showToast('Linked text loaded!', 'success');
+                }
+
+                syncActiveWorkspace();
+            } catch (error) {
+                console.error(error);
+                showToast('Could not access that link. Make it public or use a direct .txt/.docx link.', 'error');
+            } finally {
+                DOM.docUrlBtn.disabled = false;
+                DOM.docUrlBtn.classList.remove('opacity-70');
+            }
+        }
+
         function processText() {
             primeAudio();
 
@@ -2762,6 +2874,7 @@
             const mainDelim = DOM.mainDelimiter.value.trim();
             const subDelims = DOM.subDelimiters.value;
             const itemDelim = DOM.itemDelimiter.value.trim();
+            const ignoreKeyword = DOM.ignoreDelimiter.value.trim().toLowerCase();
 
             if (!text.trim()) {
                 showToast('Please paste some text first.', 'error');
@@ -2904,11 +3017,18 @@
                 };
             });
 
-            state.parsedData = parsed;
-            state.activeSubTabIds = {};
-            state.activeTabId = parsed.length ? parsed[0].id : null;
+            const filteredParsed = parsed.filter((tab) => {
+                if (!ignoreKeyword) return true;
+                const ignoreList = ignoreKeyword.split(',').map((entry) => entry.trim()).filter(Boolean);
+                const chunkTextLower = tab.rawContent.toLowerCase();
+                return !ignoreList.some((ignoreStr) => chunkTextLower.includes(ignoreStr));
+            });
 
-            parsed.forEach((tab) => {
+            state.parsedData = filteredParsed;
+            state.activeSubTabIds = {};
+            state.activeTabId = filteredParsed.length ? filteredParsed[0].id : null;
+
+            filteredParsed.forEach((tab) => {
                 if (tab.items && tab.items.length > 0) {
                     state.activeSubTabIds[tab.id] = tab.items[0].id;
                 }
@@ -2918,10 +3038,12 @@
 
             renderUI();
 
-            if (parsed.length > 0) {
-                showToast(`Successfully extracted ${parsed.length} sections!`, 'success');
+            if (filteredParsed.length < parsed.length) {
+                showToast(`Extracted ${filteredParsed.length} tabs (Ignored ${parsed.length - filteredParsed.length} completed ones!)`, 'success');
+            } else if (filteredParsed.length > 0) {
+                showToast(`Successfully extracted ${filteredParsed.length} sections!`, 'success');
             } else {
-                showToast('Nothing extracted. Check your split rules.', 'error');
+                showToast('Nothing extracted. Check your ignore string.', 'error');
             }
         }
 
@@ -3220,6 +3342,7 @@ The camera glides gently while the reminder animates into focus.`;
 
             DOM.splitMethod.value = 'smart';
             DOM.subDelimiters.value = 'IMAGE PROMPT:, VIDEO PROMPT:';
+            DOM.ignoreDelimiter.value = '[DONE]';
             syncActiveWorkspace();
 
             toggleMainDelimiter();
