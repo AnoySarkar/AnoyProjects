@@ -255,6 +255,294 @@
             color: var(--accent-soft);
         }
 
+        .metric-chip--progress {
+            position: relative;
+            overflow: hidden;
+            min-width: min(100%, 17rem);
+            align-items: stretch;
+            flex-direction: column;
+            gap: 0.4rem;
+            padding: 0.7rem 0.85rem;
+            border-color: rgba(163, 230, 53, 0.22);
+            box-shadow: inset 0 0 0 1px rgba(163, 230, 53, 0.04), 0 0 28px rgba(163, 230, 53, 0.08);
+        }
+
+        .metric-chip--progress::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at right center, rgba(163, 230, 53, 0.14), transparent 42%);
+            pointer-events: none;
+        }
+
+        .metric-chip--progress.progress-tone-empty {
+            border-color: rgba(71, 85, 105, 0.28);
+            box-shadow: inset 0 0 0 1px rgba(71, 85, 105, 0.06);
+        }
+
+        .metric-chip--progress.progress-tone-started {
+            border-color: rgba(248, 113, 113, 0.24);
+            box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.05), 0 0 28px rgba(248, 113, 113, 0.08);
+        }
+
+        .metric-chip--progress.progress-tone-mid {
+            border-color: rgba(250, 204, 21, 0.24);
+            box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.05), 0 0 28px rgba(250, 204, 21, 0.08);
+        }
+
+        .metric-chip--progress.progress-tone-near {
+            border-color: rgba(45, 212, 191, 0.24);
+            box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.05), 0 0 28px rgba(45, 212, 191, 0.08);
+        }
+
+        .metric-progress-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .metric-progress-copy {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .metric-progress-label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+
+        .metric-progress-label strong {
+            color: rgba(236, 254, 255, 0.96);
+            font-size: 0.8rem;
+            letter-spacing: 0.03em;
+        }
+
+        .metric-progress-label span {
+            color: rgba(199, 247, 255, 0.58);
+            font-size: 0.66rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .metric-progress-value {
+            color: rgba(217, 249, 157, 0.98);
+            font-size: 1rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            text-shadow: 0 0 16px rgba(163, 230, 53, 0.38);
+        }
+
+        .progress-track {
+            position: relative;
+            height: 0.48rem;
+            border-radius: 9999px;
+            background: rgba(12, 22, 33, 0.95);
+            overflow: hidden;
+            border: 1px solid rgba(103, 232, 249, 0.1);
+        }
+
+        .progress-fill {
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: var(--progress, 0%);
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(34, 211, 238, 0.95), rgba(163, 230, 53, 0.98));
+            box-shadow: 0 0 18px rgba(34, 211, 238, 0.28), 0 0 24px rgba(163, 230, 53, 0.22);
+        }
+
+        .progress-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.35rem 0.62rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(163, 230, 53, 0.18);
+            background: rgba(14, 25, 18, 0.92);
+            color: rgba(236, 254, 255, 0.92);
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1;
+            box-shadow: 0 0 16px rgba(163, 230, 53, 0.08);
+        }
+
+        .progress-pill strong {
+            color: rgba(217, 249, 157, 1);
+            font-size: 12px;
+            text-shadow: 0 0 12px rgba(163, 230, 53, 0.32);
+        }
+
+        .progress-pill span {
+            color: rgba(199, 247, 255, 0.62);
+            font-size: 10px;
+        }
+
+        .progress-pill--mini {
+            padding: 0.22rem 0.42rem;
+            gap: 0;
+            min-width: 2.7rem;
+            justify-content: center;
+            font-size: 10px;
+        }
+
+        .progress-pill--mini strong {
+            font-size: 10px;
+        }
+
+        .subtab-chip {
+            min-width: 0;
+            max-width: 9rem;
+            padding: 0.38rem 0.55rem;
+            border-radius: 0.95rem;
+            border: 1px solid rgba(103, 232, 249, 0.1);
+            background: rgba(255, 255, 255, 0.025);
+            color: rgba(199, 247, 255, 0.72);
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.1;
+            transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+        }
+
+        .subtab-chip:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(103, 232, 249, 0.16);
+            color: rgba(236, 254, 255, 0.92);
+        }
+
+        .subtab-chip--active {
+            background: rgba(34, 211, 238, 0.12);
+            border-color: rgba(103, 232, 249, 0.3);
+            color: rgba(236, 254, 255, 0.98);
+            box-shadow: 0 0 16px rgba(34, 211, 238, 0.08);
+        }
+
+        .subtab-chip-title {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .progress-tone-empty {
+            border-color: rgba(71, 85, 105, 0.34);
+            background: rgba(10, 15, 24, 0.9);
+            box-shadow: none;
+        }
+
+        .progress-tone-empty strong {
+            color: rgba(148, 163, 184, 0.96);
+            text-shadow: none;
+        }
+
+        .progress-tone-started {
+            border-color: rgba(248, 113, 113, 0.3);
+            background: rgba(36, 14, 18, 0.92);
+            box-shadow: 0 0 16px rgba(248, 113, 113, 0.08);
+        }
+
+        .progress-tone-started strong {
+            color: rgba(254, 202, 202, 0.98);
+            text-shadow: 0 0 12px rgba(248, 113, 113, 0.22);
+        }
+
+        .progress-tone-mid {
+            border-color: rgba(250, 204, 21, 0.28);
+            background: rgba(38, 28, 8, 0.92);
+            box-shadow: 0 0 16px rgba(250, 204, 21, 0.08);
+        }
+
+        .progress-tone-mid strong {
+            color: rgba(254, 240, 138, 0.98);
+            text-shadow: 0 0 12px rgba(250, 204, 21, 0.24);
+        }
+
+        .progress-tone-near {
+            border-color: rgba(45, 212, 191, 0.28);
+            background: rgba(8, 30, 27, 0.92);
+            box-shadow: 0 0 18px rgba(45, 212, 191, 0.08);
+        }
+
+        .progress-tone-near strong {
+            color: rgba(153, 246, 228, 0.98);
+            text-shadow: 0 0 12px rgba(45, 212, 191, 0.24);
+        }
+
+        .progress-tone-done {
+            border-color: rgba(163, 230, 53, 0.26);
+            background: rgba(14, 25, 18, 0.92);
+            box-shadow: 0 0 16px rgba(163, 230, 53, 0.08);
+        }
+
+        .progress-tone-done strong {
+            color: rgba(217, 249, 157, 1);
+            text-shadow: 0 0 12px rgba(163, 230, 53, 0.32);
+        }
+
+        .metric-progress-value.progress-tone-empty {
+            color: rgba(148, 163, 184, 0.96);
+            text-shadow: none;
+        }
+
+        .metric-progress-value.progress-tone-started {
+            color: rgba(254, 202, 202, 0.98);
+            text-shadow: 0 0 16px rgba(248, 113, 113, 0.3);
+        }
+
+        .metric-progress-value.progress-tone-mid {
+            color: rgba(254, 240, 138, 0.98);
+            text-shadow: 0 0 16px rgba(250, 204, 21, 0.3);
+        }
+
+        .metric-progress-value.progress-tone-near {
+            color: rgba(153, 246, 228, 0.98);
+            text-shadow: 0 0 16px rgba(45, 212, 191, 0.3);
+        }
+
+        .metric-progress-value.progress-tone-done {
+            color: rgba(217, 249, 157, 1);
+            text-shadow: 0 0 16px rgba(163, 230, 53, 0.34);
+        }
+
+        .progress-fill.progress-tone-empty {
+            background: linear-gradient(90deg, rgba(71, 85, 105, 0.7), rgba(100, 116, 139, 0.76));
+            box-shadow: none;
+        }
+
+        .progress-fill.progress-tone-started {
+            background: linear-gradient(90deg, rgba(248, 113, 113, 0.95), rgba(251, 146, 60, 0.96));
+            box-shadow: 0 0 18px rgba(248, 113, 113, 0.24), 0 0 22px rgba(251, 146, 60, 0.2);
+        }
+
+        .progress-fill.progress-tone-mid {
+            background: linear-gradient(90deg, rgba(250, 204, 21, 0.96), rgba(249, 115, 22, 0.94));
+            box-shadow: 0 0 18px rgba(250, 204, 21, 0.24), 0 0 22px rgba(249, 115, 22, 0.18);
+        }
+
+        .progress-fill.progress-tone-near {
+            background: linear-gradient(90deg, rgba(45, 212, 191, 0.96), rgba(34, 211, 238, 0.94));
+            box-shadow: 0 0 18px rgba(45, 212, 191, 0.22), 0 0 22px rgba(34, 211, 238, 0.2);
+        }
+
+        .progress-fill.progress-tone-done {
+            background: linear-gradient(90deg, rgba(34, 211, 238, 0.95), rgba(163, 230, 53, 0.98));
+            box-shadow: 0 0 18px rgba(34, 211, 238, 0.28), 0 0 24px rgba(163, 230, 53, 0.22);
+        }
+
+        .affix-rule-card {
+            border: 1px solid rgba(103, 232, 249, 0.1);
+            background: rgba(4, 10, 22, 0.56);
+        }
+
+        .affix-rule-empty {
+            border: 1px dashed rgba(103, 232, 249, 0.12);
+            background: rgba(4, 10, 22, 0.36);
+            color: rgba(199, 247, 255, 0.56);
+        }
+
         .mini-kicker {
             color: var(--text-dim);
             font-size: 0.72rem;
@@ -373,6 +661,12 @@
             color: var(--text-soft);
         }
 
+        #workspaceSelect {
+            background: rgba(3, 10, 22, 0.92);
+            border: 1px solid rgba(103, 232, 249, 0.16);
+            color: var(--text-main);
+        }
+
         @media (max-width: 640px) {
             #toast {
                 left: 1rem;
@@ -427,7 +721,7 @@
                     <span class="hidden sm:inline">Rules</span>
                 </button>
                 <button id="soundToggle" type="button" aria-label="Toggle audio" title="Audio" class="chrome-btn soft-ring w-full text-sm font-medium px-3 py-2.5 rounded-2xl transition-colors flex items-center justify-center gap-2">
-                    <i data-lucide="volume-2" class="w-4 h-4"></i>
+                    <span class="sound-toggle-icon"><i data-lucide="volume-2" class="w-4 h-4"></i></span>
                     <span id="soundToggleText" class="hidden sm:inline">Audio</span>
                 </button>
                 <button id="installBtn" type="button" aria-label="Install app" title="Install" class="chrome-btn soft-ring hidden w-full text-sm font-medium px-3 py-2.5 rounded-2xl transition-colors items-center justify-center gap-2">
@@ -462,6 +756,25 @@
                             <button id="clearBtn" onclick="handleClearAll()" title="Clear" class="chrome-btn soft-ring p-2 rounded-2xl transition-colors justify-self-end sm:justify-self-auto">
                                 <i data-lucide="trash-2" class="w-5 h-5"></i>
                             </button>
+                        </div>
+                    </div>
+
+                    <div class="px-4 pt-4 pb-0">
+                        <div class="rounded-[1.4rem] border border-cyan-400/10 bg-slate-950/35 p-3">
+                            <div class="flex flex-col gap-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p class="mini-kicker">Directories</p>
+                                        <p class="text-sm text-cyan-100/72">Keep multiple scripts saved side by side.</p>
+                                    </div>
+                                </div>
+                                <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+                                    <select id="workspaceSelect" class="soft-ring min-w-0 w-full px-3 py-2.5 rounded-2xl text-sm font-medium"></select>
+                                    <button id="newWorkspaceBtn" type="button" class="chrome-btn soft-ring px-3 py-2 rounded-2xl text-sm font-medium">New</button>
+                                    <button id="renameWorkspaceBtn" type="button" class="chrome-btn soft-ring px-3 py-2 rounded-2xl text-sm font-medium">Rename</button>
+                                    <button id="deleteWorkspaceBtn" type="button" class="chrome-btn soft-ring px-3 py-2 rounded-2xl text-sm font-medium">Delete</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -511,7 +824,7 @@
                     </div>
 
                     <div id="tabsContainer" class="flex overflow-x-auto hide-scrollbar rounded-t-[1.6rem] border border-b-0 snap-x snap-mandatory"></div>
-                    <div id="subTabsContainer" class="flex overflow-x-auto hide-scrollbar border-x border-b px-3 sm:px-4 py-3 gap-2 hidden"></div>
+                    <div id="subTabsContainer" class="flex flex-wrap border-x border-b px-2.5 sm:px-3 py-2 gap-1.5 hidden"></div>
 
                     <div class="glass-panel min-w-0 border rounded-[1.8rem] flex-grow p-4 sm:p-5">
                         <div id="copyTabContainer" class="flex justify-end items-center mb-4 hidden">
@@ -584,50 +897,65 @@
                     <input type="text" id="ignoreDelimiter" placeholder="[DONE]" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
+                <div>
+                    <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                        <i data-lucide="arrow-right-circle" class="w-4 h-4 text-cyan-300"></i>
+                        Auto Next
+                    </label>
+                    <select id="autoAdvanceMode" class="soft-ring w-full px-4 py-3 rounded-xl transition-all text-sm font-medium">
+                        <option value="last">After Last Prompt</option>
+                        <option value="video">After Any Video Prompt</option>
+                        <option value="image">After Any Image Prompt</option>
+                        <option value="first">After First Prompt</option>
+                        <option value="none">Stay Here</option>
+                    </select>
+                </div>
+
                 <div class="pt-2 border-t border-cyan-400/10 space-y-4">
-                    <div>
-                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
-                            <i data-lucide="arrow-up-from-line" class="w-4 h-4 text-cyan-300"></i>
-                            Prefix
-                        </label>
-                        <textarea id="prefixText" rows="3" placeholder="Text added before prompt content" class="soft-ring w-full px-4 py-3 rounded-xl transition-all resize-y"></textarea>
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                                <i data-lucide="wand-sparkles" class="w-4 h-4 text-cyan-300"></i>
+                                Prefix / Suffix Rules
+                            </label>
+                            <p class="text-xs text-cyan-100/52">Create as many per-prompt rules as you need.</p>
+                        </div>
+                        <button id="addAffixRuleBtn" type="button" class="chrome-btn soft-ring px-3 py-2 rounded-2xl text-sm font-medium inline-flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            Add Rule
+                        </button>
                     </div>
 
-                    <div>
-                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
-                            <i data-lucide="arrow-down-to-line" class="w-4 h-4 text-cyan-300"></i>
-                            Suffix
-                        </label>
-                        <textarea id="suffixText" rows="3" placeholder="Text added after prompt content" class="soft-ring w-full px-4 py-3 rounded-xl transition-all resize-y"></textarea>
-                    </div>
-
-                    <div>
-                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
-                            <i data-lucide="filter" class="w-4 h-4 text-cyan-300"></i>
-                            Apply To
-                        </label>
-                        <select id="affixTarget" onchange="toggleAffixSpecific()" class="soft-ring w-full px-4 py-3 rounded-xl transition-all text-sm font-medium">
-                            <option value="all">All Prompts</option>
-                            <option value="image">Image Prompts</option>
-                            <option value="video">Video Prompts</option>
-                            <option value="specific">Specific Label</option>
-                        </select>
-                    </div>
-
-                    <div id="affixSpecificContainer" class="hidden">
-                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
-                            <i data-lucide="tag" class="w-4 h-4 text-cyan-300"></i>
-                            Specific Label
-                        </label>
-                        <input type="text" id="affixSpecific" placeholder="IMAGE PROMPT" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
-                    </div>
+                    <div id="affixRulesContainer" class="space-y-3"></div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
+        const WORKSPACE_STORAGE_KEY = 'sps_workspaceLibrary_v2';
+        const ACTIVE_WORKSPACE_STORAGE_KEY = 'sps_activeWorkspaceId_v2';
+        const DEFAULT_WORKSPACE_SETTINGS = {
+            name: 'Directory 1',
+            inputText: '',
+            splitMethod: 'smart',
+            mainDelimiter: 'Video',
+            subDelimiters: 'IMAGE PROMPT:, VIDEO PROMPT:',
+            itemDelimiter: 'B-roll, A-roll',
+            ignoreDelimiter: '[DONE]',
+            affixRules: [],
+            autoAdvanceMode: 'last',
+            viewMode: 'tabbed',
+            parsedData: [],
+            activeTabId: null,
+            activeSubTabIds: {},
+            expandedBlocks: {},
+            copiedBlockKeys: {}
+        };
+
         const state = {
+            workspaces: [],
+            activeWorkspaceId: null,
             parsedData: [],
             activeTabId: null,
             activeSubTabIds: {},
@@ -648,11 +976,9 @@
             subDelimiters: document.getElementById('subDelimiters'),
             itemDelimiter: document.getElementById('itemDelimiter'),
             ignoreDelimiter: document.getElementById('ignoreDelimiter'),
-            prefixText: document.getElementById('prefixText'),
-            suffixText: document.getElementById('suffixText'),
-            affixTarget: document.getElementById('affixTarget'),
-            affixSpecific: document.getElementById('affixSpecific'),
-            affixSpecificContainer: document.getElementById('affixSpecificContainer'),
+            autoAdvanceMode: document.getElementById('autoAdvanceMode'),
+            affixRulesContainer: document.getElementById('affixRulesContainer'),
+            addAffixRuleBtn: document.getElementById('addAffixRuleBtn'),
             emptyState: document.getElementById('emptyState'),
             resultsArea: document.getElementById('resultsArea'),
             tabsContainer: document.getElementById('tabsContainer'),
@@ -673,14 +999,71 @@
             viewGlobalBtn: document.getElementById('viewGlobalBtn'),
             resultsSummary: document.getElementById('resultsSummary'),
             resultsMeta: document.getElementById('resultsMeta'),
-            resetProgressBtn: document.getElementById('resetProgressBtn')
+            resetProgressBtn: document.getElementById('resetProgressBtn'),
+            workspaceSelect: document.getElementById('workspaceSelect'),
+            newWorkspaceBtn: document.getElementById('newWorkspaceBtn'),
+            renameWorkspaceBtn: document.getElementById('renameWorkspaceBtn'),
+            deleteWorkspaceBtn: document.getElementById('deleteWorkspaceBtn')
         };
 
         let audioContext;
         let toastTimeout;
 
-        function getExtractionSnapshotKey() {
-            return 'sps_extractedState';
+        function createAffixRule(overrides = {}) {
+            return {
+                id: overrides.id || `affix-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                prefix: overrides.prefix || '',
+                suffix: overrides.suffix || '',
+                target: overrides.target || 'all',
+                specific: overrides.specific || ''
+            };
+        }
+
+        function normalizeAffixRules(rules, fallback = {}) {
+            if (Array.isArray(rules) && rules.length > 0) {
+                return rules.map((rule) => createAffixRule({
+                    ...rule,
+                    specific: normalizePromptLabel(rule?.specific || '')
+                }));
+            }
+
+            if (fallback.prefixText || fallback.suffixText) {
+                return [createAffixRule({
+                    prefix: fallback.prefixText || '',
+                    suffix: fallback.suffixText || '',
+                    target: fallback.affixTarget || 'all',
+                    specific: normalizePromptLabel(fallback.affixSpecific || '')
+                })];
+            }
+
+            return [];
+        }
+
+        function createWorkspaceId() {
+            return `workspace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        }
+
+        function normalizeCopiedBlockKeys(value) {
+            if (!value) return {};
+            if (Array.isArray(value)) return Object.fromEntries(value.map((key) => [key, true]));
+            if (typeof value === 'object') {
+                return Object.fromEntries(Object.entries(value).filter(([, isDone]) => !!isDone));
+            }
+            return {};
+        }
+
+        function normalizeWorkspace(rawWorkspace = {}, index = 0) {
+            return {
+                ...DEFAULT_WORKSPACE_SETTINGS,
+                ...rawWorkspace,
+                id: rawWorkspace.id || createWorkspaceId(),
+                name: (rawWorkspace.name || '').trim() || `Directory ${index + 1}`,
+                affixRules: normalizeAffixRules(rawWorkspace.affixRules, rawWorkspace),
+                parsedData: Array.isArray(rawWorkspace.parsedData) ? rawWorkspace.parsedData : [],
+                activeSubTabIds: rawWorkspace.activeSubTabIds && typeof rawWorkspace.activeSubTabIds === 'object' ? rawWorkspace.activeSubTabIds : {},
+                expandedBlocks: rawWorkspace.expandedBlocks && typeof rawWorkspace.expandedBlocks === 'object' ? rawWorkspace.expandedBlocks : {},
+                copiedBlockKeys: normalizeCopiedBlockKeys(rawWorkspace.copiedBlockKeys)
+            };
         }
 
         function rebuildDerivedStateFromParsedData() {
@@ -698,87 +1081,254 @@
         }
 
         function persistExtractedState() {
-            const snapshot = {
+            syncActiveWorkspace();
+        }
+
+        function buildLegacyWorkspace() {
+            const legacySnapshot = (() => {
+                try {
+                    return JSON.parse(localStorage.getItem('sps_extractedState') || 'null');
+                } catch (error) {
+                    return null;
+                }
+            })();
+
+            return normalizeWorkspace({
+                id: createWorkspaceId(),
+                name: 'Directory 1',
+                inputText: localStorage.getItem('sps_inputText') || '',
+                splitMethod: localStorage.getItem('sps_splitMethod') || DEFAULT_WORKSPACE_SETTINGS.splitMethod,
+                mainDelimiter: localStorage.getItem('sps_mainDelimiter') || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter,
+                subDelimiters: localStorage.getItem('sps_subDelimiters') || DEFAULT_WORKSPACE_SETTINGS.subDelimiters,
+                itemDelimiter: localStorage.getItem('sps_itemDelimiter') || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter,
+                ignoreDelimiter: localStorage.getItem('sps_ignoreDelimiter') || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter,
+                affixRules: normalizeAffixRules([], {
+                    prefixText: localStorage.getItem('sps_prefixText') || '',
+                    suffixText: localStorage.getItem('sps_suffixText') || '',
+                    affixTarget: localStorage.getItem('sps_affixTarget') || 'all',
+                    affixSpecific: localStorage.getItem('sps_affixSpecific') || ''
+                }),
+                viewMode: localStorage.getItem('sps_viewMode') || DEFAULT_WORKSPACE_SETTINGS.viewMode,
+                parsedData: Array.isArray(legacySnapshot?.parsedData) ? legacySnapshot.parsedData : [],
+                activeTabId: legacySnapshot?.activeTabId || null,
+                activeSubTabIds: legacySnapshot?.activeSubTabIds || {},
+                expandedBlocks: legacySnapshot?.expandedBlocks || {},
+                copiedBlockKeys: loadCopiedProgress()
+            });
+        }
+
+        function loadWorkspaceLibrary() {
+            try {
+                const stored = JSON.parse(localStorage.getItem(WORKSPACE_STORAGE_KEY) || '[]');
+                if (Array.isArray(stored) && stored.length > 0) {
+                    return stored.map((workspace, index) => normalizeWorkspace(workspace, index));
+                }
+            } catch (error) {
+                return [buildLegacyWorkspace()];
+            }
+
+            return [buildLegacyWorkspace()];
+        }
+
+        function getActiveWorkspace() {
+            return state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) || null;
+        }
+
+        function captureCurrentWorkspaceState() {
+            return {
+                inputText: DOM.inputText.value,
+                splitMethod: DOM.splitMethod.value,
+                mainDelimiter: DOM.mainDelimiter.value,
+                subDelimiters: DOM.subDelimiters.value,
+                itemDelimiter: DOM.itemDelimiter.value,
+                ignoreDelimiter: DOM.ignoreDelimiter.value,
+                affixRules: getAffixRules(),
+                autoAdvanceMode: DOM.autoAdvanceMode.value,
+                viewMode: state.viewMode,
                 parsedData: state.parsedData,
                 activeTabId: state.activeTabId,
                 activeSubTabIds: state.activeSubTabIds,
-                expandedBlocks: state.expandedBlocks
+                expandedBlocks: state.expandedBlocks,
+                copiedBlockKeys: state.copiedBlockKeys
             };
-            localStorage.setItem(getExtractionSnapshotKey(), JSON.stringify(snapshot));
+        }
+
+        function persistWorkspaceLibrary() {
+            localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(state.workspaces));
+            localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, state.activeWorkspaceId || '');
+        }
+
+        function syncActiveWorkspace() {
+            const workspace = getActiveWorkspace();
+            if (!workspace) return;
+            Object.assign(workspace, captureCurrentWorkspaceState());
+            persistWorkspaceLibrary();
+        }
+
+        function applyWorkspace(workspace) {
+            if (!workspace) return;
+
+            DOM.inputText.value = workspace.inputText || '';
+            DOM.splitMethod.value = workspace.splitMethod || DEFAULT_WORKSPACE_SETTINGS.splitMethod;
+            DOM.mainDelimiter.value = workspace.mainDelimiter || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter;
+            DOM.subDelimiters.value = workspace.subDelimiters || DEFAULT_WORKSPACE_SETTINGS.subDelimiters;
+            DOM.itemDelimiter.value = workspace.itemDelimiter || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter;
+            DOM.ignoreDelimiter.value = workspace.ignoreDelimiter || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter;
+            DOM.autoAdvanceMode.value = workspace.autoAdvanceMode || DEFAULT_WORKSPACE_SETTINGS.autoAdvanceMode;
+            renderAffixRules(workspace.affixRules || []);
+
+            state.parsedData = Array.isArray(workspace.parsedData) ? workspace.parsedData : [];
+            state.activeTabId = workspace.activeTabId || (state.parsedData[0] ? state.parsedData[0].id : null);
+            state.activeSubTabIds = workspace.activeSubTabIds && typeof workspace.activeSubTabIds === 'object' ? workspace.activeSubTabIds : {};
+            state.expandedBlocks = workspace.expandedBlocks && typeof workspace.expandedBlocks === 'object' ? workspace.expandedBlocks : {};
+            state.copiedBlockKeys = normalizeCopiedBlockKeys(workspace.copiedBlockKeys);
+            state.viewMode = workspace.viewMode || DEFAULT_WORKSPACE_SETTINGS.viewMode;
+
+            rebuildDerivedStateFromParsedData();
+
+            const validTabIds = new Set(state.parsedData.map((tab) => tab.id));
+            if (!validTabIds.has(state.activeTabId)) {
+                state.activeTabId = state.parsedData[0] ? state.parsedData[0].id : null;
+            }
+
+            state.parsedData.forEach((tab) => {
+                const validItemIds = new Set(tab.items.map((item) => item.id));
+                if (!validItemIds.has(state.activeSubTabIds[tab.id]) && tab.items[0]) {
+                    state.activeSubTabIds[tab.id] = tab.items[0].id;
+                }
+            });
+
+            toggleMainDelimiter();
+            syncViewToggle();
+        }
+
+        function renderWorkspaceSelector() {
+            DOM.workspaceSelect.innerHTML = state.workspaces.map((workspace) => `
+                <option value="${workspace.id}" ${workspace.id === state.activeWorkspaceId ? 'selected' : ''}>${escapeHtml(workspace.name)}</option>
+            `).join('');
         }
 
         function restoreExtractedState() {
-            try {
-                const snapshot = JSON.parse(localStorage.getItem(getExtractionSnapshotKey()) || 'null');
-                if (!snapshot || !Array.isArray(snapshot.parsedData) || snapshot.parsedData.length === 0) return false;
-
-                state.parsedData = snapshot.parsedData;
-                state.activeTabId = snapshot.activeTabId || snapshot.parsedData[0].id;
-                state.activeSubTabIds = snapshot.activeSubTabIds || {};
-                state.expandedBlocks = snapshot.expandedBlocks || {};
-
-                rebuildDerivedStateFromParsedData();
-
-                const validTabIds = new Set(state.parsedData.map((tab) => tab.id));
-                if (!validTabIds.has(state.activeTabId)) {
-                    state.activeTabId = state.parsedData[0].id;
-                }
-
-                state.parsedData.forEach((tab) => {
-                    const validItemIds = new Set(tab.items.map((item) => item.id));
-                    if (!validItemIds.has(state.activeSubTabIds[tab.id]) && tab.items[0]) {
-                        state.activeSubTabIds[tab.id] = tab.items[0].id;
-                    }
-                });
-
-                return true;
-            } catch (error) {
-                return false;
-            }
+            const workspace = getActiveWorkspace();
+            if (!workspace) return false;
+            applyWorkspace(workspace);
+            return state.parsedData.length > 0;
         }
 
         function clearExtractedState() {
-            localStorage.removeItem(getExtractionSnapshotKey());
+            state.parsedData = [];
+            state.activeTabId = null;
+            state.activeSubTabIds = {};
+            state.expandedBlocks = {};
+            rebuildDerivedStateFromParsedData();
+            syncActiveWorkspace();
+        }
+
+        function getWorkspaceTemplate(overrides = {}) {
+            return normalizeWorkspace({
+                ...DEFAULT_WORKSPACE_SETTINGS,
+                splitMethod: DOM.splitMethod.value || DEFAULT_WORKSPACE_SETTINGS.splitMethod,
+                mainDelimiter: DOM.mainDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter,
+                subDelimiters: DOM.subDelimiters.value || DEFAULT_WORKSPACE_SETTINGS.subDelimiters,
+                itemDelimiter: DOM.itemDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter,
+                ignoreDelimiter: DOM.ignoreDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter,
+                affixRules: getAffixRules(),
+                autoAdvanceMode: DOM.autoAdvanceMode.value || DEFAULT_WORKSPACE_SETTINGS.autoAdvanceMode,
+                ...overrides
+            }, state.workspaces.length);
+        }
+
+        function switchWorkspace(workspaceId) {
+            if (!workspaceId || workspaceId === state.activeWorkspaceId) return;
+            syncActiveWorkspace();
+            state.activeWorkspaceId = workspaceId;
+            const workspace = getActiveWorkspace();
+            applyWorkspace(workspace);
+            renderWorkspaceSelector();
+            persistWorkspaceLibrary();
+            renderUI();
+        }
+
+        function createWorkspace() {
+            const name = window.prompt('Name this directory:', `Directory ${state.workspaces.length + 1}`);
+            if (name === null) return;
+
+            syncActiveWorkspace();
+            const workspace = getWorkspaceTemplate({
+                id: createWorkspaceId(),
+                name: name.trim() || `Directory ${state.workspaces.length + 1}`,
+                inputText: '',
+                parsedData: [],
+                activeTabId: null,
+                activeSubTabIds: {},
+                expandedBlocks: {},
+                copiedBlockKeys: {},
+                viewMode: 'tabbed'
+            });
+
+            state.workspaces.push(workspace);
+            state.activeWorkspaceId = workspace.id;
+            applyWorkspace(workspace);
+            renderWorkspaceSelector();
+            persistWorkspaceLibrary();
+            renderUI();
+            showToast(`Created ${workspace.name}.`, 'success');
+        }
+
+        function renameWorkspace() {
+            const workspace = getActiveWorkspace();
+            if (!workspace) return;
+
+            const nextName = window.prompt('Rename this directory:', workspace.name);
+            if (nextName === null) return;
+
+            workspace.name = nextName.trim() || workspace.name;
+            renderWorkspaceSelector();
+            persistWorkspaceLibrary();
+            renderUI();
+            showToast(`Renamed to ${workspace.name}.`, 'success');
+        }
+
+        function deleteWorkspace() {
+            const workspace = getActiveWorkspace();
+            if (!workspace) return;
+
+            if (state.workspaces.length === 1) {
+                handleClearAll();
+                return;
+            }
+
+            if (!window.confirm(`Delete "${workspace.name}"?`)) return;
+
+            const currentIndex = state.workspaces.findIndex((entry) => entry.id === workspace.id);
+            state.workspaces = state.workspaces.filter((entry) => entry.id !== workspace.id);
+            const fallbackWorkspace = state.workspaces[Math.max(0, currentIndex - 1)] || state.workspaces[0];
+            state.activeWorkspaceId = fallbackWorkspace.id;
+            applyWorkspace(fallbackWorkspace);
+            renderWorkspaceSelector();
+            persistWorkspaceLibrary();
+            renderUI();
+            showToast(`Deleted ${workspace.name}.`, 'success');
         }
 
         function init() {
-            DOM.inputText.value = localStorage.getItem('sps_inputText') || '';
-            DOM.splitMethod.value = localStorage.getItem('sps_splitMethod') || 'smart';
-            DOM.mainDelimiter.value = localStorage.getItem('sps_mainDelimiter') || 'Video';
-            DOM.subDelimiters.value = localStorage.getItem('sps_subDelimiters') || 'IMAGE PROMPT:, VIDEO PROMPT:';
-            DOM.itemDelimiter.value = localStorage.getItem('sps_itemDelimiter') || 'B-roll, A-roll';
-            DOM.ignoreDelimiter.value = localStorage.getItem('sps_ignoreDelimiter') || '[DONE]';
-            DOM.prefixText.value = localStorage.getItem('sps_prefixText') || '';
-            DOM.suffixText.value = localStorage.getItem('sps_suffixText') || '';
-            DOM.affixTarget.value = localStorage.getItem('sps_affixTarget') || 'all';
-            DOM.affixSpecific.value = localStorage.getItem('sps_affixSpecific') || '';
             state.soundEnabled = localStorage.getItem('sps_soundEnabled') !== 'false';
-            state.viewMode = localStorage.getItem('sps_viewMode') || 'tabbed';
-            state.copiedBlockKeys = loadCopiedProgress();
+            state.workspaces = loadWorkspaceLibrary();
+            const storedActiveWorkspaceId = localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+            state.activeWorkspaceId = state.workspaces.some((workspace) => workspace.id === storedActiveWorkspaceId)
+                ? storedActiveWorkspaceId
+                : state.workspaces[0].id;
 
-            toggleMainDelimiter();
-            toggleAffixSpecific();
+            renderWorkspaceSelector();
+            restoreExtractedState();
+            persistWorkspaceLibrary();
             syncSoundToggle();
             syncViewToggle();
             registerPWA();
-            restoreExtractedState();
 
             const saveToLocal = () => {
-                localStorage.setItem('sps_inputText', DOM.inputText.value);
-                localStorage.setItem('sps_splitMethod', DOM.splitMethod.value);
-                localStorage.setItem('sps_mainDelimiter', DOM.mainDelimiter.value);
-                localStorage.setItem('sps_subDelimiters', DOM.subDelimiters.value);
-                localStorage.setItem('sps_itemDelimiter', DOM.itemDelimiter.value);
-                localStorage.setItem('sps_ignoreDelimiter', DOM.ignoreDelimiter.value);
-                localStorage.setItem('sps_prefixText', DOM.prefixText.value);
-                localStorage.setItem('sps_suffixText', DOM.suffixText.value);
-                localStorage.setItem('sps_affixTarget', DOM.affixTarget.value);
-                localStorage.setItem('sps_affixSpecific', DOM.affixSpecific.value);
-            };
-
-            const saveDecoratorSettings = () => {
-                saveToLocal();
-                if (state.parsedData.length > 0) renderUI();
+                syncActiveWorkspace();
+                renderWorkspaceSelector();
             };
 
             DOM.inputText.addEventListener('input', saveToLocal);
@@ -790,13 +1340,12 @@
             DOM.subDelimiters.addEventListener('input', saveToLocal);
             DOM.itemDelimiter.addEventListener('input', saveToLocal);
             DOM.ignoreDelimiter.addEventListener('input', saveToLocal);
-            DOM.prefixText.addEventListener('input', saveDecoratorSettings);
-            DOM.suffixText.addEventListener('input', saveDecoratorSettings);
-            DOM.affixTarget.addEventListener('change', () => {
-                toggleAffixSpecific();
-                saveDecoratorSettings();
-            });
-            DOM.affixSpecific.addEventListener('input', saveDecoratorSettings);
+            DOM.autoAdvanceMode.addEventListener('change', saveToLocal);
+            DOM.addAffixRuleBtn.addEventListener('click', addAffixRule);
+            DOM.workspaceSelect.addEventListener('change', () => switchWorkspace(DOM.workspaceSelect.value));
+            DOM.newWorkspaceBtn.addEventListener('click', createWorkspace);
+            DOM.renameWorkspaceBtn.addEventListener('click', renameWorkspace);
+            DOM.deleteWorkspaceBtn.addEventListener('click', deleteWorkspace);
             DOM.settingsBtn.addEventListener('click', openSettings);
             DOM.closeSettingsBtn.addEventListener('click', closeSettings);
             DOM.settingsModal.addEventListener('click', (event) => {
@@ -840,8 +1389,7 @@
         }
 
         function persistCopiedProgress() {
-            const keys = Object.keys(state.copiedBlockKeys).filter((key) => state.copiedBlockKeys[key]);
-            localStorage.setItem('sps_copiedBlockKeys', JSON.stringify(keys));
+            syncActiveWorkspace();
         }
 
         function hashText(text) {
@@ -942,7 +1490,7 @@
 
         function extractTaraCode(...sources) {
             for (const source of sources) {
-                const match = /\b(TARA\d{3,})\b/i.exec(source || '');
+                const match = /\b([A-Z]{2,12}\d{4,})\b/i.exec(source || '');
                 if (match) return match[1].toUpperCase();
             }
             return '';
@@ -1124,25 +1672,129 @@
             return formatDurationLabel(seconds);
         }
 
+        function getAffixRules() {
+            const cards = DOM.affixRulesContainer.querySelectorAll('[data-affix-rule]');
+            return Array.from(cards).map((card) => {
+                const prefix = card.querySelector('[data-field="prefix"]')?.value.trim() || '';
+                const suffix = card.querySelector('[data-field="suffix"]')?.value.trim() || '';
+                const target = card.querySelector('[data-field="target"]')?.value || 'all';
+                const specific = normalizePromptLabel(card.querySelector('[data-field="specific"]')?.value || '');
+                return createAffixRule({
+                    id: card.getAttribute('data-affix-rule'),
+                    prefix,
+                    suffix,
+                    target,
+                    specific
+                });
+            });
+        }
+
+        function renderAffixRules(rules = []) {
+            const normalizedRules = normalizeAffixRules(rules);
+            if (!normalizedRules.length) {
+                DOM.affixRulesContainer.innerHTML = `
+                    <div class="affix-rule-empty rounded-[1.4rem] px-4 py-4 text-sm">
+                        No prefix/suffix rules yet. Add one when you want custom text on specific prompts.
+                    </div>
+                `;
+                return;
+            }
+
+            DOM.affixRulesContainer.innerHTML = normalizedRules.map((rule, index) => `
+                <div class="affix-rule-card rounded-[1.5rem] p-4 space-y-3" data-affix-rule="${rule.id}">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="inline-flex items-center gap-2">
+                            <span class="status-chip">Rule ${index + 1}</span>
+                            <span class="text-xs text-cyan-100/45">Match then add your custom text</span>
+                        </div>
+                        <button type="button" onclick="removeAffixRule('${rule.id}')" class="chrome-btn soft-ring px-3 py-1.5 rounded-2xl text-xs font-medium inline-flex items-center gap-2">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            Remove
+                        </button>
+                    </div>
+                    <div>
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                            <i data-lucide="filter" class="w-4 h-4 text-cyan-300"></i>
+                            Apply To
+                        </label>
+                        <select data-field="target" class="soft-ring w-full px-4 py-3 rounded-xl transition-all text-sm font-medium">
+                            <option value="all" ${rule.target === 'all' ? 'selected' : ''}>All Prompts</option>
+                            <option value="image" ${rule.target === 'image' ? 'selected' : ''}>Image Prompts</option>
+                            <option value="video" ${rule.target === 'video' ? 'selected' : ''}>Video Prompts</option>
+                            <option value="specific" ${rule.target === 'specific' ? 'selected' : ''}>Specific Label</option>
+                        </select>
+                    </div>
+                    <div class="${rule.target === 'specific' ? '' : 'hidden'}" data-specific-wrap>
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                            <i data-lucide="tag" class="w-4 h-4 text-cyan-300"></i>
+                            Specific Label
+                        </label>
+                        <input type="text" data-field="specific" value="${escapeHtml(rule.specific)}" placeholder="IMAGE PROMPT" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
+                    </div>
+                    <div>
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                            <i data-lucide="arrow-up-from-line" class="w-4 h-4 text-cyan-300"></i>
+                            Prefix
+                        </label>
+                        <textarea data-field="prefix" rows="2" placeholder="Text added before prompt content" class="soft-ring w-full px-4 py-3 rounded-xl transition-all resize-y">${escapeHtml(rule.prefix)}</textarea>
+                    </div>
+                    <div>
+                        <label class="flex items-center gap-2 text-sm font-medium mb-1">
+                            <i data-lucide="arrow-down-to-line" class="w-4 h-4 text-cyan-300"></i>
+                            Suffix
+                        </label>
+                        <textarea data-field="suffix" rows="2" placeholder="Text added after prompt content" class="soft-ring w-full px-4 py-3 rounded-xl transition-all resize-y">${escapeHtml(rule.suffix)}</textarea>
+                    </div>
+                </div>
+            `).join('');
+
+            DOM.affixRulesContainer.querySelectorAll('select, input, textarea').forEach((element) => {
+                const eventName = element.tagName === 'SELECT' ? 'change' : 'input';
+                element.addEventListener(eventName, handleAffixRuleInput);
+            });
+            lucide.createIcons();
+        }
+
+        function handleAffixRuleInput(event) {
+            const card = event.target.closest('[data-affix-rule]');
+            if (card && event.target.matches('[data-field="target"]')) {
+                const specificWrap = card.querySelector('[data-specific-wrap]');
+                const isSpecific = event.target.value === 'specific';
+                specificWrap?.classList.toggle('hidden', !isSpecific);
+            }
+
+            syncActiveWorkspace();
+            if (state.parsedData.length > 0) renderUI();
+        }
+
+        function addAffixRule() {
+            const rules = [...getAffixRules(), createAffixRule()];
+            renderAffixRules(rules);
+            syncActiveWorkspace();
+        }
+
+        function removeAffixRule(ruleId) {
+            const rules = getAffixRules().filter((rule) => rule.id !== ruleId);
+            renderAffixRules(rules);
+            syncActiveWorkspace();
+            if (state.parsedData.length > 0) renderUI();
+        }
+
         function getAffixSettings() {
-            return {
-                prefix: DOM.prefixText.value.trim(),
-                suffix: DOM.suffixText.value.trim(),
-                target: DOM.affixTarget.value,
-                specific: normalizePromptLabel(DOM.affixSpecific.value)
-            };
+            return getAffixRules();
         }
 
         function shouldDecorateBlock(block, settings = getAffixSettings()) {
             if (!block) return false;
-            if (!settings.prefix && !settings.suffix) return false;
-
-            const blockTitle = normalizePromptLabel(block.title);
-            if (settings.target === 'all') return true;
-            if (settings.target === 'image') return blockTitle === 'IMAGE PROMPT';
-            if (settings.target === 'video') return blockTitle === 'VIDEO PROMPT';
-            if (settings.target === 'specific') return !!settings.specific && blockTitle === settings.specific;
-            return false;
+            return settings.some((rule) => {
+                if (!rule.prefix && !rule.suffix) return false;
+                const blockTitle = normalizePromptLabel(block.title);
+                if (rule.target === 'all') return true;
+                if (rule.target === 'image') return blockTitle === 'IMAGE PROMPT';
+                if (rule.target === 'video') return blockTitle === 'VIDEO PROMPT';
+                if (rule.target === 'specific') return !!rule.specific && blockTitle === rule.specific;
+                return false;
+            });
         }
 
         function getDecoratedBlockContent(block) {
@@ -1152,12 +1804,25 @@
             let content = (block.content || '').trim();
             if (!shouldDecorateBlock(block, settings)) return content;
 
-            if (settings.prefix) {
-                content = content ? `${settings.prefix}\n${content}` : settings.prefix;
+            const blockTitle = normalizePromptLabel(block.title);
+            const matchingRules = settings.filter((rule) => {
+                if (!rule.prefix && !rule.suffix) return false;
+                if (rule.target === 'all') return true;
+                if (rule.target === 'image') return blockTitle === 'IMAGE PROMPT';
+                if (rule.target === 'video') return blockTitle === 'VIDEO PROMPT';
+                if (rule.target === 'specific') return !!rule.specific && blockTitle === rule.specific;
+                return false;
+            });
+
+            const prefixText = matchingRules.map((rule) => rule.prefix.trim()).filter(Boolean).join('\n');
+            const suffixText = matchingRules.map((rule) => rule.suffix.trim()).filter(Boolean).join('\n');
+
+            if (prefixText) {
+                content = content ? `${prefixText}\n${content}` : prefixText;
             }
 
-            if (settings.suffix) {
-                content = content ? `${content}\n${settings.suffix}` : settings.suffix;
+            if (suffixText) {
+                content = content ? `${content}\n${suffixText}` : suffixText;
             }
 
             return content.trim();
@@ -1229,6 +1894,54 @@
             return false;
         }
 
+        function getPercentComplete(completed, total) {
+            if (!total) return 0;
+            return Math.round((completed / total) * 100);
+        }
+
+        function getProgressTone(completed, total) {
+            const percent = getPercentComplete(completed, total);
+            if (percent <= 0) return 'progress-tone-empty';
+            if (percent < 50) return 'progress-tone-started';
+            if (percent < 80) return 'progress-tone-mid';
+            if (percent < 100) return 'progress-tone-near';
+            return 'progress-tone-done';
+        }
+
+        function renderProgressPill(completed, total, label = 'copied') {
+            const percent = getPercentComplete(completed, total);
+            const toneClass = getProgressTone(completed, total);
+            return `<span class="progress-pill ${toneClass}"><strong>${percent}%</strong><span>${completed}/${total} ${label}</span></span>`;
+        }
+
+        function renderMiniProgressPill(completed, total) {
+            const percent = getPercentComplete(completed, total);
+            const toneClass = getProgressTone(completed, total);
+            return `<span class="progress-pill progress-pill--mini ${toneClass}" title="${completed}/${total} copied"><strong>${percent}%</strong></span>`;
+        }
+
+        function renderProgressMetric(completed, total) {
+            const percent = getPercentComplete(completed, total);
+            const toneClass = getProgressTone(completed, total);
+            return `
+                <span class="metric-chip metric-chip--progress ${toneClass}">
+                    <span class="metric-progress-head">
+                        <span class="metric-progress-copy">
+                            <i data-lucide="copy"></i>
+                            <span class="metric-progress-label">
+                                <strong>Copy Progress</strong>
+                                <span>${completed} of ${total} prompts copied</span>
+                            </span>
+                        </span>
+                        <span class="metric-progress-value ${toneClass}">${percent}%</span>
+                    </span>
+                    <span class="progress-track">
+                        <span class="progress-fill ${toneClass}" style="--progress: ${percent}%"></span>
+                    </span>
+                </span>
+            `;
+        }
+
         function getProgressStats() {
             const blocks = getAllBlocks();
             const items = getGlobalItems();
@@ -1241,13 +1954,14 @@
                 totalItems: items.length,
                 totalPrompts,
                 copiedPrompts,
-                fullyCopiedItems
+                fullyCopiedItems,
+                copiedPercent: getPercentComplete(copiedPrompts, totalPrompts)
             };
         }
 
         function setViewMode(mode) {
             state.viewMode = mode;
-            localStorage.setItem('sps_viewMode', mode);
+            syncActiveWorkspace();
             syncViewToggle();
             renderUI();
         }
@@ -1268,11 +1982,7 @@
         }
 
         function toggleAffixSpecific() {
-            if (DOM.affixTarget.value === 'specific') {
-                DOM.affixSpecificContainer.classList.remove('hidden');
-            } else {
-                DOM.affixSpecificContainer.classList.add('hidden');
-            }
+            renderAffixRules(getAffixRules());
         }
 
         function openSettings() {
@@ -1292,8 +2002,10 @@
         function syncSoundToggle() {
             DOM.soundToggleText.textContent = state.soundEnabled ? 'Audio' : 'Muted';
             DOM.soundToggle.classList.toggle('is-muted', !state.soundEnabled);
-            const icon = DOM.soundToggle.querySelector('i');
-            icon.setAttribute('data-lucide', state.soundEnabled ? 'volume-2' : 'volume-x');
+            const iconHost = DOM.soundToggle.querySelector('.sound-toggle-icon');
+            if (iconHost) {
+                iconHost.innerHTML = `<i data-lucide="${state.soundEnabled ? 'volume-2' : 'volume-x'}" class="w-4 h-4"></i>`;
+            }
             lucide.createIcons();
         }
 
@@ -1411,6 +2123,31 @@
             }
         }
 
+        function shouldAutoAdvance(blockContext) {
+            if (!blockContext) return false;
+
+            const mode = DOM.autoAdvanceMode.value || 'last';
+            if (mode === 'none') return false;
+
+            const activeBlock = blockContext.item.blocks[blockContext.blockIndex];
+            const blockTitle = normalizePromptLabel(activeBlock?.title);
+
+            if (mode === 'last') {
+                return blockContext.blockIndex === blockContext.item.blocks.length - 1;
+            }
+            if (mode === 'first') {
+                return blockContext.blockIndex === 0;
+            }
+            if (mode === 'video') {
+                return blockTitle === 'VIDEO PROMPT';
+            }
+            if (mode === 'image') {
+                return blockTitle === 'IMAGE PROMPT';
+            }
+
+            return false;
+        }
+
         function copyPrimarySelection() {
             if (state.viewMode === 'global') {
                 copyAllVisible();
@@ -1435,8 +2172,7 @@
             const copied = await copyTextAndMark(formatBlockForCopy(block), [block.copyKey], 'Prompt copied and marked.');
             if (!copied || !blockContext) return;
 
-            const isLastPromptInBroll = blockContext.blockIndex === blockContext.item.blocks.length - 1;
-            if (isLastPromptInBroll) {
+            if (shouldAutoAdvance(blockContext)) {
                 moveToNextBroll(blockContext);
             }
         }
@@ -1476,7 +2212,8 @@
 
         function handleClearAll() {
             primeAudio();
-            if (!window.confirm('Are you sure you want to clear your text?')) return;
+            const workspace = getActiveWorkspace();
+            if (!window.confirm(`Clear everything in ${workspace ? `"${workspace.name}"` : 'this directory'}?`)) return;
 
             DOM.inputText.value = '';
             state.parsedData = [];
@@ -1487,11 +2224,10 @@
             state.activeSubTabIds = {};
             state.copiedBlockKeys = {};
 
-            localStorage.setItem('sps_inputText', '');
             persistCopiedProgress();
             clearExtractedState();
             renderUI();
-            showToast('Board cleared!', 'success');
+            showToast('Directory cleared.', 'success');
         }
 
         function handleFileUpload(event) {
@@ -1505,7 +2241,7 @@
                 const reader = new FileReader();
                 reader.onload = (loadEvent) => {
                     DOM.inputText.value = loadEvent.target.result;
-                    localStorage.setItem('sps_inputText', loadEvent.target.result);
+                    syncActiveWorkspace();
                     showToast('Text file loaded completely!', 'success');
                 };
                 reader.readAsText(file);
@@ -1516,7 +2252,7 @@
                     mammoth.extractRawText({ arrayBuffer })
                         .then((result) => {
                             DOM.inputText.value = result.value;
-                            localStorage.setItem('sps_inputText', result.value);
+                            syncActiveWorkspace();
                             showToast('Word document extracted!', 'success');
                         })
                         .catch((error) => {
@@ -1709,11 +2445,11 @@
 
         function renderBlockCard(block, options = {}) {
             const copied = isCopied(block);
-            const compact = !!options.compact;
+            const compact = options.compact !== false;
             const isExpanded = !!state.expandedBlocks[block.id];
             const decoratedContent = getDecoratedBlockContent(block);
             const headerMeta = [
-                block.taraCode ? `<span class="meta-chip mt-2">Tara ${escapeHtml(block.taraCode)}</span>` : '',
+                block.taraCode ? `<span class="meta-chip mt-1.5">Code ${escapeHtml(block.taraCode)}</span>` : '',
                 block.durationLabel ? `<span class="meta-chip mt-2">${escapeHtml(block.durationLabel)}</span>` : ''
             ].filter(Boolean).join('');
             const cardClass = copied ? 'copied-shell' : 'border border-cyan-400/12 bg-slate-950/55 shadow-[0_16px_34px_rgba(0,0,0,0.3)]';
@@ -1721,10 +2457,14 @@
                 ? '<span class="status-chip status-chip--done"><i data-lucide="check" class="w-3.5 h-3.5"></i>Copied</span>'
                 : '<span class="status-chip">Queued</span>';
             const buttonLabel = copied ? 'Copy Again' : 'Copy';
+            const shellRadius = compact ? 'rounded-[1.1rem]' : 'rounded-[1.25rem]';
+            const headerPadding = compact ? 'px-3 py-2.5' : 'px-3.5 py-3';
+            const bodyPadding = compact ? 'p-3' : 'p-3.5 sm:p-4';
+            const titleClass = compact ? 'text-[12px]' : 'text-sm';
 
             return `
-                <div class="relative group rounded-[1.4rem] border overflow-hidden ${cardClass}">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 bg-white/[0.03] border-b border-white/8">
+                <div class="relative group ${shellRadius} border overflow-hidden ${cardClass}">
+                    <div class="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between ${headerPadding} bg-white/[0.03] border-b border-white/8">
                         <div
                             class="min-w-0 flex-1 cursor-pointer"
                             role="button"
@@ -1734,25 +2474,25 @@
                             onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleCollapse('${block.id}'); }"
                         >
                             <div class="flex flex-wrap items-center gap-2">
-                                <h4 class="font-bold text-cyan-50 tracking-[0.12em] text-sm uppercase">${block.title}</h4>
+                                <h4 class="font-bold text-cyan-50 tracking-[0.12em] ${titleClass} uppercase">${block.title}</h4>
                                 ${badge}
                                 <span class="toggle-chip" aria-hidden="true">
                                     <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-3.5 h-3.5"></i>
                                 </span>
                             </div>
-                            ${headerMeta ? `<div class="mt-2 flex flex-wrap gap-2">${headerMeta}</div>` : ''}
-                            ${block.scriptLine ? `<p class="text-xs text-cyan-100/72 mt-2 leading-relaxed">${escapeHtml(block.scriptLine)}</p>` : ''}
+                            ${headerMeta ? `<div class="mt-1.5 flex flex-wrap gap-2">${headerMeta}</div>` : ''}
+                            ${block.scriptLine ? `<p class="text-[11px] text-cyan-100/72 mt-1.5 leading-relaxed">${escapeHtml(block.scriptLine)}</p>` : ''}
                             ${block.taraLabel ? `<p class="text-[11px] text-cyan-100/46 mt-1">${escapeHtml(block.taraLabel)}</p>` : ''}
-                            ${options.meta ? `<p class="text-[11px] text-cyan-100/50 mt-2 uppercase tracking-[0.18em]">${options.meta}</p>` : ''}
+                            ${options.meta ? `<p class="text-[10px] text-cyan-100/50 mt-1.5 uppercase tracking-[0.18em]">${options.meta}</p>` : ''}
                         </div>
                         <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                            <button onclick="event.stopPropagation(); triggerCopy('${block.id}')" class="chrome-btn soft-ring w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-medium transition-all ${copied ? 'text-lime-200 border-lime-400/20 bg-lime-400/10 hover:bg-lime-400/14' : ''}">
-                                <i data-lucide="copy" class="w-4 h-4"></i>
+                            <button onclick="event.stopPropagation(); triggerCopy('${block.id}')" class="chrome-btn soft-ring w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-1.5 rounded-2xl text-sm font-medium transition-all ${copied ? 'text-lime-200 border-lime-400/20 bg-lime-400/10 hover:bg-lime-400/14' : ''}">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
                                 ${buttonLabel}
                             </button>
                         </div>
                     </div>
-                    <div class="${compact ? 'p-4' : 'p-4 sm:p-5'} ${isExpanded ? 'block' : 'hidden'}">
+                    <div class="${bodyPadding} ${isExpanded ? 'block' : 'hidden'}">
                         <div class="prompt-content text-sm leading-relaxed min-w-0">
                             ${decoratedContent ? escapeHtml(decoratedContent) : '<span class="text-cyan-100/40 italic">No prompt found.</span>'}
                         </div>
@@ -1785,11 +2525,16 @@
                 const isActive = state.activeSubTabIds[state.activeTabId] === item.id;
                 const copiedCount = item.blocks.filter((block) => isCopied(block)).length;
                 return `
-                    <button onclick="switchSubTab('${item.id}')" class="whitespace-nowrap px-4 py-2 font-medium text-xs rounded-2xl transition-colors border ${
+                    <button onclick="switchSubTab('${item.id}')" class="subtab-chip min-w-0 inline-flex items-center gap-1.5 ${
                         isActive
-                            ? 'bg-cyan-400/14 text-cyan-50 border-cyan-300/35 shadow-[0_0_18px_rgba(34,211,238,0.08)]'
-                            : 'bg-white/[0.03] text-cyan-100/70 border-cyan-400/10 hover:bg-white/[0.06]'
-                    }">${item.title}${copiedCount ? ` ${copiedCount}/${item.blocks.length}` : ''}</button>
+                            ? 'subtab-chip--active'
+                            : ''
+                        }">
+                        <span class="subtab-chip-title">${item.title}</span>
+                        <span class="shrink-0">
+                            ${renderMiniProgressPill(copiedCount, item.blocks.length)}
+                        </span>
+                    </button>
                 `;
             }).join('');
 
@@ -1808,6 +2553,7 @@
             DOM.blocksContainer.innerHTML = activeItem.blocks.map((block) => {
                 if (state.expandedBlocks[block.id] === undefined) state.expandedBlocks[block.id] = false;
                 return renderBlockCard(block, {
+                    compact: true,
                     meta: `${activeTabData.title} / ${activeItem.title}`
                 });
             }).join('');
@@ -1832,21 +2578,21 @@
                 const copiedCount = item.blocks.filter((block) => isCopied(block)).length;
                 const allCopied = copiedCount === item.blocks.length;
                 return `
-                    <div class="rounded-[1.6rem] border ${allCopied ? 'copied-shell' : 'border-cyan-400/12 bg-slate-950/55'} shadow-sm p-4">
-                        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div class="rounded-[1.3rem] border ${allCopied ? 'copied-shell' : 'border-cyan-400/12 bg-slate-950/55'} shadow-sm p-3.5">
+                        <div class="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
                             <div class="min-w-0">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <span class="status-chip">${item.tabTitle}</span>
                                     <span class="status-chip">${item.itemTitle}</span>
-                                    <span class="status-chip ${allCopied ? 'status-chip--done' : ''}">${copiedCount}/${item.blocks.length}</span>
+                                    ${renderProgressPill(copiedCount, item.blocks.length)}
                                 </div>
                             </div>
-                            <button onclick="copyItemGroup('${item.tabId}','${item.itemId}')" class="chrome-btn soft-ring w-full lg:w-auto px-4 py-2.5 rounded-2xl text-sm font-medium ${allCopied ? 'text-lime-200 border-lime-400/20 bg-lime-400/10 hover:bg-lime-400/14' : ''}">
+                            <button onclick="copyItemGroup('${item.tabId}','${item.itemId}')" class="chrome-btn soft-ring w-full lg:w-auto px-4 py-2 rounded-2xl text-sm font-medium ${allCopied ? 'text-lime-200 border-lime-400/20 bg-lime-400/10 hover:bg-lime-400/14' : ''}">
                                 ${allCopied ? 'Copy Again' : 'Copy Roll'}
                             </button>
                         </div>
 
-                        <div class="mt-4 space-y-3">
+                        <div class="mt-3 space-y-2.5">
                             ${item.blocks.map((block) => renderBlockCard(block, { compact: true })).join('')}
                         </div>
                     </div>
@@ -1869,9 +2615,9 @@
             DOM.resultsArea.classList.add('flex');
 
             const stats = getProgressStats();
-            DOM.resultsSummary.textContent = `${stats.totalPrompts} Prompts`;
+            DOM.resultsSummary.textContent = `${stats.totalPrompts} Prompts - ${stats.copiedPercent}% Copied`;
             DOM.resultsMeta.innerHTML = `
-                <span class="metric-chip"><i data-lucide="copy"></i>${stats.copiedPrompts}/${stats.totalPrompts} copied</span>
+                ${renderProgressMetric(stats.copiedPrompts, stats.totalPrompts)}
                 <span class="metric-chip"><i data-lucide="layers-3"></i>${stats.totalItems} rolls</span>
                 <span class="metric-chip"><i data-lucide="check"></i>${stats.fullyCopiedItems} done</span>
             `;
@@ -1980,11 +2726,7 @@ The camera glides gently while the reminder animates into focus.`;
             DOM.splitMethod.value = 'smart';
             DOM.subDelimiters.value = 'IMAGE PROMPT:, VIDEO PROMPT:';
             DOM.ignoreDelimiter.value = '[DONE]';
-
-            localStorage.setItem('sps_inputText', DOM.inputText.value);
-            localStorage.setItem('sps_splitMethod', DOM.splitMethod.value);
-            localStorage.setItem('sps_subDelimiters', DOM.subDelimiters.value);
-            localStorage.setItem('sps_ignoreDelimiter', DOM.ignoreDelimiter.value);
+            syncActiveWorkspace();
 
             toggleMainDelimiter();
             processText();
