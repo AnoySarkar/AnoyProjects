@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-    <title>Smart Prompt Splitter</title>
+    <title>Splitter by Avi</title>
     <meta name="theme-color" content="#020617">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Prompt Splitter">
+    <meta name="apple-mobile-web-app-title" content="Splitter by Avi">
     <meta name="description" content="Split long scripts into clean, copyable prompt sections with mobile-friendly controls.">
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
@@ -35,10 +35,170 @@
             --accent-soft: #67e8f9;
             --accent-lime: #a3e635;
             --focus-ring: rgba(34, 211, 238, 0.32);
+            --glow-one: rgba(34, 211, 238, 0.18);
+            --glow-two: rgba(163, 230, 53, 0.1);
+            --glow-three: rgba(34, 211, 238, 0.08);
+            --grid-line: rgba(103, 232, 249, 0.045);
+            --grid-mask: rgba(0, 0, 0, 0.5);
             --safe-top: env(safe-area-inset-top, 0px);
             --safe-right: env(safe-area-inset-right, 0px);
             --safe-bottom: env(safe-area-inset-bottom, 0px);
             --safe-left: env(safe-area-inset-left, 0px);
+        }
+
+        body[data-theme="ember"] {
+            --page-top: #14070a;
+            --page-bottom: #2a0f0c;
+            --panel-border: rgba(251, 146, 60, 0.16);
+            --panel-border-strong: rgba(248, 113, 113, 0.32);
+            --text-muted: #fdba74;
+            --text-dim: #8d5240;
+            --accent: #fb923c;
+            --accent-soft: #fdba74;
+            --accent-lime: #f87171;
+            --focus-ring: rgba(251, 146, 60, 0.3);
+            --glow-one: rgba(251, 146, 60, 0.18);
+            --glow-two: rgba(248, 113, 113, 0.12);
+            --glow-three: rgba(253, 186, 116, 0.08);
+            --grid-line: rgba(251, 146, 60, 0.04);
+        }
+
+        body[data-theme="aurora"] {
+            --page-top: #06111b;
+            --page-bottom: #071a17;
+            --panel-border: rgba(45, 212, 191, 0.16);
+            --panel-border-strong: rgba(96, 165, 250, 0.32);
+            --text-muted: #5eead4;
+            --text-dim: #4a7e84;
+            --accent: #2dd4bf;
+            --accent-soft: #67e8f9;
+            --accent-lime: #60a5fa;
+            --focus-ring: rgba(45, 212, 191, 0.28);
+            --glow-one: rgba(45, 212, 191, 0.18);
+            --glow-two: rgba(96, 165, 250, 0.12);
+            --glow-three: rgba(103, 232, 249, 0.08);
+            --grid-line: rgba(45, 212, 191, 0.04);
+        }
+
+        body[data-theme="rose"] {
+            --page-top: #180911;
+            --page-bottom: #250d1e;
+            --panel-border: rgba(244, 114, 182, 0.17);
+            --panel-border-strong: rgba(192, 132, 252, 0.34);
+            --text-muted: #f9a8d4;
+            --text-dim: #8b5c7f;
+            --accent: #f472b6;
+            --accent-soft: #f9a8d4;
+            --accent-lime: #c084fc;
+            --focus-ring: rgba(244, 114, 182, 0.28);
+            --glow-one: rgba(244, 114, 182, 0.17);
+            --glow-two: rgba(192, 132, 252, 0.12);
+            --glow-three: rgba(249, 168, 212, 0.08);
+            --grid-line: rgba(244, 114, 182, 0.04);
+        }
+
+        body[data-theme="amber"] {
+            --page-top: #171005;
+            --page-bottom: #241709;
+            --panel-border: rgba(250, 204, 21, 0.16);
+            --panel-border-strong: rgba(251, 146, 60, 0.32);
+            --text-muted: #fcd34d;
+            --text-dim: #8a6c2e;
+            --accent: #facc15;
+            --accent-soft: #fde68a;
+            --accent-lime: #fb923c;
+            --focus-ring: rgba(250, 204, 21, 0.28);
+            --glow-one: rgba(250, 204, 21, 0.17);
+            --glow-two: rgba(251, 146, 60, 0.12);
+            --glow-three: rgba(253, 230, 138, 0.08);
+            --grid-line: rgba(250, 204, 21, 0.04);
+        }
+
+        body[data-theme="forest"] {
+            --page-top: #071108;
+            --page-bottom: #0c1d12;
+            --panel-border: rgba(74, 222, 128, 0.16);
+            --panel-border-strong: rgba(45, 212, 191, 0.32);
+            --text-muted: #86efac;
+            --text-dim: #54785d;
+            --accent: #4ade80;
+            --accent-soft: #86efac;
+            --accent-lime: #2dd4bf;
+            --focus-ring: rgba(74, 222, 128, 0.28);
+            --glow-one: rgba(74, 222, 128, 0.17);
+            --glow-two: rgba(45, 212, 191, 0.12);
+            --glow-three: rgba(134, 239, 172, 0.08);
+            --grid-line: rgba(74, 222, 128, 0.04);
+        }
+
+        body[data-theme="ocean"] {
+            --page-top: #05111a;
+            --page-bottom: #092132;
+            --panel-border: rgba(56, 189, 248, 0.16);
+            --panel-border-strong: rgba(99, 102, 241, 0.34);
+            --text-muted: #7dd3fc;
+            --text-dim: #4f6f92;
+            --accent: #38bdf8;
+            --accent-soft: #7dd3fc;
+            --accent-lime: #6366f1;
+            --focus-ring: rgba(56, 189, 248, 0.3);
+            --glow-one: rgba(56, 189, 248, 0.18);
+            --glow-two: rgba(99, 102, 241, 0.12);
+            --glow-three: rgba(125, 211, 252, 0.08);
+            --grid-line: rgba(56, 189, 248, 0.04);
+        }
+
+        body[data-theme="mono"] {
+            --page-top: #090909;
+            --page-bottom: #151515;
+            --panel-border: rgba(212, 212, 216, 0.14);
+            --panel-border-strong: rgba(161, 161, 170, 0.28);
+            --text-main: #f5f5f5;
+            --text-soft: #e5e7eb;
+            --text-muted: #d4d4d8;
+            --text-dim: #737373;
+            --accent: #e5e7eb;
+            --accent-soft: #fafafa;
+            --accent-lime: #a1a1aa;
+            --focus-ring: rgba(229, 231, 235, 0.2);
+            --glow-one: rgba(229, 231, 235, 0.1);
+            --glow-two: rgba(161, 161, 170, 0.08);
+            --glow-three: rgba(245, 245, 245, 0.04);
+            --grid-line: rgba(212, 212, 216, 0.03);
+        }
+
+        body[data-theme="violet"] {
+            --page-top: #0d0920;
+            --page-bottom: #17122f;
+            --panel-border: rgba(167, 139, 250, 0.16);
+            --panel-border-strong: rgba(96, 165, 250, 0.32);
+            --text-muted: #c4b5fd;
+            --text-dim: #6f67a8;
+            --accent: #a78bfa;
+            --accent-soft: #c4b5fd;
+            --accent-lime: #60a5fa;
+            --focus-ring: rgba(167, 139, 250, 0.28);
+            --glow-one: rgba(167, 139, 250, 0.18);
+            --glow-two: rgba(96, 165, 250, 0.12);
+            --glow-three: rgba(196, 181, 253, 0.08);
+            --grid-line: rgba(167, 139, 250, 0.04);
+        }
+
+        body[data-theme="sunset"] {
+            --page-top: #1a0b14;
+            --page-bottom: #2b1410;
+            --panel-border: rgba(251, 146, 60, 0.16);
+            --panel-border-strong: rgba(244, 114, 182, 0.3);
+            --text-muted: #fdba74;
+            --text-dim: #8a5c57;
+            --accent: #fb923c;
+            --accent-soft: #fdba74;
+            --accent-lime: #f472b6;
+            --focus-ring: rgba(251, 146, 60, 0.28);
+            --glow-one: rgba(251, 146, 60, 0.18);
+            --glow-two: rgba(244, 114, 182, 0.12);
+            --glow-three: rgba(253, 186, 116, 0.08);
+            --grid-line: rgba(251, 146, 60, 0.04);
         }
 
         html {
@@ -55,9 +215,9 @@
             color: var(--text-main);
             font-family: "Segoe UI Variable", "Segoe UI", "Bahnschrift", sans-serif;
             background:
-                radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 26rem),
-                radial-gradient(circle at top right, rgba(163, 230, 53, 0.1), transparent 24rem),
-                radial-gradient(circle at bottom center, rgba(34, 211, 238, 0.08), transparent 30rem),
+                radial-gradient(circle at top left, var(--glow-one), transparent 26rem),
+                radial-gradient(circle at top right, var(--glow-two), transparent 24rem),
+                radial-gradient(circle at bottom center, var(--glow-three), transparent 30rem),
                 linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
         }
 
@@ -67,10 +227,10 @@
             inset: 0;
             pointer-events: none;
             background-image:
-                linear-gradient(rgba(103, 232, 249, 0.045) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(103, 232, 249, 0.045) 1px, transparent 1px);
+                linear-gradient(var(--grid-line) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
             background-size: 32px 32px;
-            mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 88%);
+            mask-image: linear-gradient(180deg, var(--grid-mask), transparent 88%);
             opacity: 0.42;
         }
 
@@ -135,13 +295,13 @@
         }
 
         .glass-panel {
-            background: linear-gradient(180deg, rgba(7, 15, 29, 0.9), rgba(4, 10, 22, 0.82));
+            background: linear-gradient(180deg, color-mix(in srgb, var(--page-top) 64%, transparent), color-mix(in srgb, var(--page-bottom) 78%, transparent));
             backdrop-filter: blur(20px);
             border-color: var(--panel-border) !important;
             box-shadow:
                 inset 0 1px 0 rgba(255, 255, 255, 0.04),
                 0 20px 48px rgba(0, 0, 0, 0.42),
-                0 0 30px rgba(34, 211, 238, 0.06);
+                0 0 30px color-mix(in srgb, var(--accent) 22%, transparent);
         }
 
         .soft-ring:focus-visible {
@@ -533,14 +693,95 @@
         }
 
         .affix-rule-card {
-            border: 1px solid rgba(103, 232, 249, 0.1);
-            background: rgba(4, 10, 22, 0.56);
+            border: 1px solid rgba(103, 232, 249, 0.16);
+            background:
+                linear-gradient(180deg, rgba(8, 16, 30, 0.96), rgba(4, 10, 22, 0.94));
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.03),
+                0 12px 26px rgba(0, 0, 0, 0.26);
         }
 
         .affix-rule-empty {
             border: 1px dashed rgba(103, 232, 249, 0.12);
             background: rgba(4, 10, 22, 0.36);
             color: rgba(199, 247, 255, 0.56);
+        }
+
+        .settings-sheet {
+            background:
+                radial-gradient(circle at top right, rgba(34, 211, 238, 0.14), transparent 18rem),
+                linear-gradient(180deg, rgba(8, 16, 30, 0.98), rgba(3, 8, 18, 0.98));
+            border-color: rgba(103, 232, 249, 0.2) !important;
+            box-shadow:
+                inset 0 1px 0 rgba(255, 255, 255, 0.04),
+                0 24px 56px rgba(0, 0, 0, 0.42),
+                0 0 34px rgba(34, 211, 238, 0.08);
+        }
+
+        .settings-block {
+            border: 1px solid rgba(103, 232, 249, 0.1);
+            background: rgba(4, 10, 22, 0.58);
+            border-radius: 1.2rem;
+            padding: 0.95rem;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+        }
+
+        .roll-search-shell {
+            border: 1px solid rgba(103, 232, 249, 0.1);
+            background: rgba(4, 10, 22, 0.56);
+            border-radius: 1rem;
+        }
+
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.7rem;
+        }
+
+        .theme-swatch {
+            border: 1px solid rgba(103, 232, 249, 0.12);
+            border-radius: 1rem;
+            padding: 0.75rem;
+            background: rgba(4, 10, 22, 0.62);
+            text-align: left;
+            transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+        }
+
+        .theme-swatch:hover {
+            transform: translateY(-1px);
+            border-color: rgba(103, 232, 249, 0.22);
+        }
+
+        .theme-swatch--active {
+            border-color: var(--panel-border-strong);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent), 0 0 18px color-mix(in srgb, var(--accent) 18%, transparent);
+        }
+
+        .theme-preview {
+            display: flex;
+            gap: 0.35rem;
+            margin-bottom: 0.55rem;
+        }
+
+        .theme-preview span {
+            height: 0.85rem;
+            flex: 1;
+            border-radius: 9999px;
+        }
+
+        .theme-swatch strong {
+            display: block;
+            color: var(--text-main);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .theme-swatch small {
+            display: block;
+            color: rgba(199, 247, 255, 0.5);
+            font-size: 0.66rem;
+            margin-top: 0.18rem;
         }
 
         .mini-kicker {
@@ -708,9 +949,9 @@
                     </svg>
                 </div>
                 <div>
-                    <p class="mini-kicker">Neon Splitter</p>
+                    <p class="mini-kicker">Splitter by Avi</p>
                     <h1 class="text-lg sm:text-xl font-bold text-cyan-50 tracking-[0.04em]">
-                        Prompt Splitter
+                        Splitter by Avi
                     </h1>
                 </div>
             </div>
@@ -797,28 +1038,34 @@
 
                 <div id="resultsArea" class="hidden min-w-0 flex-col h-full min-h-[320px] gap-3">
                     <div class="glass-panel min-w-0 rounded-[1.8rem] border p-4">
-                        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                            <div>
+                        <div class="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start">
+                            <div class="min-w-0">
                                 <p class="mini-kicker">Workspace</p>
                                 <h3 id="resultsSummary" class="text-lg font-semibold mt-1">0 Prompts</h3>
                                 <div id="resultsMeta" class="mt-3"></div>
                             </div>
 
-                            <div class="flex flex-col sm:flex-row gap-2 sm:items-center">
-                                <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-950/50 border border-cyan-400/10 w-full sm:w-auto">
-                                    <button id="viewTabsBtn" type="button" class="soft-ring view-pill-idle px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0 inline-flex items-center justify-center gap-2">
-                                        <i data-lucide="layout-template" class="w-4 h-4"></i>
-                                        <span>Tabs</span>
-                                    </button>
-                                    <button id="viewGlobalBtn" type="button" class="soft-ring view-pill-idle px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0 inline-flex items-center justify-center gap-2">
-                                        <i data-lucide="rows-3" class="w-4 h-4"></i>
-                                        <span>Flow</span>
+                            <div class="flex flex-col gap-2 min-w-0 w-full">
+                                <div class="roll-search-shell flex items-center gap-2 px-3 py-2 w-full min-w-0 max-w-full">
+                                    <i data-lucide="search" class="w-4 h-4 text-cyan-300/70"></i>
+                                    <input id="rollSearchInput" type="text" placeholder="Search roll name or code" class="soft-ring min-w-0 w-full bg-transparent text-sm outline-none" />
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <div class="grid grid-cols-2 p-1 rounded-2xl bg-slate-950/50 border border-cyan-400/10 w-full sm:w-auto">
+                                        <button id="viewTabsBtn" type="button" class="soft-ring view-pill-idle px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0 inline-flex items-center justify-center gap-2">
+                                            <i data-lucide="layout-template" class="w-4 h-4"></i>
+                                            <span>Tabs</span>
+                                        </button>
+                                        <button id="viewGlobalBtn" type="button" class="soft-ring view-pill-idle px-3 sm:px-4 py-2 text-sm font-medium rounded-xl transition-all min-w-0 inline-flex items-center justify-center gap-2">
+                                            <i data-lucide="rows-3" class="w-4 h-4"></i>
+                                            <span>Flow</span>
+                                        </button>
+                                    </div>
+                                    <button id="resetProgressBtn" type="button" class="chrome-btn soft-ring hidden px-4 py-2.5 rounded-2xl text-sm font-medium inline-flex items-center justify-center gap-2 w-full sm:w-auto">
+                                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                                        Reset
                                     </button>
                                 </div>
-                                <button id="resetProgressBtn" type="button" class="chrome-btn soft-ring hidden px-4 py-2.5 rounded-2xl text-sm font-medium inline-flex items-center justify-center gap-2">
-                                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
-                                    Reset
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -842,7 +1089,7 @@
     </main>
 
     <div id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" class="fixed inset-0 z-50 hidden items-end justify-center bg-slate-950/35 p-3 sm:items-center sm:p-6">
-        <div class="glass-panel animate-rise-in flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] border shadow-2xl">
+        <div class="settings-sheet glass-panel animate-rise-in flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] border shadow-2xl">
             <div class="flex items-start justify-between gap-4 border-b border-cyan-400/10 px-5 py-4 sm:px-6">
                 <div>
                     <p class="mini-kicker">Controls</p>
@@ -854,7 +1101,15 @@
             </div>
 
             <div class="settings-scroll space-y-4 px-5 py-5 sm:px-6 sm:py-6">
-                <div>
+                <div class="settings-block">
+                    <div class="flex items-center gap-2 text-sm font-medium mb-3">
+                        <i data-lucide="palette" class="w-4 h-4 text-cyan-300"></i>
+                        Themes
+                    </div>
+                    <div id="themeGrid" class="theme-grid"></div>
+                </div>
+
+                <div class="settings-block">
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="layout-template" class="w-4 h-4 text-cyan-300"></i>
                         Tabs
@@ -865,7 +1120,7 @@
                     </select>
                 </div>
 
-                <div id="keywordContainer" class="hidden">
+                <div id="keywordContainer" class="hidden settings-block">
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="type" class="w-4 h-4 text-cyan-300"></i>
                         Split Key
@@ -873,7 +1128,7 @@
                     <input type="text" id="mainDelimiter" placeholder="Video" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
-                <div>
+                <div class="settings-block">
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="braces" class="w-4 h-4 text-cyan-300"></i>
                         Prompts
@@ -881,7 +1136,7 @@
                     <input type="text" id="subDelimiters" placeholder="IMAGE PROMPT:, VIDEO PROMPT:" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
-                <div>
+                <div class="settings-block">
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="layers-3" class="w-4 h-4 text-cyan-300"></i>
                         A/B Roll
@@ -889,7 +1144,7 @@
                     <input type="text" id="itemDelimiter" placeholder="B-roll, A-roll" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
-                <div>
+                <div class="settings-block">
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="ban" class="w-4 h-4 text-cyan-300"></i>
                         Ignore
@@ -897,7 +1152,7 @@
                     <input type="text" id="ignoreDelimiter" placeholder="[DONE]" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
                 </div>
 
-                <div>
+                <div class="settings-block">
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="arrow-right-circle" class="w-4 h-4 text-cyan-300"></i>
                         Auto Next
@@ -911,7 +1166,7 @@
                     </select>
                 </div>
 
-                <div class="pt-2 border-t border-cyan-400/10 space-y-4">
+                <div class="settings-block space-y-4">
                     <div class="flex items-center justify-between gap-3">
                         <div>
                             <label class="flex items-center gap-2 text-sm font-medium mb-1">
@@ -935,6 +1190,18 @@
     <script>
         const WORKSPACE_STORAGE_KEY = 'sps_workspaceLibrary_v2';
         const ACTIVE_WORKSPACE_STORAGE_KEY = 'sps_activeWorkspaceId_v2';
+        const THEME_STORAGE_KEY = 'sps_theme_v1';
+        const THEMES = [
+            { id: 'neon', name: 'Neon', note: 'classic cyan lime', colors: ['#22d3ee', '#67e8f9', '#a3e635'] },
+            { id: 'ember', name: 'Ember', note: 'warm fire glow', colors: ['#fb923c', '#fdba74', '#f87171'] },
+            { id: 'aurora', name: 'Aurora', note: 'teal arctic wash', colors: ['#2dd4bf', '#67e8f9', '#60a5fa'] },
+            { id: 'rose', name: 'Rose', note: 'pink studio vibe', colors: ['#f472b6', '#f9a8d4', '#c084fc'] },
+            { id: 'amber', name: 'Amber', note: 'golden contrast', colors: ['#facc15', '#fde68a', '#fb923c'] },
+            { id: 'forest', name: 'Forest', note: 'green glass', colors: ['#4ade80', '#86efac', '#2dd4bf'] },
+            { id: 'ocean', name: 'Ocean', note: 'deep blue pulse', colors: ['#38bdf8', '#7dd3fc', '#6366f1'] },
+            { id: 'mono', name: 'Mono', note: 'clean graphite', colors: ['#fafafa', '#d4d4d8', '#737373'] },
+            { id: 'violet', name: 'Violet', note: 'electric dusk', colors: ['#a78bfa', '#c4b5fd', '#60a5fa'] }
+        ];
         const DEFAULT_WORKSPACE_SETTINGS = {
             name: 'Directory 1',
             inputText: '',
@@ -945,6 +1212,7 @@
             ignoreDelimiter: '[DONE]',
             affixRules: [],
             autoAdvanceMode: 'last',
+            rollSearch: '',
             viewMode: 'tabbed',
             parsedData: [],
             activeTabId: null,
@@ -956,6 +1224,7 @@
         const state = {
             workspaces: [],
             activeWorkspaceId: null,
+            theme: 'neon',
             parsedData: [],
             activeTabId: null,
             activeSubTabIds: {},
@@ -969,6 +1238,7 @@
         };
 
         const DOM = {
+            fileUpload: document.getElementById('fileUpload'),
             inputText: document.getElementById('inputText'),
             splitMethod: document.getElementById('splitMethod'),
             keywordContainer: document.getElementById('keywordContainer'),
@@ -979,6 +1249,7 @@
             autoAdvanceMode: document.getElementById('autoAdvanceMode'),
             affixRulesContainer: document.getElementById('affixRulesContainer'),
             addAffixRuleBtn: document.getElementById('addAffixRuleBtn'),
+            rollSearchInput: document.getElementById('rollSearchInput'),
             emptyState: document.getElementById('emptyState'),
             resultsArea: document.getElementById('resultsArea'),
             tabsContainer: document.getElementById('tabsContainer'),
@@ -992,6 +1263,7 @@
             settingsBtn: document.getElementById('settingsBtn'),
             settingsModal: document.getElementById('settingsModal'),
             closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+            themeGrid: document.getElementById('themeGrid'),
             soundToggle: document.getElementById('soundToggle'),
             soundToggleText: document.getElementById('soundToggleText'),
             installBtn: document.getElementById('installBtn'),
@@ -1017,6 +1289,49 @@
                 target: overrides.target || 'all',
                 specific: overrides.specific || ''
             };
+        }
+
+        function getThemeMetaColor(themeId = state.theme) {
+            const colorMap = {
+                neon: '#020617',
+                ember: '#2a0f0c',
+                aurora: '#071a17',
+                rose: '#250d1e',
+                amber: '#241709',
+                forest: '#0c1d12',
+                ocean: '#092132',
+                mono: '#151515',
+                violet: '#17122f'
+            };
+            return colorMap[themeId] || '#020617';
+        }
+
+        function renderThemeGrid() {
+            if (!DOM.themeGrid) return;
+            DOM.themeGrid.innerHTML = THEMES.map((theme) => `
+                <button type="button" onclick="setTheme('${theme.id}')" class="theme-swatch ${state.theme === theme.id ? 'theme-swatch--active' : ''}">
+                    <span class="theme-preview">
+                        ${theme.colors.map((color) => `<span style="background:${color}"></span>`).join('')}
+                    </span>
+                    <strong>${theme.name}</strong>
+                    <small>${theme.note}</small>
+                </button>
+            `).join('');
+        }
+
+        function applyTheme(themeId) {
+            const validTheme = THEMES.some((theme) => theme.id === themeId) ? themeId : 'neon';
+            state.theme = validTheme;
+            document.body.dataset.theme = validTheme === 'neon' ? '' : validTheme;
+            const themeMeta = document.querySelector('meta[name="theme-color"]');
+            if (themeMeta) themeMeta.setAttribute('content', getThemeMetaColor(validTheme));
+            localStorage.setItem(THEME_STORAGE_KEY, validTheme);
+            renderThemeGrid();
+            lucide.createIcons();
+        }
+
+        function setTheme(themeId) {
+            applyTheme(themeId);
         }
 
         function normalizeAffixRules(rules, fallback = {}) {
@@ -1108,6 +1423,7 @@
                     affixTarget: localStorage.getItem('sps_affixTarget') || 'all',
                     affixSpecific: localStorage.getItem('sps_affixSpecific') || ''
                 }),
+                rollSearch: '',
                 viewMode: localStorage.getItem('sps_viewMode') || DEFAULT_WORKSPACE_SETTINGS.viewMode,
                 parsedData: Array.isArray(legacySnapshot?.parsedData) ? legacySnapshot.parsedData : [],
                 activeTabId: legacySnapshot?.activeTabId || null,
@@ -1144,6 +1460,7 @@
                 ignoreDelimiter: DOM.ignoreDelimiter.value,
                 affixRules: getAffixRules(),
                 autoAdvanceMode: DOM.autoAdvanceMode.value,
+                rollSearch: DOM.rollSearchInput.value,
                 viewMode: state.viewMode,
                 parsedData: state.parsedData,
                 activeTabId: state.activeTabId,
@@ -1175,6 +1492,7 @@
             DOM.itemDelimiter.value = workspace.itemDelimiter || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter;
             DOM.ignoreDelimiter.value = workspace.ignoreDelimiter || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter;
             DOM.autoAdvanceMode.value = workspace.autoAdvanceMode || DEFAULT_WORKSPACE_SETTINGS.autoAdvanceMode;
+            DOM.rollSearchInput.value = workspace.rollSearch || '';
             renderAffixRules(workspace.affixRules || []);
 
             state.parsedData = Array.isArray(workspace.parsedData) ? workspace.parsedData : [];
@@ -1234,6 +1552,7 @@
                 ignoreDelimiter: DOM.ignoreDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter,
                 affixRules: getAffixRules(),
                 autoAdvanceMode: DOM.autoAdvanceMode.value || DEFAULT_WORKSPACE_SETTINGS.autoAdvanceMode,
+                rollSearch: DOM.rollSearchInput.value || '',
                 ...overrides
             }, state.workspaces.length);
         }
@@ -1312,6 +1631,8 @@
         }
 
         function init() {
+            state.theme = localStorage.getItem(THEME_STORAGE_KEY) || 'neon';
+            applyTheme(state.theme);
             state.soundEnabled = localStorage.getItem('sps_soundEnabled') !== 'false';
             state.workspaces = loadWorkspaceLibrary();
             const storedActiveWorkspaceId = localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
@@ -1342,6 +1663,11 @@
             DOM.ignoreDelimiter.addEventListener('input', saveToLocal);
             DOM.autoAdvanceMode.addEventListener('change', saveToLocal);
             DOM.addAffixRuleBtn.addEventListener('click', addAffixRule);
+            DOM.rollSearchInput.addEventListener('input', () => {
+                syncActiveWorkspace();
+                if (state.viewMode === 'tabbed' && ensureVisibleRollSelection()) return;
+                renderUI();
+            });
             DOM.workspaceSelect.addEventListener('change', () => switchWorkspace(DOM.workspaceSelect.value));
             DOM.newWorkspaceBtn.addEventListener('click', createWorkspace);
             DOM.renameWorkspaceBtn.addEventListener('click', renameWorkspace);
@@ -1373,6 +1699,7 @@
                     closeSettings();
                 }
             });
+            document.addEventListener('keydown', handleGlobalShortcuts);
 
             lucide.createIcons();
             renderUI();
@@ -1844,9 +2171,60 @@
             return state.parsedData.flatMap((tab) => tab.items.flatMap((item) => item.blocks));
         }
 
+        function getRollSearchQuery() {
+            return (DOM.rollSearchInput.value || '').trim().toLowerCase();
+        }
+
+        function getItemSearchText(tab, item) {
+            const itemTitle = item?.title || '';
+            const blockSearch = (item?.blocks || []).map((block) => {
+                return [
+                    block.title || '',
+                    block.taraCode || '',
+                    block.taraLabel || '',
+                    block.scriptLine || '',
+                    block.metaTag || ''
+                ].join(' ');
+            }).join(' ');
+
+            return [
+                tab?.title || '',
+                itemTitle,
+                blockSearch
+            ].join(' ').toLowerCase();
+        }
+
+        function itemMatchesSearch(tab, item, query = getRollSearchQuery()) {
+            if (!query) return true;
+            return getItemSearchText(tab, item).includes(query);
+        }
+
+        function getVisibleItemsForTab(tab) {
+            return (tab?.items || []).filter((item) => item.blocks?.length && itemMatchesSearch(tab, item));
+        }
+
+        function getOrderedVisibleRollEntries() {
+            return state.parsedData.flatMap((tab) => {
+                return getVisibleItemsForTab(tab).map((item) => ({
+                    tab,
+                    item
+                }));
+            });
+        }
+
+        function ensureVisibleRollSelection() {
+            const entries = getOrderedVisibleRollEntries();
+            if (!entries.length) return false;
+
+            const currentIndex = getCurrentVisibleRollEntryIndex(entries);
+            if (currentIndex !== -1) return false;
+
+            return activateRollEntry(entries[0]);
+        }
+
         function getGlobalItems() {
             return state.parsedData.flatMap((tab) => {
-                return tab.items.map((item) => ({
+                return getVisibleItemsForTab(tab).map((item) => ({
                     tabId: tab.id,
                     tabTitle: tab.title,
                     itemId: item.id,
@@ -1871,27 +2249,44 @@
             return null;
         }
 
-        function moveToNextBroll(fromContext) {
-            if (!fromContext || state.viewMode !== 'tabbed') return false;
+        function getCurrentVisibleRollEntryIndex(entries) {
+            if (!entries.length) return -1;
+            return entries.findIndex((entry) => {
+                return entry.tab.id === state.activeTabId && state.activeSubTabIds[entry.tab.id] === entry.item.id;
+            });
+        }
 
-            for (let tabIndex = fromContext.tabIndex; tabIndex < state.parsedData.length; tabIndex++) {
-                const tab = state.parsedData[tabIndex];
-                const startItemIndex = tabIndex === fromContext.tabIndex ? fromContext.itemIndex + 1 : 0;
+        function activateRollEntry(entry) {
+            if (!entry) return false;
+            state.activeTabId = entry.tab.id;
+            state.activeSubTabIds[entry.tab.id] = entry.item.id;
+            state.expandedBlocks = {};
+            persistExtractedState();
+            renderUI();
+            return true;
+        }
 
-                for (let itemIndex = startItemIndex; itemIndex < tab.items.length; itemIndex++) {
-                    const nextItem = tab.items[itemIndex];
-                    if (!nextItem || !nextItem.blocks || !nextItem.blocks.length) continue;
+        function moveBetweenVisibleRolls(direction = 1) {
+            if (state.viewMode !== 'tabbed') return false;
+            const entries = getOrderedVisibleRollEntries();
+            if (!entries.length) return false;
 
-                    state.activeTabId = tab.id;
-                    state.activeSubTabIds[tab.id] = nextItem.id;
-                    state.expandedBlocks = {};
-                    persistExtractedState();
-                    renderUI();
-                    return true;
-                }
+            const currentIndex = getCurrentVisibleRollEntryIndex(entries);
+            if (currentIndex === -1) {
+                return activateRollEntry(entries[0]);
             }
 
-            return false;
+            const nextIndex = currentIndex + direction;
+            if (nextIndex < 0 || nextIndex >= entries.length) return false;
+            return activateRollEntry(entries[nextIndex]);
+        }
+
+        function moveToNextBroll() {
+            return moveBetweenVisibleRolls(1);
+        }
+
+        function moveToPreviousBroll() {
+            return moveBetweenVisibleRolls(-1);
         }
 
         function getPercentComplete(completed, total) {
@@ -2120,6 +2515,112 @@
             } catch (error) {
                 showToast('Error copying text.', 'error');
                 return false;
+            }
+        }
+
+        function isTextEditingTarget(target = document.activeElement) {
+            if (!target) return false;
+            if (target.isContentEditable) return true;
+            const tagName = target.tagName;
+            if (tagName === 'TEXTAREA' || tagName === 'SELECT') return true;
+            if (tagName === 'INPUT') {
+                const type = (target.getAttribute('type') || 'text').toLowerCase();
+                return !['button', 'checkbox', 'color', 'file', 'hidden', 'radio', 'range', 'reset', 'submit'].includes(type);
+            }
+            return false;
+        }
+
+        function isSettingsOpen() {
+            return !DOM.settingsModal.classList.contains('hidden');
+        }
+
+        function findFirstUncopiedBlock() {
+            if (state.viewMode === 'global') {
+                const globalItems = getGlobalItems();
+                for (const item of globalItems) {
+                    const uncopied = item.blocks.find((block) => !isCopied(block));
+                    if (uncopied) return uncopied;
+                }
+                return null;
+            }
+
+            const entries = getOrderedVisibleRollEntries();
+            if (!entries.length) return null;
+            const currentIndex = getCurrentVisibleRollEntryIndex(entries);
+            const orderedEntries = currentIndex === -1
+                ? entries
+                : [...entries.slice(currentIndex), ...entries.slice(0, currentIndex)];
+
+            for (const entry of orderedEntries) {
+                const uncopied = entry.item.blocks.find((block) => !isCopied(block));
+                if (uncopied) return uncopied;
+            }
+
+            return null;
+        }
+
+        async function copyFirstUncopiedPrompt() {
+            const block = findFirstUncopiedBlock();
+            if (!block) {
+                showToast('No uncopied prompts left.', 'error');
+                return false;
+            }
+
+            if (state.viewMode === 'tabbed') {
+                const context = findBlockContext(block.id);
+                if (context) {
+                    activateRollEntry({ tab: context.tab, item: context.item });
+                }
+            }
+
+            await copyBlock(block.id);
+            return true;
+        }
+
+        function handleGlobalShortcuts(event) {
+            if (event.defaultPrevented) return;
+            if (isTextEditingTarget(event.target)) return;
+            if (isSettingsOpen()) return;
+
+            const key = (event.key || '').toLowerCase();
+            const hasShortcutModifier = event.ctrlKey || event.metaKey;
+
+            if (hasShortcutModifier && key === 'c') {
+                event.preventDefault();
+                copyFirstUncopiedPrompt();
+                return;
+            }
+
+            if (event.altKey || event.shiftKey || hasShortcutModifier) return;
+
+            if (key === 'q') {
+                event.preventDefault();
+                moveToPreviousBroll();
+                return;
+            }
+            if (key === 'w') {
+                event.preventDefault();
+                copyFirstUncopiedPrompt();
+                return;
+            }
+            if (key === 'e') {
+                event.preventDefault();
+                moveToNextBroll();
+                return;
+            }
+            if (key === 's') {
+                event.preventDefault();
+                processText();
+                return;
+            }
+            if (key === 'd') {
+                event.preventDefault();
+                handleClearAll();
+                return;
+            }
+            if (key === 'a') {
+                event.preventDefault();
+                DOM.fileUpload.click();
             }
         }
 
@@ -2520,8 +3021,17 @@
                 return;
             }
 
+            const visibleItems = getVisibleItemsForTab(activeTabData);
+            if (!visibleItems.length) {
+                DOM.subTabsContainer.classList.remove('hidden');
+                DOM.subTabsContainer.innerHTML = '<div class="w-full px-2 py-2 text-xs text-cyan-100/45">No rolls match this search.</div>';
+                DOM.copyTabContainer.classList.add('hidden');
+                DOM.blocksContainer.innerHTML = '<div class="p-8 text-center text-cyan-100/45">No matching rolls in this tab.</div>';
+                return;
+            }
+
             DOM.subTabsContainer.classList.remove('hidden');
-            DOM.subTabsContainer.innerHTML = activeTabData.items.map((item) => {
+            DOM.subTabsContainer.innerHTML = visibleItems.map((item) => {
                 const isActive = state.activeSubTabIds[state.activeTabId] === item.id;
                 const copiedCount = item.blocks.filter((block) => isCopied(block)).length;
                 return `
@@ -2538,7 +3048,11 @@
                 `;
             }).join('');
 
-            const activeItem = activeTabData.items.find((item) => item.id === state.activeSubTabIds[state.activeTabId]) || activeTabData.items[0];
+            const activeItem = visibleItems.find((item) => item.id === state.activeSubTabIds[state.activeTabId]) || visibleItems[0];
+            if (activeItem && state.activeSubTabIds[state.activeTabId] !== activeItem.id) {
+                state.activeSubTabIds[state.activeTabId] = activeItem.id;
+                persistExtractedState();
+            }
 
             if (!activeItem || !activeItem.blocks || activeItem.blocks.length === 0) {
                 DOM.copyTabContainer.classList.add('hidden');
