@@ -1146,14 +1146,6 @@
 
                 <div class="settings-block">
                     <label class="flex items-center gap-2 text-sm font-medium mb-1">
-                        <i data-lucide="ban" class="w-4 h-4 text-cyan-300"></i>
-                        Ignore
-                    </label>
-                    <input type="text" id="ignoreDelimiter" placeholder="[DONE]" class="soft-ring w-full px-4 py-3 rounded-xl transition-all">
-                </div>
-
-                <div class="settings-block">
-                    <label class="flex items-center gap-2 text-sm font-medium mb-1">
                         <i data-lucide="arrow-right-circle" class="w-4 h-4 text-cyan-300"></i>
                         Auto Next
                     </label>
@@ -1209,7 +1201,6 @@
             mainDelimiter: 'Video',
             subDelimiters: 'IMAGE PROMPT:, VIDEO PROMPT:',
             itemDelimiter: 'B-roll, A-roll',
-            ignoreDelimiter: '[DONE]',
             affixRules: [],
             autoAdvanceMode: 'last',
             rollSearch: '',
@@ -1245,7 +1236,6 @@
             mainDelimiter: document.getElementById('mainDelimiter'),
             subDelimiters: document.getElementById('subDelimiters'),
             itemDelimiter: document.getElementById('itemDelimiter'),
-            ignoreDelimiter: document.getElementById('ignoreDelimiter'),
             autoAdvanceMode: document.getElementById('autoAdvanceMode'),
             affixRulesContainer: document.getElementById('affixRulesContainer'),
             addAffixRuleBtn: document.getElementById('addAffixRuleBtn'),
@@ -1416,7 +1406,6 @@
                 mainDelimiter: localStorage.getItem('sps_mainDelimiter') || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter,
                 subDelimiters: localStorage.getItem('sps_subDelimiters') || DEFAULT_WORKSPACE_SETTINGS.subDelimiters,
                 itemDelimiter: localStorage.getItem('sps_itemDelimiter') || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter,
-                ignoreDelimiter: localStorage.getItem('sps_ignoreDelimiter') || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter,
                 affixRules: normalizeAffixRules([], {
                     prefixText: localStorage.getItem('sps_prefixText') || '',
                     suffixText: localStorage.getItem('sps_suffixText') || '',
@@ -1457,7 +1446,6 @@
                 mainDelimiter: DOM.mainDelimiter.value,
                 subDelimiters: DOM.subDelimiters.value,
                 itemDelimiter: DOM.itemDelimiter.value,
-                ignoreDelimiter: DOM.ignoreDelimiter.value,
                 affixRules: getAffixRules(),
                 autoAdvanceMode: DOM.autoAdvanceMode.value,
                 rollSearch: DOM.rollSearchInput.value,
@@ -1490,7 +1478,6 @@
             DOM.mainDelimiter.value = workspace.mainDelimiter || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter;
             DOM.subDelimiters.value = workspace.subDelimiters || DEFAULT_WORKSPACE_SETTINGS.subDelimiters;
             DOM.itemDelimiter.value = workspace.itemDelimiter || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter;
-            DOM.ignoreDelimiter.value = workspace.ignoreDelimiter || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter;
             DOM.autoAdvanceMode.value = workspace.autoAdvanceMode || DEFAULT_WORKSPACE_SETTINGS.autoAdvanceMode;
             DOM.rollSearchInput.value = workspace.rollSearch || '';
             renderAffixRules(workspace.affixRules || []);
@@ -1549,7 +1536,6 @@
                 mainDelimiter: DOM.mainDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter,
                 subDelimiters: DOM.subDelimiters.value || DEFAULT_WORKSPACE_SETTINGS.subDelimiters,
                 itemDelimiter: DOM.itemDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.itemDelimiter,
-                ignoreDelimiter: DOM.ignoreDelimiter.value || DEFAULT_WORKSPACE_SETTINGS.ignoreDelimiter,
                 affixRules: getAffixRules(),
                 autoAdvanceMode: DOM.autoAdvanceMode.value || DEFAULT_WORKSPACE_SETTINGS.autoAdvanceMode,
                 rollSearch: DOM.rollSearchInput.value || '',
@@ -1660,7 +1646,6 @@
             DOM.mainDelimiter.addEventListener('input', saveToLocal);
             DOM.subDelimiters.addEventListener('input', saveToLocal);
             DOM.itemDelimiter.addEventListener('input', saveToLocal);
-            DOM.ignoreDelimiter.addEventListener('input', saveToLocal);
             DOM.autoAdvanceMode.addEventListener('change', saveToLocal);
             DOM.addAffixRuleBtn.addEventListener('click', addAffixRule);
             DOM.rollSearchInput.addEventListener('input', () => {
@@ -2777,7 +2762,6 @@
             const mainDelim = DOM.mainDelimiter.value.trim();
             const subDelims = DOM.subDelimiters.value;
             const itemDelim = DOM.itemDelimiter.value.trim();
-            const ignoreKeyword = DOM.ignoreDelimiter.value.trim().toLowerCase();
 
             if (!text.trim()) {
                 showToast('Please paste some text first.', 'error');
@@ -2792,7 +2776,13 @@
             let rawChunks = [];
 
             if (splitMethod === 'smart') {
-                const headerRegex = /^((?:\*\*|\*|#)?\s*(?:Video\s+|Tab\s+|Scene\s+)?\d{1,3}[a-z]?(?:\s*(?:\u2705|\[DONE\]|\u2714\uFE0F?|\bdone\b|[^\p{L}\p{N}\r\n]+))*\s*)$/gimu;
+                const numberToken = String.raw`\d{1,4}[a-z]?`;
+                const rangeToken = String.raw`(?:\s*(?:-|–|—|\bto\b)\s*${numberToken})?`;
+                const statusToken = String.raw`(?:\p{Extended_Pictographic}\uFE0F?|\[DONE\]|\bdone\b|[^\p{L}\p{N}\r\n]+)`;
+                const headerRegex = new RegExp(
+                    String.raw`^((?:\*\*|\*|#)?\s*(?:Video\s+|Tab\s+|Scene\s+)?${numberToken}${rangeToken}(?:\s*${statusToken})*\s*)$`,
+                    'gimu'
+                );
                 const splitPieces = text.split(headerRegex);
 
                 let currentChunk = splitPieces[0];
@@ -2914,18 +2904,11 @@
                 };
             });
 
-            const filteredParsed = parsed.filter((tab) => {
-                if (!ignoreKeyword) return true;
-                const ignoreList = ignoreKeyword.split(',').map((entry) => entry.trim()).filter(Boolean);
-                const chunkTextLower = tab.rawContent.toLowerCase();
-                return !ignoreList.some((ignoreStr) => chunkTextLower.includes(ignoreStr));
-            });
-
-            state.parsedData = filteredParsed;
+            state.parsedData = parsed;
             state.activeSubTabIds = {};
-            state.activeTabId = filteredParsed.length ? filteredParsed[0].id : null;
+            state.activeTabId = parsed.length ? parsed[0].id : null;
 
-            filteredParsed.forEach((tab) => {
+            parsed.forEach((tab) => {
                 if (tab.items && tab.items.length > 0) {
                     state.activeSubTabIds[tab.id] = tab.items[0].id;
                 }
@@ -2935,12 +2918,10 @@
 
             renderUI();
 
-            if (filteredParsed.length < parsed.length) {
-                showToast(`Extracted ${filteredParsed.length} tabs (Ignored ${parsed.length - filteredParsed.length} completed ones!)`, 'success');
-            } else if (filteredParsed.length > 0) {
-                showToast(`Successfully extracted ${filteredParsed.length} sections!`, 'success');
+            if (parsed.length > 0) {
+                showToast(`Successfully extracted ${parsed.length} sections!`, 'success');
             } else {
-                showToast('Nothing extracted. Check your ignore string.', 'error');
+                showToast('Nothing extracted. Check your split rules.', 'error');
             }
         }
 
@@ -3239,7 +3220,6 @@ The camera glides gently while the reminder animates into focus.`;
 
             DOM.splitMethod.value = 'smart';
             DOM.subDelimiters.value = 'IMAGE PROMPT:, VIDEO PROMPT:';
-            DOM.ignoreDelimiter.value = '[DONE]';
             syncActiveWorkspace();
 
             toggleMainDelimiter();
