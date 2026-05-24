@@ -1,0 +1,36 @@
+{
+  "packageId": "com.example.quotatracker",
+  "host": "USERNAME.github.io",
+  "name": "Quota Tracker",
+  "launcherName": "Quota Tracker",
+  "display": "standalone",
+  "themeColor": "#03030d",
+  "themeColorDark": "#03030d",
+  "navigationColor": "#03030d",
+  "navigationColorDark": "#03030d",
+  "navigationDividerColor": "#03030d",
+  "navigationDividerColorDark": "#03030d",
+  "backgroundColor": "#03030d",
+  "startUrl": "/portfolio-repo/standalone-html/index.html",
+  "iconUrl": "https://USERNAME.github.io/portfolio-repo/standalone-html/pwa-icon-512.png",
+  "maskableIconUrl": "https://USERNAME.github.io/portfolio-repo/standalone-html/pwa-icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://USERNAME.github.io/portfolio-repo/standalone-html/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": {
+      "enabled": false
+    },
+    "playBilling": {
+      "enabled": false
+    }
+  }
+}

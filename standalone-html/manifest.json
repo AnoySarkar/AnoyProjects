@@ -1,0 +1,30 @@
+{
+  "name": "Quota Tracker - Output ROI & Daily Target Dashboard",
+  "short_name": "Quota Tracker",
+  "description": "Output ROI dashboard for subscriptions, habits, and measurable daily or monthly targets.",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#03030d",
+  "theme_color": "#03030d",
+  "orientation": "portrait-primary",
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
