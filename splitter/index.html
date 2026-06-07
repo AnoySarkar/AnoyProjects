@@ -1020,11 +1020,14 @@
                     </div>
 
                     <div class="px-4 pt-3 pb-0">
-                        <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
                             <input type="url" id="docUrlInput" placeholder="Paste doc link" class="soft-ring min-w-0 w-full px-3 py-2.5 rounded-2xl text-sm">
                             <button id="docUrlBtn" type="button" onclick="handleDocumentLink()" class="chrome-btn soft-ring px-4 py-2 rounded-2xl text-sm font-medium flex items-center justify-center gap-2">
                                 <i data-lucide="link" class="w-4 h-4"></i>
                                 Load
+                            </button>
+                            <button id="docRefreshBtn" type="button" onclick="refreshLinkedDocument()" aria-label="Refresh linked document" title="Refresh linked document" class="chrome-btn soft-ring p-2.5 rounded-2xl transition-colors flex items-center justify-center">
+                                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                             </button>
                         </div>
                     </div>
@@ -1215,6 +1218,7 @@
         const DEFAULT_WORKSPACE_SETTINGS = {
             name: 'Directory 1',
             inputText: '',
+            linkedDocumentUrl: '',
             splitMethod: 'smart',
             mainDelimiter: 'Video',
             subDelimiters: 'IMAGE PROMPT:, VIDEO PROMPT:',
@@ -1234,6 +1238,7 @@
         const state = {
             workspaces: [],
             activeWorkspaceId: null,
+            linkedDocumentUrl: '',
             theme: 'neon',
             parsedData: [],
             activeTabId: null,
@@ -1252,6 +1257,7 @@
             inputText: document.getElementById('inputText'),
             docUrlInput: document.getElementById('docUrlInput'),
             docUrlBtn: document.getElementById('docUrlBtn'),
+            docRefreshBtn: document.getElementById('docRefreshBtn'),
             splitMethod: document.getElementById('splitMethod'),
             keywordContainer: document.getElementById('keywordContainer'),
             mainDelimiter: document.getElementById('mainDelimiter'),
@@ -1465,6 +1471,7 @@
         function captureCurrentWorkspaceState() {
             return {
                 inputText: DOM.inputText.value,
+                linkedDocumentUrl: state.linkedDocumentUrl,
                 splitMethod: DOM.splitMethod.value,
                 mainDelimiter: DOM.mainDelimiter.value,
                 subDelimiters: DOM.subDelimiters.value,
@@ -1498,6 +1505,8 @@
             if (!workspace) return;
 
             DOM.inputText.value = workspace.inputText || '';
+            state.linkedDocumentUrl = workspace.linkedDocumentUrl || '';
+            DOM.docUrlInput.value = state.linkedDocumentUrl;
             DOM.splitMethod.value = workspace.splitMethod || DEFAULT_WORKSPACE_SETTINGS.splitMethod;
             DOM.mainDelimiter.value = workspace.mainDelimiter || DEFAULT_WORKSPACE_SETTINGS.mainDelimiter;
             DOM.subDelimiters.value = workspace.subDelimiters || DEFAULT_WORKSPACE_SETTINGS.subDelimiters;
@@ -2734,6 +2743,8 @@
             if (!window.confirm(`Clear everything in ${workspace ? `"${workspace.name}"` : 'this directory'}?`)) return;
 
             DOM.inputText.value = '';
+            DOM.docUrlInput.value = '';
+            state.linkedDocumentUrl = '';
             state.parsedData = [];
             state.contentMap = {};
             state.blockKeyMap = {};
@@ -2754,6 +2765,8 @@
             if (!file) return;
 
             showToast('Extracting document...');
+            state.linkedDocumentUrl = '';
+            DOM.docUrlInput.value = '';
 
             if (file.name.endsWith('.txt')) {
                 const reader = new FileReader();
@@ -2821,49 +2834,79 @@
                 || /\.docx(?:[";]|$)/i.test(contentDisposition);
         }
 
-        async function handleDocumentLink() {
-            primeAudio();
+        function setDocumentButtonsLoading(isLoading) {
+            DOM.docUrlBtn.disabled = true;
+            DOM.docRefreshBtn.disabled = true;
 
-            const rawUrl = DOM.docUrlInput.value.trim();
-            if (!rawUrl) {
+            if (isLoading) {
+                DOM.docUrlBtn.classList.add('opacity-70');
+                DOM.docRefreshBtn.classList.add('opacity-70');
+            } else {
+                DOM.docUrlBtn.disabled = false;
+                DOM.docRefreshBtn.disabled = false;
+                DOM.docUrlBtn.classList.remove('opacity-70');
+                DOM.docRefreshBtn.classList.remove('opacity-70');
+            }
+        }
+
+        async function loadLinkedDocument(rawUrl, options = {}) {
+            const sourceUrl = rawUrl.trim();
+            if (!sourceUrl) {
                 showToast('Paste a document link first.', 'error');
                 return;
             }
 
             let request;
             try {
-                request = getLinkedDocumentRequest(rawUrl);
+                request = getLinkedDocumentRequest(sourceUrl);
             } catch (error) {
                 showToast('That does not look like a valid link.', 'error');
                 return;
             }
 
-            DOM.docUrlBtn.disabled = true;
-            DOM.docUrlBtn.classList.add('opacity-70');
-            showToast('Fetching document...');
+            setDocumentButtonsLoading(true);
+            showToast(options.isRefresh ? 'Refreshing linked document...' : 'Fetching document...');
 
             try {
-                const response = await fetch(request.url);
+                const response = await fetch(request.url, { cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
                 if (looksLikeDocx(response, request.type)) {
                     const arrayBuffer = await response.arrayBuffer();
                     const result = await mammoth.extractRawText({ arrayBuffer });
                     DOM.inputText.value = result.value;
-                    showToast('Linked Word document extracted!', 'success');
+                    showToast(options.isRefresh ? 'Linked Word document refreshed!' : 'Linked Word document extracted!', 'success');
                 } else {
                     DOM.inputText.value = await response.text();
-                    showToast('Linked text loaded!', 'success');
+                    showToast(options.isRefresh ? 'Linked text refreshed!' : 'Linked text loaded!', 'success');
                 }
 
+                state.linkedDocumentUrl = sourceUrl;
+                DOM.docUrlInput.value = sourceUrl;
                 syncActiveWorkspace();
             } catch (error) {
                 console.error(error);
                 showToast('Could not access that link. Make it public or use a direct .txt/.docx link.', 'error');
             } finally {
-                DOM.docUrlBtn.disabled = false;
-                DOM.docUrlBtn.classList.remove('opacity-70');
+                setDocumentButtonsLoading(false);
             }
+        }
+
+        async function handleDocumentLink() {
+            primeAudio();
+            await loadLinkedDocument(DOM.docUrlInput.value);
+        }
+
+        async function refreshLinkedDocument() {
+            primeAudio();
+            const workspace = getActiveWorkspace();
+            const savedUrl = state.linkedDocumentUrl || workspace?.linkedDocumentUrl || '';
+            if (!savedUrl) {
+                showToast('Load a document link before refreshing.', 'error');
+                return;
+            }
+
+            await loadLinkedDocument(savedUrl, { isRefresh: true });
         }
 
         function processText() {
@@ -3313,6 +3356,8 @@
         }
 
         function loadExample() {
+            state.linkedDocumentUrl = '';
+            DOM.docUrlInput.value = '';
             DOM.inputText.value = `2a
 
 **B-roll 1:**
