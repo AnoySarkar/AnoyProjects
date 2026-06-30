@@ -1,4 +1,4 @@
-const CACHE_NAME = 'smart-prompt-splitter-v12';
+const CACHE_NAME = 'smart-prompt-splitter-v13';
 const APP_SHELL = [
   './',
   './index.html',
@@ -29,6 +29,15 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   event.respondWith((async () => {
+    if (event.request.cache === 'no-store' || event.request.cache === 'reload') {
+      return fetch(event.request);
+    }
+
+    const cacheControl = event.request.headers.get('cache-control') || '';
+    if (cacheControl.includes('no-cache') || cacheControl.includes('no-store')) {
+      return fetch(event.request);
+    }
+
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(event.request, { ignoreSearch: true });
 

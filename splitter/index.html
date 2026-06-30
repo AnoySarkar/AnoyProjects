@@ -2824,6 +2824,12 @@
             };
         }
 
+        function buildFreshDocumentUrl(requestUrl) {
+            const url = new URL(requestUrl);
+            url.searchParams.set('_sps_refresh', `${Date.now()}`);
+            return url.href;
+        }
+
         function looksLikeDocx(response, requestType) {
             const contentType = response.headers.get('content-type') || '';
             const contentDisposition = response.headers.get('content-disposition') || '';
@@ -2868,7 +2874,7 @@
             showToast(options.isRefresh ? 'Refreshing linked document...' : 'Fetching document...');
 
             try {
-                const response = await fetch(request.url, { cache: 'no-store' });
+                const response = await fetch(buildFreshDocumentUrl(request.url), { cache: 'no-store' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
                 if (looksLikeDocx(response, request.type)) {
