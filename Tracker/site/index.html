@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0b0b0d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Window Command">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Window Command</title>
+    <meta name="description" content="A premium dark daily video window tracker with account reset timing, month overview, and offline app support.">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Video tracker</p>
+          <h1>Window Command</h1>
+        </div>
+        <div class="header-actions" aria-label="App actions">
+          <button class="icon-button" id="soundButton" type="button" title="Toggle sound effects">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 9v6h4l5 4V5L8 9H4Z"/>
+              <path d="M16 9a4 4 0 0 1 0 6"/>
+            </svg>
+            <span>SFX</span>
+          </button>
+          <button class="icon-button" id="downloadButton" type="button" title="Download backup">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>
+            </svg>
+            <span>Backup</span>
+          </button>
+          <button class="icon-button" id="uploadButton" type="button" title="Upload backup">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>
+            </svg>
+            <span>Upload</span>
+          </button>
+          <input id="uploadInput" type="file" accept="application/json,.json" hidden>
+        </div>
+      </header>
+
+      <section class="panel month-overview-panel" aria-label="Month overview">
+        <div class="month-head">
+          <div>
+            <p class="eyebrow">Month overview</p>
+            <h2 id="monthTitle">Selected month</h2>
+          </div>
+          <div class="month-total">
+            <span>Month total</span>
+            <strong id="monthAchieved">0</strong>
+          </div>
+        </div>
+        <div class="calendar-grid" id="calendarGrid" aria-label="Month day grid"></div>
+      </section>
+
+      <section class="panel daily-panel" id="currentWindowSection" aria-label="Daily tracker">
+        <div class="section-head daily-head">
+          <div>
+            <p class="eyebrow">Daily tracker</p>
+            <h2 id="scheduleTitle">Today</h2>
+          </div>
+        </div>
+
+        <div class="day-nav" aria-label="Day controls">
+          <button class="day-button" id="prevDayButton" type="button" title="Previous day">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <label class="date-control">
+            <span>Select day</span>
+            <input id="datePicker" type="date">
+          </label>
+          <button class="day-button" id="nextDayButton" type="button" title="Next day">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <button class="today-button" id="todayButton" type="button">Today</button>
+        </div>
+
+        <div class="selected-day-summary" aria-label="Selected day summary">
+          <div>
+            <span>Total videos</span>
+            <strong id="selectedDayVideos">0</strong>
+          </div>
+          <div>
+            <span>Video missed</span>
+            <strong id="selectedDayMissed">0</strong>
+          </div>
+          <div>
+            <span>Completion</span>
+            <strong id="selectedDayCompletion">0%</strong>
+          </div>
+        </div>
+
+        <div class="window-list" id="windowList"></div>
+      </section>
+
+      <section class="panel settings-panel" aria-label="Editable account reset times">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Account timing</p>
+            <h2>Next resets</h2>
+          </div>
+          <button class="small-button" id="resetDefaultsButton" type="button">Defaults</button>
+        </div>
+        <div class="reset-grid" id="resetGrid"></div>
+        <form class="add-account" id="addAccountForm">
+          <input id="newAccountName" type="text" maxlength="12" placeholder="Name" aria-label="New account name">
+          <input id="newAccountTime" type="time" aria-label="New account reset time">
+          <button class="small-button" type="submit">Add</button>
+        </form>
+      </section>
+
+      <section class="panel analytics-panel" aria-label="Analytics">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Analytics</p>
+            <h2 id="analyticsTitle">Month view</h2>
+          </div>
+        </div>
+        <div class="analytics-grid">
+          <article class="analysis-card">
+            <span>Video missed</span>
+            <strong id="monthMissedVideos">0</strong>
+          </article>
+          <article class="analysis-card">
+            <span>Completion</span>
+            <strong id="completionRate">0%</strong>
+          </article>
+          <article class="analysis-card">
+            <span>Streak</span>
+            <strong id="streakText">0 days</strong>
+          </article>
+          <article class="analysis-card">
+            <span>Best day</span>
+            <strong id="bestDayText">--</strong>
+          </article>
+        </div>
+        <div class="chart-card">
+          <canvas id="dailyChart" width="720" height="260" aria-label="Daily output chart"></canvas>
+          <p id="coachText">No videos logged yet.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
