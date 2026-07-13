@@ -509,6 +509,19 @@ input {
   cursor: not-allowed;
 }
 
+.account-row.is-live {
+  border-color: rgba(54, 217, 138, 0.65);
+  box-shadow: 0 0 10px rgba(54, 217, 138, 0.15);
+  background: linear-gradient(90deg, rgba(54, 217, 138, 0.22) 0 var(--fill), rgba(255, 255, 255, 0.065) var(--fill) 100%);
+}
+
+.account-row.is-grey {
+  opacity: 0.45;
+  filter: grayscale(100%);
+  border-color: rgba(255, 255, 255, 0.06);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 var(--fill), rgba(255, 255, 255, 0.02) var(--fill) 100%);
+}
+
 .account-meta {
   min-width: 0;
 }

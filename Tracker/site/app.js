@@ -236,20 +236,31 @@ function renderSchedule() {
   }
 
   const focusIndex = focusedWindowIndex();
+  const now = new Date();
   daySchedule.forEach((row, index) => {
     const totals = rowTotals(row);
     const stateLabel = windowStateLabel(row);
     const lockedKeys = lockedAccountsForRow(row);
+    
+    // Check if any account in this window is still available (live and not full)
+    const hasAvailableAccounts = row.order.some((entry) => {
+      const val = getAccountCount(row, entry);
+      const cycleEnd = addMinutes(entry.cycleStart, state.gemini.cycleMinutes);
+      const isLive = entry.cycleStart <= now && cycleEnd > now;
+      const max = state.gemini.videosPerAccount;
+      return isLive && val < max;
+    });
+
     // Use the user's saved open/close state on re-renders; fall back to focus logic on first render or day change
     const open = isReRender
       ? openRowIds.has(row.id)
-      : index === focusIndex;
+      : (index === focusIndex || hasAvailableAccounts);
     const details = document.createElement("details");
     details.className = "window-card";
     details.dataset.rowId = row.id;
     details.open = open;
-    details.classList.toggle("is-current", row.start <= new Date() && row.end >= new Date());
-    details.classList.toggle("is-past", row.end < new Date());
+    details.classList.toggle("is-current", row.start <= now && row.end >= now);
+    details.classList.toggle("is-past", row.end < now);
 
     details.innerHTML = `
       <summary class="window-summary">
@@ -295,20 +306,35 @@ function renderSchedule() {
 }
 
 function accountSliderHtml(row, entry, isLocked = false) {
+  const now = new Date();
   const value = getAccountCount(row, entry);
   // Exact cycle window this entry represents
   const cycleEnd = addMinutes(entry.cycleStart, state.gemini.cycleMinutes);
   const cycleRange = `${formatTimeLabel(entry.cycleStart)} – ${formatTimeLabel(cycleEnd)}`;
-  const minutesLeft = Math.max(0, Math.round((cycleEnd - new Date()) / 60000));
+  const minutesLeft = Math.max(0, Math.round((cycleEnd - now) / 60000));
+
+  const isLive = entry.cycleStart <= now && cycleEnd > now;
+  const isPast = cycleEnd < now;
+  const max = state.gemini.videosPerAccount;
+  const isFull = value >= max;
+
+  let stateClass = "";
+  if (isLocked) {
+    stateClass = "is-locked";
+  } else if (isPast || isFull) {
+    stateClass = "is-grey";
+  } else if (isLive) {
+    stateClass = "is-live";
+  }
+
   const resetText = isLocked
     ? `unlocks at ${formatTimeLabel(entry.cycleStart)}`
-    : row.end < new Date()
+    : row.end < now
       ? `done`
       : `${minutesLeft} min left`;
-  const max = state.gemini.videosPerAccount;
   const pct = max ? Math.round((value / max) * 100) : 0;
   return `
-    <label class="account-row ${isLocked ? "is-locked" : ""}" style="--fill:${pct}%">
+    <label class="account-row ${stateClass}" style="--fill:${pct}%">
       <span class="account-meta">
         <b>${escapeHtml(entry.name)} <span class="cycle-range">(${cycleRange})</span></b>
         <small>${resetText}</small>
