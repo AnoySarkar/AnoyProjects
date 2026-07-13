@@ -238,6 +238,7 @@ function renderSchedule() {
     const totals = rowTotals(row);
     const stateLabel = windowStateLabel(row);
     const carryAccounts = carryOverAccounts(row);
+    const lockedAccounts = lockedAccountsForRow(row);
     const open = index === focusIndex || (Math.abs(index - focusIndex) === 1 && carryAccounts.length > 0);
     const details = document.createElement("details");
     details.className = "window-card";
@@ -263,7 +264,7 @@ function renderSchedule() {
         </button>
       </div>
       <div class="account-sliders">
-        ${row.order.map((account) => accountSliderHtml(row, account, carryAccounts.includes(account.id))).join("")}
+        ${row.order.map((account) => accountSliderHtml(row, account, carryAccounts.includes(account.id), lockedAccounts.includes(account.id))).join("")}
       </div>
     `;
     el.windowList.appendChild(details);
@@ -278,20 +279,20 @@ function renderSchedule() {
   });
 }
 
-function accountSliderHtml(row, account, isCarryOver = false) {
-  const value = getAccountCount(row.id, account.id);
+function accountSliderHtml(row, account, isCarryOver = false, isLocked = false) {
+  const value = getAccountCount(row, account);
   const reset = nextResetAfter(runtimeAccount(account), row.start);
   const minutesLeft = Math.max(0, Math.round((reset - new Date()) / 60000));
-  const resetText = row.end < new Date() ? formatTimeLabel(reset) : `${minutesLeft} min (${formatTimeLabel(reset)})`;
+  const resetText = isLocked ? `wait ${minutesLeft} min` : row.end < new Date() ? formatTimeLabel(reset) : `${minutesLeft} min (${formatTimeLabel(reset)})`;
   const max = state.gemini.videosPerAccount;
   const pct = max ? Math.round((value / max) * 100) : 0;
   return `
-    <label class="account-row ${isCarryOver ? "carry-over" : ""}" style="--fill:${pct}%">
+    <label class="account-row ${isCarryOver ? "carry-over" : ""} ${isLocked ? "is-locked" : ""}" style="--fill:${pct}%">
       <span class="account-meta">
         <b>${escapeHtml(account.name)}</b>
         <small>${resetText}</small>
       </span>
-      <input class="gemini-range" type="range" min="0" max="${max}" step="1" value="${value}" data-row="${row.id}" data-account="${account.id}" aria-label="${escapeAttribute(account.name)} videos in ${row.window}">
+      <input class="gemini-range" type="range" min="0" max="${max}" step="1" value="${value}" data-row="${row.id}" data-account="${account.id}" ${isLocked ? "disabled" : ""} aria-label="${escapeAttribute(account.name)} videos in ${row.window}">
       <output>${value}/${max}</output>
     </label>
   `;
@@ -300,10 +301,11 @@ function accountSliderHtml(row, account, isCarryOver = false) {
 function handleGeminiSlider(event) {
   const input = event.currentTarget;
   const row = rowById(input.dataset.row);
-  if (!row) return;
+  const account = state.gemini.accounts.find((item) => item.id === input.dataset.account);
+  if (!row || !account || input.disabled) return;
   const count = clampNumber(input.value, 0, state.gemini.videosPerAccount);
   if (event.type === "change") input.value = count;
-  setAccountCount(row.id, input.dataset.account, count);
+  setAccountCount(row, account, count);
   input.closest(".account-row")?.style.setProperty("--fill", `${state.gemini.videosPerAccount ? (Number(input.value) / state.gemini.videosPerAccount) * 100 : 0}%`);
   input.nextElementSibling.textContent = `${count}/${state.gemini.videosPerAccount}`;
   playTone("tap");
@@ -319,7 +321,10 @@ function handleFillWindow(event) {
   if (!row) return;
   const totals = rowTotals(row);
   const nextValue = totals.done >= totals.max ? 0 : state.gemini.videosPerAccount;
-  row.order.forEach((account) => setAccountCount(row.id, account.id, nextValue));
+  const lockedAccounts = lockedAccountsForRow(row);
+  row.order
+    .filter((account) => !lockedAccounts.includes(account.id))
+    .forEach((account) => setAccountCount(row, account, nextValue));
   playTone("success");
   renderSchedule();
   renderCalendar();
@@ -666,7 +671,7 @@ function calculateWindowPlan() {
 function orderForWindow(windowStart) {
   return [...state.gemini.accounts]
     .sort((a, b) => nextResetAfter(runtimeAccount(a), windowStart) - nextResetAfter(runtimeAccount(b), windowStart))
-    .map((account) => ({ id: account.id, name: account.name, time: account.time }));
+    .map((account) => ({ id: account.id, name: account.name, time: account.time, anchorDate: account.anchorDate }));
 }
 
 function focusedWindowIndex() {
@@ -689,13 +694,50 @@ function carryOverAccounts(row) {
     .map((account) => account.id);
 }
 
+function lockedAccountsForRow(row) {
+  const now = new Date();
+  if (row.end <= now) return [];
+  return row.order
+    .filter((account) => {
+      const previousOpenRow = [...daySchedule]
+        .reverse()
+        .find((candidate) => candidate.start < row.start && candidate.start < now && nextResetAfter(runtimeAccount(account), candidate.start) > now);
+      return Boolean(previousOpenRow);
+    })
+    .map((account) => account.id);
+}
+
+function accountCycleEntryKey(row, account) {
+  const cycle = accountCycleFor(account, accountCycleReferenceDate(row));
+  return `${account.id}-${dateKey(cycle.start)}-${pad(cycle.start.getHours())}${pad(cycle.start.getMinutes())}`;
+}
+
+function accountCycleReferenceDate(row) {
+  const now = new Date();
+  if (row.start <= now && row.end >= now) return now;
+  return row.start;
+}
+
+function accountCycleFor(account, date, cycleMinutesOverride) {
+  const runtime = runtimeAccount(account);
+  const cycleMinutes = cycleMinutesOverride || state.gemini.cycleMinutes;
+  if (date < runtime.reset) {
+    return { start: new Date(runtime.reset), end: addMinutes(runtime.reset, cycleMinutes) };
+  }
+  const cycles = Math.floor((date - runtime.reset) / (cycleMinutes * 60000));
+  const start = addMinutes(runtime.reset, cycles * cycleMinutes);
+  return { start, end: addMinutes(start, cycleMinutes) };
+}
+
 function rowById(id) {
   return daySchedule.find((row) => row.id === id) || monthSchedule.find((row) => row.id === id);
 }
 
 function rowTotals(row) {
-  const max = state.gemini.accounts.length * state.gemini.videosPerAccount;
-  const done = state.gemini.accounts.reduce((sum, account) => sum + getAccountCount(row.id, account.id), 0);
+  const lockedAccounts = lockedAccountsForRow(row);
+  const activeAccounts = row.order.filter((account) => !lockedAccounts.includes(account.id));
+  const max = activeAccounts.length * state.gemini.videosPerAccount;
+  const done = activeAccounts.reduce((sum, account) => sum + getAccountCount(row, account), 0);
   const missed = row.end < new Date() ? Math.max(0, max - done) : 0;
   return { done, max, missed };
 }
@@ -710,14 +752,21 @@ function totalsForSchedule(schedule) {
   }, { achieved: 0, potential: 0, missedVideos: 0 });
 }
 
-function getAccountCount(rowId, accountId) {
-  return clampNumber(state.gemini.entries[rowId]?.accounts?.[accountId] || 0, 0, state.gemini.videosPerAccount);
+function getAccountCount(row, account) {
+  const key = accountCycleEntryKey(row, account);
+  return clampNumber(state.gemini.cycleEntries?.[key]?.count || 0, 0, state.gemini.videosPerAccount);
 }
 
-function setAccountCount(rowId, accountId, count) {
-  state.gemini.entries[rowId] = state.gemini.entries[rowId] || { accounts: {}, updatedAt: "" };
-  state.gemini.entries[rowId].accounts[accountId] = count;
-  state.gemini.entries[rowId].updatedAt = new Date().toISOString();
+function setAccountCount(row, account, count) {
+  const cycle = accountCycleFor(account, accountCycleReferenceDate(row));
+  const key = accountCycleEntryKey(row, account);
+  state.gemini.cycleEntries[key] = {
+    accountId: account.id,
+    cycleStart: cycle.start.toISOString(),
+    cycleEnd: cycle.end.toISOString(),
+    count: clampNumber(count, 0, state.gemini.videosPerAccount),
+    updatedAt: new Date().toISOString(),
+  };
   saveState();
 }
 
@@ -873,6 +922,7 @@ function defaultGeminiSettings() {
     videosPerAccount: 4,
     accounts: DEFAULT_NAMES.map((name, index) => ({ id: name.toLowerCase(), name, time: DEFAULT_TIMES[index], anchorDate: dateKey(new Date()) })),
     entries: {},
+    cycleEntries: {},
   };
 }
 
@@ -907,6 +957,8 @@ function normalizeState(source) {
   next.gemini.videosPerAccount = clampNumber(next.gemini.videosPerAccount, 0, 20);
   next.gemini.accounts = normalizeGeminiAccounts(next.gemini.accounts);
   next.gemini.entries = next.gemini.entries || {};
+  next.gemini.cycleEntries = normalizeGeminiCycleEntries(next.gemini.cycleEntries, next.gemini.videosPerAccount);
+  migrateWindowEntriesToCycles(next.gemini);
   next.flow.monthlyCredits = clampNumber(next.flow.monthlyCredits, 1, 100000);
   next.flow.reminderThreshold = clampNumber(next.flow.reminderThreshold, 0, 100000);
   next.flow.history = normalizeFlowHistory(next.flow.history);
@@ -924,6 +976,51 @@ function normalizeGeminiAccounts(accounts) {
       time: /^\d{2}:\d{2}$/.test(account.time || "") ? account.time : "12:00",
       anchorDate: isDateKey(account.anchorDate) ? account.anchorDate : dateKey(new Date()),
     }));
+}
+
+function normalizeGeminiCycleEntries(entries, max) {
+  if (!entries || typeof entries !== "object" || Array.isArray(entries)) return {};
+  return Object.fromEntries(
+    Object.entries(entries)
+      .filter(([, entry]) => entry && entry.accountId)
+      .map(([key, entry]) => [key, {
+        accountId: entry.accountId,
+        cycleStart: entry.cycleStart || "",
+        cycleEnd: entry.cycleEnd || "",
+        count: clampNumber(entry.count, 0, max),
+        updatedAt: entry.updatedAt || "",
+      }])
+  );
+}
+
+function migrateWindowEntriesToCycles(gemini) {
+  if (!gemini.entries || gemini.migratedCycleEntries) return;
+  Object.entries(gemini.entries).forEach(([rowId, entry]) => {
+    const rowStart = dateFromRowId(rowId);
+    if (!rowStart || !entry?.accounts) return;
+    Object.entries(entry.accounts).forEach(([accountId, count]) => {
+      const account = gemini.accounts.find((item) => item.id === accountId);
+      if (!account || !Number(count)) return;
+      const cycle = accountCycleFor(account, rowStart, gemini.cycleMinutes);
+      const key = `${account.id}-${dateKey(cycle.start)}-${pad(cycle.start.getHours())}${pad(cycle.start.getMinutes())}`;
+      if (gemini.cycleEntries[key]) return;
+      gemini.cycleEntries[key] = {
+        accountId: account.id,
+        cycleStart: cycle.start.toISOString(),
+        cycleEnd: cycle.end.toISOString(),
+        count: clampNumber(count, 0, gemini.videosPerAccount),
+        updatedAt: entry.updatedAt || "",
+      };
+    });
+  });
+  gemini.migratedCycleEntries = true;
+}
+
+function dateFromRowId(rowId) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})$/.exec(String(rowId));
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match.map(Number);
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
 }
 
 function normalizeFlowAccounts(accounts, max) {

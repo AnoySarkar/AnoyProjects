@@ -494,6 +494,21 @@ input {
   content: " still open";
 }
 
+.account-row.is-locked {
+  opacity: 0.52;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.045) 0 var(--fill), rgba(255, 255, 255, 0.025) var(--fill) 100%);
+}
+
+.account-row.is-locked .account-meta small::after {
+  color: var(--yellow);
+  content: " log previous";
+}
+
+.account-row.is-locked input[type="range"] {
+  cursor: not-allowed;
+}
+
 .account-meta {
   min-width: 0;
 }
@@ -564,6 +579,16 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 999px;
   background: var(--cyan);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+}
+
+input[type="range"]:disabled::-webkit-slider-thumb {
+  background: var(--subtle);
+  box-shadow: none;
+}
+
+input[type="range"]:disabled::-moz-range-thumb {
+  background: var(--subtle);
+  box-shadow: none;
 }
 
 .account-row output {
