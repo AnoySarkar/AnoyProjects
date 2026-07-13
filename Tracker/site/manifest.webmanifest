@@ -1,7 +1,7 @@
 {
-  "name": "Window Command",
-  "short_name": "WindowCmd",
-  "description": "Daily video window tracker with monthly performance overview.",
+  "name": "Gemini Flow Tracker",
+  "short_name": "GeminiFlow",
+  "description": "Compact Gemini video-window and Flow credit tracker.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

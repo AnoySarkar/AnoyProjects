@@ -5,147 +5,151 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#0b0b0d">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="Window Command">
+    <meta name="apple-mobile-web-app-title" content="Gemini Flow Tracker">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Window Command</title>
-    <meta name="description" content="A premium dark daily video window tracker with account reset timing, month overview, and offline app support.">
+    <title>Gemini Flow Tracker</title>
+    <meta name="description" content="Compact Gemini video-window and Flow credit tracker.">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=5">
   </head>
   <body>
     <main class="app-shell">
       <header class="app-header">
         <div>
-          <p class="eyebrow">Video tracker</p>
-          <h1>Window Command</h1>
+          <p class="eyebrow">Tracker</p>
+          <h1>Gemini Flow</h1>
         </div>
         <div class="header-actions" aria-label="App actions">
-          <button class="icon-button" id="soundButton" type="button" title="Toggle sound effects">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 9v6h4l5 4V5L8 9H4Z"/>
-              <path d="M16 9a4 4 0 0 1 0 6"/>
-            </svg>
+          <button class="icon-button" id="soundButton" type="button" title="Toggle sound">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>
             <span>SFX</span>
           </button>
+          <button class="icon-button" id="settingsButton" type="button" title="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.05.05a2.1 2.1 0 1 1-2.97 2.97l-.05-.05a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66V21.4a2.1 2.1 0 0 1-4.2 0v-.08A1.8 1.8 0 0 0 8.4 19.6a1.8 1.8 0 0 0-1.98.36l-.05.05A2.1 2.1 0 1 1 3.4 17.04l.05-.05A1.8 1.8 0 0 0 3.8 15a1.8 1.8 0 0 0-1.66-1.1H2.1a2.1 2.1 0 0 1 0-4.2h.08A1.8 1.8 0 0 0 3.8 8.6a1.8 1.8 0 0 0-.36-1.98l-.05-.05A2.1 2.1 0 1 1 6.36 3.6l.05.05A1.8 1.8 0 0 0 8.4 4a1.8 1.8 0 0 0 1.1-1.66V2.1a2.1 2.1 0 0 1 4.2 0v.08A1.8 1.8 0 0 0 14.8 4a1.8 1.8 0 0 0 1.98-.36l.05-.05a2.1 2.1 0 1 1 2.97 2.97l-.05.05a1.8 1.8 0 0 0-.36 1.98 1.8 1.8 0 0 0 1.66 1.1h.25a2.1 2.1 0 0 1 0 4.2h-.08A1.8 1.8 0 0 0 19.4 15Z"/></svg>
+            <span>Settings</span>
+          </button>
           <button class="icon-button" id="downloadButton" type="button" title="Download backup">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>
-            </svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
             <span>Backup</span>
           </button>
           <button class="icon-button" id="uploadButton" type="button" title="Upload backup">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>
-            </svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9M7 14l5-5 5 5M5 3h14"/></svg>
             <span>Upload</span>
           </button>
           <input id="uploadInput" type="file" accept="application/json,.json" hidden>
         </div>
       </header>
 
-      <section class="panel month-overview-panel" aria-label="Month overview">
-        <div class="month-head">
-          <div>
-            <p class="eyebrow">Month overview</p>
-            <h2 id="monthTitle">Selected month</h2>
+      <nav class="mode-toggle" aria-label="Tracker mode">
+        <button id="geminiTab" class="mode-button active" type="button">Gemini</button>
+        <button id="flowTab" class="mode-button" type="button">Flow</button>
+      </nav>
+
+      <section id="geminiView" class="mode-view active" aria-label="Gemini tracker">
+        <section class="panel compact-panel" aria-label="Gemini day controls">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Gemini</p>
+              <h2 id="scheduleTitle">Today</h2>
+            </div>
+            <div class="day-nav" aria-label="Day controls">
+              <button class="square-button" id="prevDayButton" type="button" title="Previous day">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              <input id="datePicker" type="date" aria-label="Select day">
+              <button class="square-button" id="nextDayButton" type="button" title="Next day">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+              </button>
+              <button class="small-button" id="todayButton" type="button">Today</button>
+            </div>
           </div>
-          <div class="month-total">
-            <span>Month total</span>
-            <strong id="monthAchieved">0</strong>
+
+          <div class="stat-strip" aria-label="Selected day summary">
+            <div><span>Done</span><strong id="selectedDayVideos">0</strong></div>
+            <div><span>Missed</span><strong id="selectedDayMissed">0</strong></div>
+            <div><span>Rate</span><strong id="selectedDayCompletion">0%</strong></div>
+            <div><span>Month</span><strong id="monthAchieved">0</strong></div>
           </div>
-        </div>
-        <div class="calendar-grid" id="calendarGrid" aria-label="Month day grid"></div>
+
+          <div class="calendar-wrap">
+            <div class="calendar-head">
+              <span id="monthTitle">Selected month</span>
+              <span id="monthMissedVideos">0 missed</span>
+            </div>
+            <div class="calendar-grid" id="calendarGrid" aria-label="Month day grid"></div>
+          </div>
+        </section>
+
+        <section class="window-list" id="windowList" aria-label="Gemini windows"></section>
       </section>
 
-      <section class="panel daily-panel" id="currentWindowSection" aria-label="Daily tracker">
-        <div class="section-head daily-head">
-          <div>
-            <p class="eyebrow">Daily tracker</p>
-            <h2 id="scheduleTitle">Today</h2>
+      <section id="flowView" class="mode-view" aria-label="Flow tracker">
+        <section class="panel compact-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Flow</p>
+              <h2>Monthly credits</h2>
+            </div>
+            <button class="small-button" id="requestNotificationButton" type="button">Notify</button>
           </div>
-        </div>
-
-        <div class="day-nav" aria-label="Day controls">
-          <button class="day-button" id="prevDayButton" type="button" title="Previous day">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
-          <label class="date-control">
-            <span>Select day</span>
-            <input id="datePicker" type="date">
-          </label>
-          <button class="day-button" id="nextDayButton" type="button" title="Next day">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-          </button>
-          <button class="today-button" id="todayButton" type="button">Today</button>
-        </div>
-
-        <div class="selected-day-summary" aria-label="Selected day summary">
-          <div>
-            <span>Total videos</span>
-            <strong id="selectedDayVideos">0</strong>
+          <div class="stat-strip flow-stats" aria-label="Flow summary">
+            <div><span>Left</span><strong id="flowTotalLeft">0</strong></div>
+            <div><span>Used</span><strong id="flowUsed">0</strong></div>
+            <div><span>Soon</span><strong id="flowResetSoon">0</strong></div>
           </div>
-          <div>
-            <span>Video missed</span>
-            <strong id="selectedDayMissed">0</strong>
-          </div>
-          <div>
-            <span>Completion</span>
-            <strong id="selectedDayCompletion">0%</strong>
-          </div>
-        </div>
-
-        <div class="window-list" id="windowList"></div>
-      </section>
-
-      <section class="panel settings-panel" aria-label="Editable account reset times">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Account timing</p>
-            <h2>Next resets</h2>
-          </div>
-          <button class="small-button" id="resetDefaultsButton" type="button">Defaults</button>
-        </div>
-        <div class="reset-grid" id="resetGrid"></div>
-        <form class="add-account" id="addAccountForm">
-          <input id="newAccountName" type="text" maxlength="12" placeholder="Name" aria-label="New account name">
-          <input id="newAccountTime" type="time" aria-label="New account reset time">
-          <button class="small-button" type="submit">Add</button>
-        </form>
-      </section>
-
-      <section class="panel analytics-panel" aria-label="Analytics">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Analytics</p>
-            <h2 id="analyticsTitle">Month view</h2>
-          </div>
-        </div>
-        <div class="analytics-grid">
-          <article class="analysis-card">
-            <span>Video missed</span>
-            <strong id="monthMissedVideos">0</strong>
-          </article>
-          <article class="analysis-card">
-            <span>Completion</span>
-            <strong id="completionRate">0%</strong>
-          </article>
-          <article class="analysis-card">
-            <span>Streak</span>
-            <strong id="streakText">0 days</strong>
-          </article>
-          <article class="analysis-card">
-            <span>Best day</span>
-            <strong id="bestDayText">--</strong>
-          </article>
-        </div>
-        <div class="chart-card">
-          <canvas id="dailyChart" width="720" height="260" aria-label="Daily output chart"></canvas>
-          <p id="coachText">No videos logged yet.</p>
-        </div>
+          <div class="flow-alerts" id="flowAlerts" aria-live="polite"></div>
+        </section>
+        <section class="flow-list" id="flowList" aria-label="Flow accounts"></section>
       </section>
     </main>
 
-    <script src="app.js"></script>
+    <dialog class="settings-dialog" id="settingsDialog">
+      <form method="dialog" class="settings-card">
+        <div class="settings-top">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h2>Limits and accounts</h2>
+          </div>
+          <button class="square-button" id="closeSettingsButton" type="submit" title="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="settings-grid">
+          <section class="settings-section">
+            <h3>Gemini</h3>
+            <label><span>Reset hours</span><input id="geminiCycleHours" type="number" min="1" max="24" step="0.25"></label>
+            <label><span>Window minutes</span><input id="geminiWindowMinutes" type="number" min="10" max="240" step="5"></label>
+            <label><span>Videos per account</span><input id="geminiVideoLimit" type="number" min="0" max="20" step="1"></label>
+            <div class="settings-list" id="geminiSettingsAccounts"></div>
+            <div class="add-row">
+              <input id="newGeminiAccountName" type="text" maxlength="12" placeholder="Name" aria-label="New Gemini account">
+              <input id="newGeminiAccountTime" type="time" aria-label="New Gemini reset time">
+              <button class="small-button" id="addGeminiAccountButton" type="button">Add</button>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>Flow</h3>
+            <label><span>Monthly credits</span><input id="flowMonthlyCredits" type="number" min="1" max="100000" step="1"></label>
+            <label><span>Reminder threshold</span><input id="flowReminderThreshold" type="number" min="0" max="100000" step="1"></label>
+            <div class="settings-list" id="flowSettingsAccounts"></div>
+            <div class="add-row">
+              <input id="newFlowAccountName" type="text" maxlength="12" placeholder="Name" aria-label="New Flow account">
+              <input id="newFlowResetDay" type="number" min="1" max="31" placeholder="Day" aria-label="New Flow reset day">
+              <button class="small-button" id="addFlowAccountButton" type="button">Add</button>
+            </div>
+          </section>
+        </div>
+
+        <div class="settings-actions">
+          <button class="small-button danger" id="resetDefaultsButton" type="button">Defaults</button>
+          <button class="small-button primary" type="submit">Done</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="app.js?v=5"></script>
   </body>
 </html>

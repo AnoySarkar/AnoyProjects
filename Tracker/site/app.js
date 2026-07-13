@@ -1,25 +1,13 @@
-const STORAGE_KEY = "window-command-entries-v4";
-const SETTINGS_KEY = "window-command-settings-v4";
+const STORAGE_KEY = "gemini-flow-tracker-data-v1";
+const OLD_ENTRIES_KEY = "window-command-entries-v4";
+const OLD_SETTINGS_KEY = "window-command-settings-v4";
 const REFERENCE_YEAR = 2026;
 const REFERENCE_MONTH = 6;
 const REFERENCE_DAY = 12;
-const CYCLE_MINUTES = 300;
-const WINDOW_MINUTES = 60;
-const VIDEOS_PER_ACCOUNT = 4;
-const DEFAULT_ACCOUNTS = [
-  { id: "tri", name: "TRI", time: "12:38" },
-  { id: "mou", name: "MOU", time: "13:09" },
-  { id: "lion", name: "LION", time: "14:29" },
-  { id: "avi", name: "AVI", time: "15:33" },
-  { id: "mind", name: "MIND", time: "17:35" },
-];
+const DEFAULT_NAMES = ["TRI", "MOU", "LION", "AVI", "MIND", "ANOY"];
+const DEFAULT_TIMES = ["12:38", "13:09", "14:29", "15:33", "17:35", "18:35"];
 
-const entries = loadJson(STORAGE_KEY, {});
-let settings = loadJson(SETTINGS_KEY, {
-  selectedDate: dateKey(new Date()),
-  sound: true,
-  accounts: DEFAULT_ACCOUNTS,
-});
+let state = loadState();
 let windowPlan = null;
 let daySchedule = [];
 let monthSchedule = [];
@@ -27,43 +15,58 @@ let audioContext = null;
 
 const el = {
   soundButton: document.querySelector("#soundButton"),
+  settingsButton: document.querySelector("#settingsButton"),
   downloadButton: document.querySelector("#downloadButton"),
   uploadButton: document.querySelector("#uploadButton"),
   uploadInput: document.querySelector("#uploadInput"),
+  geminiTab: document.querySelector("#geminiTab"),
+  flowTab: document.querySelector("#flowTab"),
+  geminiView: document.querySelector("#geminiView"),
+  flowView: document.querySelector("#flowView"),
   datePicker: document.querySelector("#datePicker"),
   prevDayButton: document.querySelector("#prevDayButton"),
   nextDayButton: document.querySelector("#nextDayButton"),
   todayButton: document.querySelector("#todayButton"),
+  scheduleTitle: document.querySelector("#scheduleTitle"),
   selectedDayVideos: document.querySelector("#selectedDayVideos"),
   selectedDayMissed: document.querySelector("#selectedDayMissed"),
   selectedDayCompletion: document.querySelector("#selectedDayCompletion"),
-  resetGrid: document.querySelector("#resetGrid"),
-  resetDefaultsButton: document.querySelector("#resetDefaultsButton"),
-  addAccountForm: document.querySelector("#addAccountForm"),
-  newAccountName: document.querySelector("#newAccountName"),
-  newAccountTime: document.querySelector("#newAccountTime"),
-  scheduleTitle: document.querySelector("#scheduleTitle"),
   monthTitle: document.querySelector("#monthTitle"),
   monthAchieved: document.querySelector("#monthAchieved"),
+  monthMissedVideos: document.querySelector("#monthMissedVideos"),
   calendarGrid: document.querySelector("#calendarGrid"),
   windowList: document.querySelector("#windowList"),
-  analyticsTitle: document.querySelector("#analyticsTitle"),
-  monthMissedVideos: document.querySelector("#monthMissedVideos"),
-  completionRate: document.querySelector("#completionRate"),
-  streakText: document.querySelector("#streakText"),
-  bestDayText: document.querySelector("#bestDayText"),
-  dailyChart: document.querySelector("#dailyChart"),
-  coachText: document.querySelector("#coachText"),
+  flowList: document.querySelector("#flowList"),
+  flowTotalLeft: document.querySelector("#flowTotalLeft"),
+  flowUsed: document.querySelector("#flowUsed"),
+  flowResetSoon: document.querySelector("#flowResetSoon"),
+  flowAlerts: document.querySelector("#flowAlerts"),
+  requestNotificationButton: document.querySelector("#requestNotificationButton"),
+  settingsDialog: document.querySelector("#settingsDialog"),
+  resetDefaultsButton: document.querySelector("#resetDefaultsButton"),
+  geminiCycleHours: document.querySelector("#geminiCycleHours"),
+  geminiWindowMinutes: document.querySelector("#geminiWindowMinutes"),
+  geminiVideoLimit: document.querySelector("#geminiVideoLimit"),
+  flowMonthlyCredits: document.querySelector("#flowMonthlyCredits"),
+  flowReminderThreshold: document.querySelector("#flowReminderThreshold"),
+  geminiSettingsAccounts: document.querySelector("#geminiSettingsAccounts"),
+  flowSettingsAccounts: document.querySelector("#flowSettingsAccounts"),
+  newGeminiAccountName: document.querySelector("#newGeminiAccountName"),
+  newGeminiAccountTime: document.querySelector("#newGeminiAccountTime"),
+  addGeminiAccountButton: document.querySelector("#addGeminiAccountButton"),
+  newFlowAccountName: document.querySelector("#newFlowAccountName"),
+  newFlowResetDay: document.querySelector("#newFlowResetDay"),
+  addFlowAccountButton: document.querySelector("#addFlowAccountButton"),
 };
 
 init();
 
 function init() {
-  settings.accounts = normalizeAccounts(settings.accounts);
-  settings.selectedDate = dateKey(new Date());
-  el.datePicker.value = settings.selectedDate;
-  updateSoundButton();
+  state = normalizeState(state);
+  applyFlowResets();
+  el.datePicker.value = state.selectedDate;
   bindEvents();
+  updateSoundButton();
   registerServiceWorker();
   rebuild({ scroll: true });
   setInterval(() => rebuild({ quiet: true }), 30000);
@@ -71,9 +74,15 @@ function init() {
 
 function bindEvents() {
   el.soundButton.addEventListener("click", () => {
-    settings.sound = !settings.sound;
-    saveSettings();
+    state.sound = !state.sound;
+    saveState();
     updateSoundButton();
+    playTone("tap");
+  });
+
+  el.settingsButton.addEventListener("click", () => {
+    renderSettings();
+    el.settingsDialog.showModal();
     playTone("tap");
   });
 
@@ -84,128 +93,248 @@ function bindEvents() {
 
   el.uploadButton.addEventListener("click", () => el.uploadInput.click());
   el.uploadInput.addEventListener("change", handleUpload);
+  el.geminiTab.addEventListener("click", () => setMode("gemini"));
+  el.flowTab.addEventListener("click", () => setMode("flow"));
 
   el.datePicker.addEventListener("change", () => {
-    settings.selectedDate = el.datePicker.value || dateKey(new Date());
-    saveSettings();
+    state.selectedDate = el.datePicker.value || dateKey(new Date());
+    saveState();
     playTone("tap");
     rebuild({ scroll: true });
   });
 
   el.prevDayButton.addEventListener("click", () => changeDay(-1));
   el.nextDayButton.addEventListener("click", () => changeDay(1));
-
   el.todayButton.addEventListener("click", () => {
-    settings.selectedDate = dateKey(new Date());
-    el.datePicker.value = settings.selectedDate;
-    saveSettings();
+    state.selectedDate = dateKey(new Date());
+    el.datePicker.value = state.selectedDate;
+    saveState();
     playTone("tap");
     rebuild({ scroll: true });
   });
 
+  el.requestNotificationButton.addEventListener("click", requestNotifications);
   el.resetDefaultsButton.addEventListener("click", () => {
-    settings.accounts = DEFAULT_ACCOUNTS.map((account) => ({ ...account }));
-    saveSettings();
+    if (!window.confirm("Reset settings to defaults? Your logged Gemini windows stay saved.")) return;
+    state.gemini = defaultGeminiSettings();
+    state.flow = defaultFlowSettings();
+    saveState();
+    playTone("success");
+    rebuild({ scroll: true });
+  });
+
+  bindSettingsInputs();
+}
+
+function bindSettingsInputs() {
+  [
+    [el.geminiCycleHours, () => {
+      state.gemini.cycleMinutes = clampNumber(Number(el.geminiCycleHours.value) * 60, 60, 1440);
+    }],
+    [el.geminiWindowMinutes, () => {
+      state.gemini.windowMinutes = clampNumber(el.geminiWindowMinutes.value, 10, 240);
+    }],
+    [el.geminiVideoLimit, () => {
+      state.gemini.videosPerAccount = clampNumber(el.geminiVideoLimit.value, 0, 20);
+    }],
+    [el.flowMonthlyCredits, () => {
+      const next = clampNumber(el.flowMonthlyCredits.value, 1, 100000);
+      state.flow.monthlyCredits = next;
+      state.flow.accounts.forEach((account) => account.creditsLeft = clampNumber(account.creditsLeft, 0, next));
+    }],
+    [el.flowReminderThreshold, () => {
+      state.flow.reminderThreshold = clampNumber(el.flowReminderThreshold.value, 0, 100000);
+    }],
+  ].forEach(([input, update]) => {
+    input.addEventListener("change", () => {
+      update();
+      saveState();
+      playTone("tap");
+      rebuild();
+    });
+  });
+
+  el.addGeminiAccountButton.addEventListener("click", () => {
+    const name = cleanName(el.newGeminiAccountName.value);
+    const time = el.newGeminiAccountTime.value;
+    if (!name || !time) return;
+    state.gemini.accounts.push({ id: uniqueAccountId(name, state.gemini.accounts), name, time });
+    el.newGeminiAccountName.value = "";
+    el.newGeminiAccountTime.value = "";
+    saveState();
     playTone("success");
     rebuild();
   });
 
-  el.addAccountForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const name = el.newAccountName.value.trim().toUpperCase();
-    const time = el.newAccountTime.value;
-    if (!name || !time) return;
-    settings.accounts.push({ id: uniqueAccountId(name), name, time });
-    el.newAccountName.value = "";
-    el.newAccountTime.value = "";
-    saveSettings();
+  el.addFlowAccountButton.addEventListener("click", () => {
+    const name = cleanName(el.newFlowAccountName.value);
+    const resetDay = clampNumber(el.newFlowResetDay.value || 1, 1, 31);
+    if (!name) return;
+    state.flow.accounts.push({
+      id: uniqueAccountId(name, state.flow.accounts),
+      name,
+      creditsLeft: state.flow.monthlyCredits,
+      resetDay,
+      lastResetMonth: "",
+    });
+    el.newFlowAccountName.value = "";
+    el.newFlowResetDay.value = "";
+    saveState();
     playTone("success");
     rebuild();
   });
 }
 
 function rebuild(options = {}) {
-  settings.accounts = normalizeAccounts(settings.accounts);
-  if (settings.accounts.length === 0) settings.accounts = DEFAULT_ACCOUNTS.map((account) => ({ ...account }));
+  state = normalizeState(state);
+  applyFlowResets();
   windowPlan = calculateWindowPlan();
   daySchedule = buildDaySchedule(selectedDate());
   monthSchedule = buildMonthSchedule(selectedDate());
-  renderSchedule();
+  renderMode();
+  renderGemini();
+  renderFlow();
+  renderSettings();
+  checkFlowReminders();
+  if (!options.quiet) saveState();
+  if (options.scroll && state.activeMode === "gemini") scrollToCurrentWindow();
+}
+
+function setMode(mode) {
+  state.activeMode = mode;
+  saveState();
+  playTone("tap");
+  renderMode();
+  if (mode === "gemini") scrollToCurrentWindow();
+}
+
+function renderMode() {
+  const gemini = state.activeMode !== "flow";
+  el.geminiTab.classList.toggle("active", gemini);
+  el.flowTab.classList.toggle("active", !gemini);
+  el.geminiView.classList.toggle("active", gemini);
+  el.flowView.classList.toggle("active", !gemini);
+}
+
+function renderGemini() {
+  renderTitles();
   renderCalendar();
-  renderAccounts();
-  renderAnalytics();
-  updateTitles();
-  if (options.scroll) scrollToCurrentWindow();
-  if (!options.quiet) saveSettings();
+  renderSchedule();
+  renderGeminiStats();
 }
 
 function renderSchedule() {
   el.windowList.innerHTML = "";
   if (!daySchedule.length) {
-    el.windowList.innerHTML = `<div class="empty-state">No valid 1-hour shared window for this day. Adjust reset times or accounts.</div>`;
+    el.windowList.innerHTML = `<div class="empty-state">No valid Gemini window. Adjust reset times or window length in Settings.</div>`;
     return;
   }
 
-  const focusId = currentWindow()?.id || nextWindow()?.id || "";
-  daySchedule.forEach((row) => {
-    const state = getRowState(row);
-    const card = document.createElement("article");
-    card.className = "window-card";
-    card.dataset.rowId = row.id;
-    if (row.id === focusId) card.classList.add("is-current");
-    if (row.end < new Date()) card.classList.add("is-past");
-    if (state.status === "MISSED" && !state.manual) card.classList.add("is-auto-missed");
+  const focusIndex = focusedWindowIndex();
+  daySchedule.forEach((row, index) => {
+    const totals = rowTotals(row);
+    const stateLabel = windowStateLabel(row);
+    const carryAccounts = carryOverAccounts(row);
+    const open = index === focusIndex || (Math.abs(index - focusIndex) === 1 && carryAccounts.length > 0);
+    const details = document.createElement("details");
+    details.className = "window-card";
+    details.dataset.rowId = row.id;
+    details.open = open;
+    details.classList.toggle("is-current", row.start <= new Date() && row.end >= new Date());
+    details.classList.toggle("is-past", row.end < new Date());
 
-    card.innerHTML = `
-      <div class="window-main">
-        <div class="window-title">
-          <span class="window-kicker">${windowStateLabel(row, state)}</span>
-          <h3>${row.window}</h3>
+    details.innerHTML = `
+      <summary class="window-summary">
+        <div>
+          <span class="window-kicker">${stateLabel}</span>
+          <strong>${row.window}</strong>
         </div>
-        <label class="count-box">
-          <span>Videos</span>
-          <input class="count-input" type="number" min="0" max="${maxPerWindow()}" step="1" value="${state.count}" data-id="${row.id}" aria-label="Videos completed for ${row.window}">
-        </label>
+        <div class="summary-score">
+          <b>${totals.done}/${totals.max}</b>
+          <span>${totals.missed ? `${totals.missed} missed` : "on track"}</span>
+        </div>
+      </summary>
+      <div class="window-tools">
+        <button class="fill-window-button ${totals.done >= totals.max ? "active" : ""}" type="button" data-row="${row.id}" aria-label="${totals.done >= totals.max ? "Clear window" : "Fill window"}" title="${totals.done >= totals.max ? "Clear window" : "Fill window"}">
+          <span></span>
+        </button>
       </div>
-      <div class="order-chips" aria-label="${row.order.join(" then ")}">
-        ${row.order.map((name) => `<span class="chip">${escapeHtml(name)}</span>`).join("")}
+      <div class="account-sliders">
+        ${row.order.map((account) => accountSliderHtml(row, account, carryAccounts.includes(account.id))).join("")}
       </div>
-      <div class="window-resets" aria-label="Next reset time for each account">
-        ${accountResetList(row.start).map((account) => `
-          <div>
-            <span>${escapeHtml(account.name)}</span>
-            <strong>${formatTimeLabel(account.nextReset)}</strong>
-          </div>
-        `).join("")}
-      </div>
-      <div class="status-buttons" role="group" aria-label="Status">
-        ${statusPresets().map((preset) => `
-          <button class="status-button ${state.status === preset.key ? "active" : ""}" type="button" data-id="${row.id}" data-status="${preset.key}" data-count="${preset.count}">
-            ${preset.label}
-          </button>
-        `).join("")}
-      </div>
-      <input class="description-input" data-id="${row.id}" value="${escapeAttribute(state.description)}" placeholder="Description or note" aria-label="Description for ${row.window}">
     `;
-    el.windowList.appendChild(card);
+    el.windowList.appendChild(details);
   });
 
-  el.windowList.querySelectorAll(".status-button").forEach((button) => {
-    button.addEventListener("click", handleStatusClick);
+  el.windowList.querySelectorAll(".gemini-range").forEach((input) => {
+    input.addEventListener("input", handleGeminiSlider);
+    input.addEventListener("change", handleGeminiSlider);
   });
-  el.windowList.querySelectorAll(".count-input").forEach((input) => {
-    input.addEventListener("input", handleCountInput);
-    input.addEventListener("change", handleCountInput);
+  el.windowList.querySelectorAll(".fill-window-button").forEach((button) => {
+    button.addEventListener("click", handleFillWindow);
   });
-  el.windowList.querySelectorAll(".description-input").forEach((input) => {
-    input.addEventListener("input", handleDescriptionInput);
-  });
+}
+
+function accountSliderHtml(row, account, isCarryOver = false) {
+  const value = getAccountCount(row.id, account.id);
+  const reset = nextResetAfter(runtimeAccount(account), row.start);
+  const minutesLeft = Math.max(0, Math.round((reset - new Date()) / 60000));
+  const resetText = row.end < new Date() ? formatTimeLabel(reset) : `${minutesLeft} min (${formatTimeLabel(reset)})`;
+  const max = state.gemini.videosPerAccount;
+  const pct = max ? Math.round((value / max) * 100) : 0;
+  return `
+    <label class="account-row ${isCarryOver ? "carry-over" : ""}" style="--fill:${pct}%">
+      <span class="account-meta">
+        <b>${escapeHtml(account.name)}</b>
+        <small>${resetText}</small>
+      </span>
+      <input class="gemini-range" type="range" min="0" max="${max}" step="1" value="${value}" data-row="${row.id}" data-account="${account.id}" aria-label="${escapeAttribute(account.name)} videos in ${row.window}">
+      <output>${value}/${max}</output>
+    </label>
+  `;
+}
+
+function handleGeminiSlider(event) {
+  const input = event.currentTarget;
+  const row = rowById(input.dataset.row);
+  if (!row) return;
+  const count = clampNumber(input.value, 0, state.gemini.videosPerAccount);
+  if (event.type === "change") input.value = count;
+  setAccountCount(row.id, input.dataset.account, count);
+  input.closest(".account-row")?.style.setProperty("--fill", `${state.gemini.videosPerAccount ? (Number(input.value) / state.gemini.videosPerAccount) * 100 : 0}%`);
+  input.nextElementSibling.textContent = `${count}/${state.gemini.videosPerAccount}`;
+  playTone("tap");
+  refreshWindowSummary(row.id);
+  if (event.type === "change") {
+    renderCalendar();
+    renderGeminiStats();
+  }
+}
+
+function handleFillWindow(event) {
+  const row = rowById(event.currentTarget.dataset.row);
+  if (!row) return;
+  const totals = rowTotals(row);
+  const nextValue = totals.done >= totals.max ? 0 : state.gemini.videosPerAccount;
+  row.order.forEach((account) => setAccountCount(row.id, account.id, nextValue));
+  playTone("success");
+  renderSchedule();
+  renderCalendar();
+  renderGeminiStats();
+}
+
+function refreshWindowSummary(rowId) {
+  const row = rowById(rowId);
+  const card = el.windowList.querySelector(`[data-row-id="${rowId}"]`);
+  if (!row || !card) return;
+  const totals = rowTotals(row);
+  const score = card.querySelector(".summary-score");
+  score.innerHTML = `<b>${totals.done}/${totals.max}</b><span>${totals.missed ? `${totals.missed} missed` : "on track"}</span>`;
 }
 
 function renderCalendar() {
   el.calendarGrid.innerHTML = "";
-  const days = daysInSelectedMonth();
-  days.forEach((date) => {
+  daysInSelectedMonth().forEach((date) => {
     const schedule = buildDaySchedule(date);
     const totals = totalsForSchedule(schedule);
     const ratio = totals.potential ? totals.achieved / totals.potential : 0;
@@ -213,16 +342,13 @@ function renderCalendar() {
     button.className = "calendar-day";
     button.type = "button";
     button.style.setProperty("--day-bg", dayGradient(ratio));
-    button.classList.toggle("selected", dateKey(date) === settings.selectedDate);
+    button.classList.toggle("selected", dateKey(date) === state.selectedDate);
     button.classList.toggle("today", dateKey(date) === dateKey(new Date()));
-    button.innerHTML = `
-      <span>${date.getDate()}</span>
-      <strong>${totals.achieved}</strong>
-    `;
+    button.innerHTML = `<span>${date.getDate()}</span><strong>${totals.achieved}</strong>`;
     button.addEventListener("click", () => {
-      settings.selectedDate = dateKey(date);
-      el.datePicker.value = settings.selectedDate;
-      saveSettings();
+      state.selectedDate = dateKey(date);
+      el.datePicker.value = state.selectedDate;
+      saveState();
       playTone("tap");
       rebuild({ scroll: true });
     });
@@ -230,140 +356,180 @@ function renderCalendar() {
   });
 }
 
-function renderAccounts() {
-  const context = dayContextDate();
-  const accounts = accountRuntime(context);
-  el.resetGrid.innerHTML = "";
+function renderGeminiStats() {
+  const dayTotals = totalsForSchedule(daySchedule);
+  const monthTotals = totalsForSchedule(monthSchedule);
+  const completion = dayTotals.potential ? Math.round((dayTotals.achieved / dayTotals.potential) * 100) : 0;
+  el.selectedDayVideos.textContent = dayTotals.achieved.toLocaleString("en-US");
+  el.selectedDayMissed.textContent = dayTotals.missedVideos.toLocaleString("en-US");
+  el.selectedDayCompletion.textContent = `${completion}%`;
+  el.monthAchieved.textContent = monthTotals.achieved.toLocaleString("en-US");
+  el.monthMissedVideos.textContent = `${monthTotals.missedVideos.toLocaleString("en-US")} missed`;
+}
 
-  accounts.forEach((account, index) => {
+function renderTitles() {
+  const selected = selectedDate();
+  el.scheduleTitle.textContent = selected.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "2-digit" });
+  el.monthTitle.textContent = selected.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
+function renderFlow() {
+  el.flowList.innerHTML = "";
+  const max = state.flow.monthlyCredits;
+  const alerts = [];
+  let totalLeft = 0;
+  let soon = 0;
+
+  state.flow.accounts.forEach((account) => {
+    const reset = nextMonthlyReset(account.resetDay);
+    const daysLeft = daysUntil(reset);
+    const used = Math.max(0, max - account.creditsLeft);
+    totalLeft += account.creditsLeft;
+    if (daysLeft <= 1 && account.creditsLeft > state.flow.reminderThreshold) {
+      soon += 1;
+      alerts.push(`${account.name}: ${account.creditsLeft} credits left, resets ${daysLeft === 0 ? "today" : "tomorrow"}.`);
+    }
+    const pct = max ? Math.round((account.creditsLeft / max) * 100) : 0;
     const card = document.createElement("article");
-    card.className = "reset-card";
+    card.className = "flow-card";
+    card.style.setProperty("--fill", `${pct}%`);
     card.innerHTML = `
-      <div class="reset-topline">
-        <span class="rank">${index + 1}</span>
-        <strong>${escapeHtml(account.name)}</strong>
-        <button class="remove-account" type="button" data-id="${account.id}" title="Remove ${escapeAttribute(account.name)}">x</button>
+      <div class="flow-top">
+        <div>
+          <span class="window-kicker">${daysLeft} days left</span>
+          <h3>${escapeHtml(account.name)}</h3>
+        </div>
+        <strong class="flow-left-value">${account.creditsLeft.toLocaleString("en-US")}</strong>
       </div>
-      <div class="next-reset">
-        <span>Next reset</span>
-        <b>${formatTimeLabel(account.nextReset)}</b>
-      </div>
-      <label>
-        <span>Base reset</span>
-        <input type="time" value="${account.time}" data-id="${account.id}" aria-label="${account.name} base reset time">
+      <label class="credit-slider">
+        <span>Credit left</span>
+        <input class="flow-range" type="range" min="0" max="${max}" step="1" value="${account.creditsLeft}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} credits left">
       </label>
+      <div class="flow-bottom">
+        <span class="flow-used-value">Used ${used.toLocaleString("en-US")}</span>
+        <label>Reset day <input class="reset-day-input" type="number" min="1" max="31" value="${account.resetDay}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} monthly reset day"></label>
+        <button class="small-button refill-button" type="button" data-id="${account.id}">Full</button>
+      </div>
     `;
-    el.resetGrid.appendChild(card);
+    el.flowList.appendChild(card);
   });
 
-  el.resetGrid.querySelectorAll("input").forEach((input) => {
-    input.addEventListener("change", () => {
-      const account = settings.accounts.find((item) => item.id === input.dataset.id);
+  el.flowTotalLeft.textContent = totalLeft.toLocaleString("en-US");
+  el.flowUsed.textContent = Math.max(0, state.flow.accounts.length * max - totalLeft).toLocaleString("en-US");
+  el.flowResetSoon.textContent = soon.toLocaleString("en-US");
+  el.flowAlerts.innerHTML = alerts.length ? alerts.map((text) => `<p>${escapeHtml(text)}</p>`).join("") : `<p>No urgent Flow reset reminders.</p>`;
+
+  el.flowList.querySelectorAll(".flow-range").forEach((input) => {
+    input.addEventListener("input", handleFlowSlider);
+    input.addEventListener("change", handleFlowSlider);
+  });
+  el.flowList.querySelectorAll(".reset-day-input").forEach((input) => {
+    input.addEventListener("change", handleFlowResetDay);
+  });
+  el.flowList.querySelectorAll(".refill-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const account = state.flow.accounts.find((item) => item.id === button.dataset.id);
       if (!account) return;
-      account.time = input.value || account.time;
-      saveSettings();
+      account.creditsLeft = state.flow.monthlyCredits;
+      account.lastResetMonth = monthKey(new Date());
+      saveState();
+      playTone("success");
+      renderFlow();
+      renderSettings();
+    });
+  });
+}
+
+function handleFlowSlider(event) {
+  const input = event.currentTarget;
+  const account = state.flow.accounts.find((item) => item.id === input.dataset.id);
+  if (!account) return;
+  account.creditsLeft = clampNumber(input.value, 0, state.flow.monthlyCredits);
+  if (event.type === "change") input.value = account.creditsLeft;
+  const card = input.closest(".flow-card");
+  card?.style.setProperty("--fill", `${state.flow.monthlyCredits ? (Number(input.value) / state.flow.monthlyCredits) * 100 : 0}%`);
+  const leftValue = card?.querySelector(".flow-left-value");
+  const usedValue = card?.querySelector(".flow-used-value");
+  if (leftValue) leftValue.textContent = account.creditsLeft.toLocaleString("en-US");
+  if (usedValue) usedValue.textContent = `Used ${Math.max(0, state.flow.monthlyCredits - account.creditsLeft).toLocaleString("en-US")}`;
+  saveState();
+  if (event.type === "change") renderFlow();
+}
+
+function handleFlowResetDay(event) {
+  const account = state.flow.accounts.find((item) => item.id === event.currentTarget.dataset.id);
+  if (!account) return;
+  account.resetDay = clampNumber(event.currentTarget.value, 1, 31);
+  saveState();
+  playTone("tap");
+  renderFlow();
+  renderSettings();
+}
+
+function renderSettings() {
+  el.geminiCycleHours.value = (state.gemini.cycleMinutes / 60).toString();
+  el.geminiWindowMinutes.value = state.gemini.windowMinutes;
+  el.geminiVideoLimit.value = state.gemini.videosPerAccount;
+  el.flowMonthlyCredits.value = state.flow.monthlyCredits;
+  el.flowReminderThreshold.value = state.flow.reminderThreshold;
+  renderSettingsAccountList("gemini");
+  renderSettingsAccountList("flow");
+}
+
+function renderSettingsAccountList(type) {
+  const target = type === "gemini" ? el.geminiSettingsAccounts : el.flowSettingsAccounts;
+  const accounts = type === "gemini" ? state.gemini.accounts : state.flow.accounts;
+  target.innerHTML = accounts.map((account) => `
+    <div class="settings-account">
+      <input class="settings-name" value="${escapeAttribute(account.name)}" data-type="${type}" data-id="${account.id}" aria-label="${type} account name">
+      ${type === "gemini"
+        ? `<input class="settings-time" type="time" value="${account.time}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} base reset">`
+        : `<input class="settings-reset-day" type="number" min="1" max="31" value="${account.resetDay}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} reset day">`}
+      <button class="remove-account" type="button" data-type="${type}" data-id="${account.id}" title="Remove ${escapeAttribute(account.name)}">x</button>
+    </div>
+  `).join("");
+
+  target.querySelectorAll(".settings-name").forEach((input) => {
+    input.addEventListener("change", () => {
+      const account = accounts.find((item) => item.id === input.dataset.id);
+      if (!account) return;
+      account.name = cleanName(input.value) || account.name;
+      saveState();
       playTone("tap");
       rebuild();
     });
   });
-
-  el.resetGrid.querySelectorAll(".remove-account").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (settings.accounts.length <= 1) return;
-      settings.accounts = settings.accounts.filter((account) => account.id !== button.dataset.id);
-      saveSettings();
-      playTone("warning");
+  target.querySelectorAll(".settings-time").forEach((input) => {
+    input.addEventListener("change", () => {
+      const account = state.gemini.accounts.find((item) => item.id === input.dataset.id);
+      if (!account) return;
+      account.time = input.value || account.time;
+      saveState();
+      playTone("tap");
       rebuild();
     });
   });
-}
-
-function accountResetList(windowStart) {
-  return runtimeAccounts()
-    .map((account) => ({ ...account, nextReset: nextResetAfter(account, windowStart) }))
-    .sort((a, b) => a.nextReset - b.nextReset);
-}
-
-function dayGradient(ratio) {
-  const clamped = Math.max(0, Math.min(1, ratio));
-  const hue = Math.round(3 + 117 * clamped);
-  const lightA = clamped >= 0.75 ? 36 : 30 + Math.round(8 * clamped);
-  const lightB = clamped >= 0.75 ? 22 : 18 + Math.round(5 * clamped);
-  return `linear-gradient(135deg, hsl(${hue} 54% ${lightA}%), hsl(${hue} 44% ${lightB}%))`;
-}
-
-function renderAnalytics() {
-  const dayTotals = totalsForSchedule(daySchedule);
-  const monthTotals = totalsForSchedule(monthSchedule);
-  const completion = monthTotals.potential ? Math.round((monthTotals.achieved / monthTotals.potential) * 100) : 0;
-  const dayCompletion = dayTotals.potential ? Math.round((dayTotals.achieved / dayTotals.potential) * 100) : 0;
-
-  el.selectedDayVideos.textContent = dayTotals.achieved.toLocaleString("en-US");
-  el.selectedDayMissed.textContent = dayTotals.missedVideos.toLocaleString("en-US");
-  el.selectedDayCompletion.textContent = `${dayCompletion}%`;
-  el.monthAchieved.textContent = monthTotals.achieved.toLocaleString("en-US");
-  el.monthMissedVideos.textContent = monthTotals.missedVideos.toLocaleString("en-US");
-  el.completionRate.textContent = `${completion}%`;
-  el.streakText.textContent = `${calculateStreak()} days`;
-  drawDailyChart();
-  updateCoachText(dayTotals, monthTotals, completion);
-}
-
-function updateTitles() {
-  const selected = selectedDate();
-  const dateLabel = selected.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "2-digit", year: "numeric" });
-  const monthLabel = selected.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  el.scheduleTitle.textContent = dateLabel;
-  el.monthTitle.textContent = monthLabel;
-  el.analyticsTitle.textContent = `${monthLabel} analytics`;
-}
-
-function handleStatusClick(event) {
-  const button = event.currentTarget;
-  const row = rowById(button.dataset.id);
-  if (!row) return;
-  const state = getRowState(row);
-  const nextStatus = state.manual && state.status === button.dataset.status ? "" : button.dataset.status;
-  saveRowState(row.id, {
-    status: nextStatus,
-    count: nextStatus ? Number(button.dataset.count) : 0,
-    description: state.description,
-    manual: true,
-    updatedAt: new Date().toISOString(),
+  target.querySelectorAll(".settings-reset-day").forEach((input) => {
+    input.addEventListener("change", () => {
+      const account = state.flow.accounts.find((item) => item.id === input.dataset.id);
+      if (!account) return;
+      account.resetDay = clampNumber(input.value, 1, 31);
+      saveState();
+      playTone("tap");
+      rebuild();
+    });
   });
-  playTone(nextStatus === "MISSED" || nextStatus === "CANCELED" ? "warning" : "success");
-  rebuild();
-}
-
-function handleCountInput(event) {
-  const input = event.currentTarget;
-  const row = rowById(input.dataset.id);
-  if (!row) return;
-  const state = getRowState(row);
-  const count = clampNumber(input.value, 0, maxPerWindow());
-  input.value = count;
-  saveRowState(row.id, {
-    status: statusFromCount(count),
-    count,
-    description: state.description,
-    manual: true,
-    updatedAt: new Date().toISOString(),
-  });
-  syncRowButtons(row.id, statusFromCount(count));
-  renderCalendar();
-  renderAnalytics();
-}
-
-function handleDescriptionInput(event) {
-  const input = event.currentTarget;
-  const row = rowById(input.dataset.id);
-  if (!row) return;
-  const state = getRowState(row);
-  saveRowState(row.id, {
-    ...state,
-    description: input.value,
-    manual: true,
-    updatedAt: new Date().toISOString(),
+  target.querySelectorAll(".remove-account").forEach((button) => {
+    button.addEventListener("click", () => {
+      const collection = button.dataset.type === "gemini" ? state.gemini.accounts : state.flow.accounts;
+      if (collection.length <= 1) return;
+      const index = collection.findIndex((account) => account.id === button.dataset.id);
+      if (index < 0) return;
+      collection.splice(index, 1);
+      saveState();
+      playTone("warning");
+      rebuild();
+    });
   });
 }
 
@@ -378,205 +544,178 @@ function buildMonthSchedule(date) {
 }
 
 function buildScheduleBetween(rangeStart, rangeEnd) {
-  if (!windowPlan || windowPlan.overlapMinutes < WINDOW_MINUTES || settings.accounts.length === 0) return [];
+  if (!windowPlan || windowPlan.overlapMinutes < state.gemini.windowMinutes || !state.gemini.accounts.length) return [];
   const rows = [];
   let start = new Date(windowPlan.firstWindowStart);
-
-  while (start < rangeStart) start = addMinutes(start, CYCLE_MINUTES);
-  while (addMinutes(start, -CYCLE_MINUTES) >= rangeStart) start = addMinutes(start, -CYCLE_MINUTES);
-
+  while (start < rangeStart) start = addMinutes(start, state.gemini.cycleMinutes);
+  while (addMinutes(start, -state.gemini.cycleMinutes) >= rangeStart) start = addMinutes(start, -state.gemini.cycleMinutes);
   while (start < rangeEnd) {
-    const end = addMinutes(start, WINDOW_MINUTES);
+    const end = addMinutes(start, state.gemini.windowMinutes);
     rows.push({
       id: `${dateKey(start)}-${pad(start.getHours())}${pad(start.getMinutes())}`,
-      date: new Date(start),
       start: new Date(start),
       end,
       window: `${formatTimeLabel(start)} - ${formatTimeLabel(end)}`,
       order: orderForWindow(start),
     });
-    start = addMinutes(start, CYCLE_MINUTES);
+    start = addMinutes(start, state.gemini.cycleMinutes);
   }
-
   return rows;
 }
 
 function calculateWindowPlan() {
-  const accounts = runtimeAccounts();
-  if (accounts.length === 1) {
-    return {
-      firstWindowStart: accounts[0].reset,
-      overlapMinutes: CYCLE_MINUTES,
-      overlapStartAccount: accounts[0].name,
-      overlapEndAccount: accounts[0].name,
-    };
-  }
-
+  const accounts = state.gemini.accounts.map(runtimeAccount);
+  if (accounts.length === 1) return { firstWindowStart: accounts[0].reset, overlapMinutes: state.gemini.cycleMinutes };
   const phases = accounts
-    .map((account) => ({
-      ...account,
-      phase: positiveModulo(minutesBetween(referenceMonthStart(), account.reset), CYCLE_MINUTES),
-    }))
+    .map((account) => ({ ...account, phase: positiveModulo(minutesBetween(referenceMonthStart(), account.reset), state.gemini.cycleMinutes) }))
     .sort((a, b) => a.phase - b.phase);
-
   let bestGap = -1;
   let gapStart = phases[0];
-  let gapEnd = phases[0];
   phases.forEach((account, index) => {
     const next = phases[(index + 1) % phases.length];
-    const gap = positiveModulo(next.phase - account.phase, CYCLE_MINUTES);
+    const gap = positiveModulo(next.phase - account.phase, state.gemini.cycleMinutes);
     if (gap > bestGap) {
       bestGap = gap;
       gapStart = account;
-      gapEnd = next;
     }
   });
-
-  const centerSlack = Math.max(0, Math.floor((bestGap - WINDOW_MINUTES) / 2));
-  return {
-    firstWindowStart: addMinutes(gapStart.reset, centerSlack),
-    overlapMinutes: bestGap,
-    overlapStartAccount: gapStart.name,
-    overlapEndAccount: gapEnd.name,
-  };
+  const centerSlack = Math.max(0, Math.floor((bestGap - state.gemini.windowMinutes) / 2));
+  return { firstWindowStart: addMinutes(gapStart.reset, centerSlack), overlapMinutes: bestGap };
 }
 
 function orderForWindow(windowStart) {
-  return [...runtimeAccounts()]
-    .sort((a, b) => nextResetAfter(a, windowStart) - nextResetAfter(b, windowStart))
-    .map((account) => account.name);
+  return [...state.gemini.accounts]
+    .sort((a, b) => nextResetAfter(runtimeAccount(a), windowStart) - nextResetAfter(runtimeAccount(b), windowStart))
+    .map((account) => ({ id: account.id, name: account.name, time: account.time }));
 }
 
-function accountRuntime(context) {
-  return runtimeAccounts()
-    .map((account) => ({ ...account, nextReset: nextResetAfter(account, context) }))
-    .sort((a, b) => a.nextReset - b.nextReset);
-}
-
-function runtimeAccounts() {
-  return settings.accounts.map((account) => ({
-    ...account,
-    reset: referenceDateFromTime(account.time),
-  }));
-}
-
-function currentWindow() {
+function focusedWindowIndex() {
   const now = new Date();
-  return daySchedule.find((row) => row.start <= now && row.end >= now) || null;
+  const currentIndex = daySchedule.findIndex((row) => row.start <= now && row.end >= now);
+  if (currentIndex >= 0) return currentIndex;
+  const nextIndex = daySchedule.findIndex((row) => row.end >= now);
+  if (nextIndex >= 0) return nextIndex;
+  return Math.max(0, daySchedule.length - 1);
 }
 
-function nextWindow() {
+function carryOverAccounts(row) {
   const now = new Date();
-  return daySchedule.find((row) => row.end >= now) || null;
+  if (row.start <= now && row.end >= now) return [];
+  return row.order
+    .filter((account) => {
+      const reset = nextResetAfter(runtimeAccount(account), row.start);
+      return row.start < now && reset > now;
+    })
+    .map((account) => account.id);
 }
 
 function rowById(id) {
   return daySchedule.find((row) => row.id === id) || monthSchedule.find((row) => row.id === id);
 }
 
-function getRowState(row) {
-  const saved = entries[row.id];
-  if (saved) {
-    return {
-      status: saved.status || "",
-      count: clampNumber(saved.count || 0, 0, maxPerWindow()),
-      description: saved.description || "",
-      manual: true,
-    };
-  }
-  if (row.end < new Date()) return { status: "MISSED", count: 0, description: "", manual: false };
-  return { status: "", count: 0, description: "", manual: false };
-}
-
-function saveRowState(id, state) {
-  entries[id] = state;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+function rowTotals(row) {
+  const max = state.gemini.accounts.length * state.gemini.videosPerAccount;
+  const done = state.gemini.accounts.reduce((sum, account) => sum + getAccountCount(row.id, account.id), 0);
+  const missed = row.end < new Date() ? Math.max(0, max - done) : 0;
+  return { done, max, missed };
 }
 
 function totalsForSchedule(schedule) {
   return schedule.reduce((totals, row) => {
-    const state = getRowState(row);
-    const achieved = Number(state.count) || 0;
-    totals.achieved += achieved;
-    totals.potential += maxPerWindow();
-    totals.missedVideos += missedVideos(row, state);
-    if (isMissedWindow(row, state)) totals.missedWindows += 1;
+    const rowTotal = rowTotals(row);
+    totals.achieved += rowTotal.done;
+    totals.potential += rowTotal.max;
+    totals.missedVideos += rowTotal.missed;
     return totals;
-  }, { achieved: 0, potential: 0, missedVideos: 0, missedWindows: 0 });
+  }, { achieved: 0, potential: 0, missedVideos: 0 });
 }
 
-function missedVideos(row, state) {
-  if (state.status === "CANCELED") return 0;
-  if (state.status === "MISSED" || state.status === "HALF DONE" || state.status === "FULL DONE" || (!state.manual && row.end < new Date())) {
-    return Math.max(0, maxPerWindow() - (Number(state.count) || 0));
-  }
-  return 0;
+function getAccountCount(rowId, accountId) {
+  return clampNumber(state.gemini.entries[rowId]?.accounts?.[accountId] || 0, 0, state.gemini.videosPerAccount);
 }
 
-function isMissedWindow(row, state) {
-  if (state.status === "CANCELED") return false;
-  if (state.status === "MISSED") return true;
-  return !state.manual && row.end < new Date() && (Number(state.count) || 0) === 0;
+function setAccountCount(rowId, accountId, count) {
+  state.gemini.entries[rowId] = state.gemini.entries[rowId] || { accounts: {}, updatedAt: "" };
+  state.gemini.entries[rowId].accounts[accountId] = count;
+  state.gemini.entries[rowId].updatedAt = new Date().toISOString();
+  saveState();
 }
 
-function drawDailyChart() {
-  const canvas = el.dailyChart;
-  const context = canvas.getContext("2d");
-  const days = daysInSelectedMonth().map((date) => ({ date, totals: totalsForSchedule(buildDaySchedule(date)) }));
-  const best = days.reduce((max, day) => Math.max(max, day.totals.achieved), 0);
-  const width = canvas.width;
-  const height = canvas.height;
-  const padX = 22;
-  const padY = 24;
-  const barGap = 4;
-  const barWidth = Math.max(5, (width - padX * 2) / days.length - barGap);
-
-  context.clearRect(0, 0, width, height);
-  context.fillStyle = "rgba(255,255,255,0.08)";
-  context.fillRect(padX, height - padY, width - padX * 2, 1);
-
-  days.forEach((day, index) => {
-    const ratio = best ? day.totals.achieved / best : 0;
-    const barHeight = Math.max(2, (height - padY * 2) * ratio);
-    const x = padX + index * (barWidth + barGap);
-    const y = height - padY - barHeight;
-    context.fillStyle = dateKey(day.date) === settings.selectedDate ? "#f5f5f7" : "#6f737c";
-    roundRect(context, x, y, barWidth, barHeight, 5);
-    context.fill();
+function applyFlowResets() {
+  const now = new Date();
+  const currentMonth = monthKey(now);
+  state.flow.accounts.forEach((account) => {
+    const resetThisMonth = resetDateForMonth(now.getFullYear(), now.getMonth(), account.resetDay);
+    if (now >= resetThisMonth && account.lastResetMonth !== currentMonth) {
+      account.creditsLeft = state.flow.monthlyCredits;
+      account.lastResetMonth = currentMonth;
+    }
   });
-
-  const bestDay = days.reduce((bestItem, day) => (day.totals.achieved > bestItem.totals.achieved ? day : bestItem), days[0]);
-  el.bestDayText.textContent = bestDay ? `${formatShortDate(bestDay.date)}: ${bestDay.totals.achieved}` : "--";
 }
 
-function updateCoachText(dayTotals, monthTotals, completion) {
-  if (dayTotals.achieved === 0 && dayTotals.missedVideos === 0) {
-    el.coachText.textContent = "No videos logged for the selected day yet.";
-  } else if (dayTotals.missedVideos > 0) {
-    el.coachText.textContent = `${dayTotals.missedVideos} videos missed on this day. Use the next open window to recover.`;
-  } else if (completion >= 75) {
-    el.coachText.textContent = "Strong month. The calendar is trending in the right direction.";
-  } else {
-    el.coachText.textContent = `${monthTotals.achieved} videos logged this month. Full windows move the score fastest.`;
-  }
+function checkFlowReminders() {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const today = dateKey(new Date());
+  state.flow.accounts.forEach((account) => {
+    const daysLeft = daysUntil(nextMonthlyReset(account.resetDay));
+    if (daysLeft !== 1 || account.creditsLeft <= state.flow.reminderThreshold) return;
+    const reminderKey = `${today}-${account.id}`;
+    if (account.lastReminderKey === reminderKey) return;
+    new Notification("Flow credit reset tomorrow", {
+      body: `${account.name} has ${account.creditsLeft} credits left. Use them before reset.`,
+      tag: `flow-${account.id}-${today}`,
+    });
+    account.lastReminderKey = reminderKey;
+    saveState();
+  });
 }
 
-function calculateStreak() {
-  let streak = 0;
-  const selected = selectedDate();
-  let cursor = startOfDay(selected);
-  while (cursor.getMonth() === selected.getMonth()) {
-    const totals = totalsForSchedule(buildDaySchedule(cursor));
-    if (totals.achieved <= 0) break;
-    streak += 1;
-    cursor = addDays(cursor, -1);
+function requestNotifications() {
+  if (!("Notification" in window)) {
+    window.alert("This browser does not support notifications.");
+    return;
   }
-  return streak;
+  Notification.requestPermission().then(() => {
+    playTone(Notification.permission === "granted" ? "success" : "warning");
+    checkFlowReminders();
+  });
+}
+
+function nextMonthlyReset(resetDay) {
+  const now = new Date();
+  let reset = resetDateForMonth(now.getFullYear(), now.getMonth(), resetDay);
+  if (reset < startOfDay(now)) reset = resetDateForMonth(now.getFullYear(), now.getMonth() + 1, resetDay);
+  return reset;
+}
+
+function resetDateForMonth(year, month, resetDay) {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return new Date(year, month, Math.min(resetDay, lastDay), 0, 0, 0, 0);
+}
+
+function daysUntil(date) {
+  return Math.max(0, Math.ceil((startOfDay(date) - startOfDay(new Date())) / 86400000));
+}
+
+function changeDay(offset) {
+  const next = addDays(selectedDate(), offset);
+  state.selectedDate = dateKey(next);
+  el.datePicker.value = state.selectedDate;
+  saveState();
+  playTone("tap");
+  rebuild({ scroll: true });
+}
+
+function scrollToCurrentWindow() {
+  requestAnimationFrame(() => {
+    const target = document.querySelector(".window-card.is-current") || document.querySelector(".window-card[open]") || document.querySelector("#geminiView");
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
 }
 
 function downloadJson() {
-  const payload = { app: "Window Command", version: 4, exportedAt: new Date().toISOString(), settings, entries };
-  downloadFile(`window-command-backup-${dateKey(new Date())}.json`, JSON.stringify(payload, null, 2), "application/json");
+  const payload = { app: "Gemini Flow Tracker", version: 1, exportedAt: new Date().toISOString(), state };
+  downloadFile(`gemini-flow-backup-${dateKey(new Date())}.json`, JSON.stringify(payload, null, 2), "application/json");
 }
 
 function handleUpload(event) {
@@ -586,18 +725,8 @@ function handleUpload(event) {
   reader.onload = () => {
     try {
       const payload = JSON.parse(reader.result);
-      if (payload.settings?.accounts) settings = payload.settings;
-      if (payload.entries) {
-        Object.keys(entries).forEach((key) => delete entries[key]);
-        Object.assign(entries, payload.entries);
-      }
-      settings.selectedDate = settings.selectedDate || dateKey(new Date());
-      settings.sound = settings.sound !== false;
-      settings.accounts = normalizeAccounts(settings.accounts);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-      saveSettings();
-      el.datePicker.value = settings.selectedDate;
-      updateSoundButton();
+      state = normalizeState(payload.state || payload);
+      saveState();
       playTone("success");
       rebuild({ scroll: true });
     } catch {
@@ -621,118 +750,114 @@ function downloadFile(filename, content, type) {
   URL.revokeObjectURL(url);
 }
 
-function scrollToCurrentWindow() {
-  requestAnimationFrame(() => {
-    const target = document.querySelector(".window-card.is-current") || document.querySelector(".window-card:not(.is-past)") || document.querySelector("#currentWindowSection");
-    target?.scrollIntoView({ behavior: "smooth", block: "center" });
-  });
-}
-
-function changeDay(offset) {
-  const next = addDays(selectedDate(), offset);
-  settings.selectedDate = dateKey(next);
-  el.datePicker.value = settings.selectedDate;
-  saveSettings();
-  playTone("tap");
-  rebuild({ scroll: true });
-}
-
-function dayContextDate() {
-  const selected = selectedDate();
-  if (dateKey(selected) === dateKey(new Date())) return new Date();
-  return startOfDay(selected);
-}
-
-function selectedDate() {
-  return parseDateKey(settings.selectedDate);
-}
-
-function statusPresets() {
-  const max = maxPerWindow();
-  return [
-    { key: "FULL DONE", label: "Full", count: max },
-    { key: "HALF DONE", label: "Half", count: Math.ceil(max / 2) },
-    { key: "MISSED", label: "Missed", count: 0 },
-    { key: "CANCELED", label: "Cancel", count: 0 },
-  ];
-}
-
-function statusFromCount(count) {
-  if (count >= maxPerWindow()) return "FULL DONE";
-  if (count > 0) return "HALF DONE";
-  return "";
-}
-
-function maxPerWindow() {
-  return settings.accounts.length * VIDEOS_PER_ACCOUNT;
-}
-
-function windowStateLabel(row, state) {
-  const now = new Date();
-  if (state.status === "CANCELED") return "Canceled";
-  if (state.status === "FULL DONE") return "Complete";
-  if (state.status === "HALF DONE") return "Partial";
-  if (state.status === "MISSED") return state.manual ? "Missed" : "Auto missed";
-  if (row.start <= now && row.end >= now) return "Live now";
-  if (row.start > now) return "Upcoming";
-  return "Past";
-}
-
-function syncRowButtons(id, status) {
-  document.querySelectorAll(`.status-button[data-id="${id}"]`).forEach((button) => {
-    button.classList.toggle("active", button.dataset.status === status);
-  });
-}
-
-function updateSoundButton() {
-  el.soundButton.classList.toggle("active", Boolean(settings.sound));
-}
-
-function playTone(type) {
-  if (!settings.sound) return;
-  try {
-    audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gain = audioContext.createGain();
-    const frequencies = { tap: 420, success: 620, warning: 180 };
-    oscillator.frequency.value = frequencies[type] || 420;
-    oscillator.type = "sine";
-    gain.gain.setValueAtTime(0.001, audioContext.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.045, audioContext.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
-    oscillator.connect(gain).connect(audioContext.destination);
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.11);
-  } catch {
-    // Sound is optional.
+function loadState() {
+  const saved = loadJson(STORAGE_KEY, null);
+  if (saved) return saved;
+  const oldSettings = loadJson(OLD_SETTINGS_KEY, null);
+  const oldEntries = loadJson(OLD_ENTRIES_KEY, {});
+  const fresh = defaultState();
+  if (oldSettings?.accounts?.length) {
+    fresh.gemini.accounts = oldSettings.accounts.map((account) => ({
+      id: account.id || uniqueAccountId(account.name, fresh.gemini.accounts),
+      name: cleanName(account.name),
+      time: account.time || "12:00",
+    }));
+    if (!fresh.gemini.accounts.some((account) => account.id === "anoy")) {
+      fresh.gemini.accounts.push({ id: "anoy", name: "ANOY", time: "18:35" });
+    }
   }
+  Object.entries(oldEntries || {}).forEach(([rowId, entry]) => {
+    if (!entry || !Number(entry.count)) return;
+    fresh.gemini.entries[rowId] = { accounts: {}, updatedAt: entry.updatedAt || "" };
+    const first = fresh.gemini.accounts[0];
+    if (first) fresh.gemini.entries[rowId].accounts[first.id] = clampNumber(entry.count, 0, fresh.gemini.videosPerAccount);
+  });
+  return fresh;
 }
 
-function registerServiceWorker() {
-  if (!("serviceWorker" in navigator)) return;
-  navigator.serviceWorker.register("service-worker.js").catch(() => {});
+function defaultState() {
+  return {
+    activeMode: "gemini",
+    selectedDate: dateKey(new Date()),
+    sound: true,
+    gemini: defaultGeminiSettings(),
+    flow: defaultFlowSettings(),
+  };
 }
 
-function normalizeAccounts(accounts) {
-  const source = Array.isArray(accounts) ? accounts : DEFAULT_ACCOUNTS;
+function defaultGeminiSettings() {
+  return {
+    cycleMinutes: 300,
+    windowMinutes: 60,
+    videosPerAccount: 4,
+    accounts: DEFAULT_NAMES.map((name, index) => ({ id: name.toLowerCase(), name, time: DEFAULT_TIMES[index] })),
+    entries: {},
+  };
+}
+
+function defaultFlowSettings() {
+  return {
+    monthlyCredits: 1000,
+    reminderThreshold: 20,
+    accounts: DEFAULT_NAMES.map((name, index) => ({
+      id: name.toLowerCase(),
+      name,
+      creditsLeft: 1000,
+      resetDay: Math.min(28, index + 1),
+      lastResetMonth: "",
+      lastReminderKey: "",
+    })),
+  };
+}
+
+function normalizeState(source) {
+  const base = defaultState();
+  const next = {
+    ...base,
+    ...source,
+    gemini: { ...base.gemini, ...(source?.gemini || {}) },
+    flow: { ...base.flow, ...(source?.flow || {}) },
+  };
+  next.selectedDate = next.selectedDate || dateKey(new Date());
+  next.activeMode = next.activeMode === "flow" ? "flow" : "gemini";
+  next.gemini.cycleMinutes = clampNumber(next.gemini.cycleMinutes, 60, 1440);
+  next.gemini.windowMinutes = clampNumber(next.gemini.windowMinutes, 10, 240);
+  next.gemini.videosPerAccount = clampNumber(next.gemini.videosPerAccount, 0, 20);
+  next.gemini.accounts = normalizeGeminiAccounts(next.gemini.accounts);
+  next.gemini.entries = next.gemini.entries || {};
+  next.flow.monthlyCredits = clampNumber(next.flow.monthlyCredits, 1, 100000);
+  next.flow.reminderThreshold = clampNumber(next.flow.reminderThreshold, 0, 100000);
+  next.flow.accounts = normalizeFlowAccounts(next.flow.accounts, next.flow.monthlyCredits);
+  return next;
+}
+
+function normalizeGeminiAccounts(accounts) {
+  const source = Array.isArray(accounts) && accounts.length ? accounts : defaultGeminiSettings().accounts;
   return source
-    .filter((account) => account && account.name && account.time)
+    .filter((account) => account && account.name)
     .map((account) => ({
-      id: account.id || uniqueAccountId(account.name),
-      name: String(account.name).trim().toUpperCase().slice(0, 12),
-      time: account.time,
+      id: account.id || uniqueAccountId(account.name, source),
+      name: cleanName(account.name),
+      time: /^\d{2}:\d{2}$/.test(account.time || "") ? account.time : "12:00",
     }));
 }
 
-function uniqueAccountId(name) {
-  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "account";
-  let id = base;
-  let index = 2;
-  while (settings.accounts?.some((account) => account.id === id)) {
-    id = `${base}-${index}`;
-    index += 1;
-  }
-  return id;
+function normalizeFlowAccounts(accounts, max) {
+  const source = Array.isArray(accounts) && accounts.length ? accounts : defaultFlowSettings().accounts;
+  return source
+    .filter((account) => account && account.name)
+    .map((account) => ({
+      id: account.id || uniqueAccountId(account.name, source),
+      name: cleanName(account.name),
+      creditsLeft: clampNumber(account.creditsLeft ?? max, 0, max),
+      resetDay: clampNumber(account.resetDay || 1, 1, 31),
+      lastResetMonth: account.lastResetMonth || "",
+      lastReminderKey: account.lastReminderKey || "",
+    }));
+}
+
+function runtimeAccount(account) {
+  return { ...account, reset: referenceDateFromTime(account.time) };
 }
 
 function referenceDateFromTime(time) {
@@ -746,9 +871,28 @@ function referenceMonthStart() {
 
 function nextResetAfter(account, date) {
   const elapsed = date - account.reset;
-  const cycleMs = CYCLE_MINUTES * 60000;
+  const cycleMs = state.gemini.cycleMinutes * 60000;
   const cycles = Math.floor(elapsed / cycleMs) + 1;
-  return addMinutes(account.reset, cycles * CYCLE_MINUTES);
+  return addMinutes(account.reset, cycles * state.gemini.cycleMinutes);
+}
+
+function dayGradient(ratio) {
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const hue = Math.round(3 + 117 * clamped);
+  const lightA = clamped >= 0.75 ? 36 : 28 + Math.round(8 * clamped);
+  const lightB = clamped >= 0.75 ? 20 : 15 + Math.round(5 * clamped);
+  return `linear-gradient(135deg, hsl(${hue} 54% ${lightA}%), hsl(${hue} 42% ${lightB}%))`;
+}
+
+function windowStateLabel(row) {
+  const now = new Date();
+  if (row.start <= now && row.end >= now) return "Live now";
+  if (row.start > now) return "Upcoming";
+  return "Past";
+}
+
+function selectedDate() {
+  return parseDateKey(state.selectedDate);
 }
 
 function daysInSelectedMonth() {
@@ -790,19 +934,44 @@ function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, Math.round(number)));
 }
 
-function roundRect(context, x, y, width, height, radius) {
-  const r = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.moveTo(x + r, y);
-  context.arcTo(x + width, y, x + width, y + height, r);
-  context.arcTo(x + width, y + height, x, y + height, r);
-  context.arcTo(x, y + height, x, y, r);
-  context.arcTo(x, y, x + width, y, r);
-  context.closePath();
+function parseDateKey(value) {
+  const [year, month, day] = String(value).split("-").map(Number);
+  return new Date(year, month - 1, day, 0, 0, 0, 0);
 }
 
-function saveSettings() {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+function dateKey(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
+}
+
+function formatTimeLabel(date) {
+  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+function pad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function cleanName(value) {
+  return String(value || "").trim().toUpperCase().slice(0, 12);
+}
+
+function uniqueAccountId(name, accounts) {
+  const base = String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "account";
+  let id = base;
+  let index = 2;
+  while (accounts?.some((account) => account.id === id)) {
+    id = `${base}-${index}`;
+    index += 1;
+  }
+  return id;
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 function loadJson(key, fallback) {
@@ -813,29 +982,33 @@ function loadJson(key, fallback) {
   }
 }
 
-function parseDateKey(value) {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(year, month - 1, day, 0, 0, 0, 0);
+function updateSoundButton() {
+  el.soundButton.classList.toggle("active", Boolean(state.sound));
 }
 
-function dateKey(date) {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+function playTone(type) {
+  if (!state.sound) return;
+  try {
+    audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const frequencies = { tap: 420, success: 620, warning: 180 };
+    oscillator.frequency.value = frequencies[type] || 420;
+    oscillator.type = "sine";
+    gain.gain.setValueAtTime(0.001, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.035, audioContext.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.08);
+    oscillator.connect(gain).connect(audioContext.destination);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.09);
+  } catch {
+    // Sound is optional.
+  }
 }
 
-function formatDate(date) {
-  return date.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function formatShortDate(date) {
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function formatTimeLabel(date) {
-  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-}
-
-function pad(value) {
-  return String(value).padStart(2, "0");
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("service-worker.js").catch(() => {});
 }
 
 function escapeHtml(value) {

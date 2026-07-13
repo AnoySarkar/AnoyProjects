@@ -1,6 +1,6 @@
-# Window Command
+# Gemini Flow Tracker
 
-Premium dark video-window tracker built for GitHub Pages.
+Compact Gemini video-window and Flow credit tracker built for GitHub Pages.
 
 ## Deploy
 
@@ -12,14 +12,15 @@ Use this project link on your portfolio page after publishing:
 
 ```html
 <a href="https://YOUR-GITHUB-USERNAME.github.io/YOUR-REPOSITORY-NAME/" target="_blank" rel="noopener">
-  Window Command
+  Gemini Flow Tracker
 </a>
 ```
 
 ## Features
 
-- Current-day tracker with automatic scroll to the active window.
-- Full selected-month overview grid.
-- Account reset timing per window.
+- Gemini tab with collapsible windows and per-account 0-4 video sliders.
+- Compact selected-month overview grid.
+- Flow tab with monthly credit-left sliders, reset-day tracking, and reset reminders.
+- Settings dialog for reset hours, window length, video limit, credits, reminder threshold, and accounts.
 - Backup download/upload.
 - PWA manifest and offline service worker.
