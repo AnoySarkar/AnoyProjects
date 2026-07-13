@@ -1,9 +1,9 @@
-const CACHE_NAME = "gemini-flow-tracker-v4";
+const CACHE_NAME = "gemini-flow-tracker-v9";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=5",
-  "./app.js?v=5",
+  "./styles.css?v=10",
+  "./app.js?v=10",
   "./manifest.webmanifest",
   "./icon.svg"
 ];

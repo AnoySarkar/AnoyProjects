@@ -11,7 +11,7 @@
     <meta name="description" content="Compact Gemini video-window and Flow credit tracker.">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=5">
+    <link rel="stylesheet" href="styles.css?v=10">
   </head>
   <body>
     <main class="app-shell">
@@ -98,6 +98,13 @@
             <div><span>Used</span><strong id="flowUsed">0</strong></div>
             <div><span>Soon</span><strong id="flowResetSoon">0</strong></div>
           </div>
+          <div class="calendar-wrap flow-calendar-wrap">
+            <div class="calendar-head">
+              <span id="flowMonthTitle">Selected month</span>
+              <span id="flowMonthUsed">0 used</span>
+            </div>
+            <div class="calendar-grid flow-calendar-grid" id="flowCalendarGrid" aria-label="Flow monthly used credits"></div>
+          </div>
           <div class="flow-alerts" id="flowAlerts" aria-live="polite"></div>
         </section>
         <section class="flow-list" id="flowList" aria-label="Flow accounts"></section>
@@ -150,6 +157,6 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=10"></script>
   </body>
 </html>

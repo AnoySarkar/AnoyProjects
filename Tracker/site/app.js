@@ -40,6 +40,9 @@ const el = {
   flowTotalLeft: document.querySelector("#flowTotalLeft"),
   flowUsed: document.querySelector("#flowUsed"),
   flowResetSoon: document.querySelector("#flowResetSoon"),
+  flowMonthTitle: document.querySelector("#flowMonthTitle"),
+  flowMonthUsed: document.querySelector("#flowMonthUsed"),
+  flowCalendarGrid: document.querySelector("#flowCalendarGrid"),
   flowAlerts: document.querySelector("#flowAlerts"),
   requestNotificationButton: document.querySelector("#requestNotificationButton"),
   settingsDialog: document.querySelector("#settingsDialog"),
@@ -158,7 +161,7 @@ function bindSettingsInputs() {
     const name = cleanName(el.newGeminiAccountName.value);
     const time = el.newGeminiAccountTime.value;
     if (!name || !time) return;
-    state.gemini.accounts.push({ id: uniqueAccountId(name, state.gemini.accounts), name, time });
+    state.gemini.accounts.push({ id: uniqueAccountId(name, state.gemini.accounts), name, time, anchorDate: state.selectedDate || dateKey(new Date()) });
     el.newGeminiAccountName.value = "";
     el.newGeminiAccountTime.value = "";
     saveState();
@@ -375,6 +378,7 @@ function renderTitles() {
 
 function renderFlow() {
   el.flowList.innerHTML = "";
+  renderFlowCalendar();
   const max = state.flow.monthlyCredits;
   const alerts = [];
   let totalLeft = 0;
@@ -444,7 +448,9 @@ function handleFlowSlider(event) {
   const input = event.currentTarget;
   const account = state.flow.accounts.find((item) => item.id === input.dataset.id);
   if (!account) return;
+  const previousLeft = account.creditsLeft;
   account.creditsLeft = clampNumber(input.value, 0, state.flow.monthlyCredits);
+  recordFlowUsage(previousLeft - account.creditsLeft);
   if (event.type === "change") input.value = account.creditsLeft;
   const card = input.closest(".flow-card");
   card?.style.setProperty("--fill", `${state.flow.monthlyCredits ? (Number(input.value) / state.flow.monthlyCredits) * 100 : 0}%`);
@@ -454,6 +460,69 @@ function handleFlowSlider(event) {
   if (usedValue) usedValue.textContent = `Used ${Math.max(0, state.flow.monthlyCredits - account.creditsLeft).toLocaleString("en-US")}`;
   saveState();
   if (event.type === "change") renderFlow();
+}
+
+function renderFlowCalendar() {
+  el.flowCalendarGrid.innerHTML = "";
+  const selected = selectedDate();
+  const monthLabel = selected.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const days = daysInSelectedMonth();
+  const monthUsed = days.reduce((sum, date) => sum + flowUsedOnDate(dateKey(date)), 0);
+  el.flowMonthTitle.textContent = monthLabel;
+  el.flowMonthUsed.textContent = `${monthUsed.toLocaleString("en-US")} used`;
+
+  days.forEach((date) => {
+    const used = flowUsedOnDate(dateKey(date));
+    const resetNames = flowResetNamesForDate(date);
+    const ratio = state.flow.monthlyCredits ? used / state.flow.monthlyCredits : 0;
+    const button = document.createElement("button");
+    button.className = "calendar-day flow-calendar-day";
+    button.type = "button";
+    button.style.setProperty("--day-bg", flowDayGradient(ratio));
+    button.classList.toggle("selected", dateKey(date) === state.selectedDate);
+    button.classList.toggle("today", dateKey(date) === dateKey(new Date()));
+    button.innerHTML = `
+      <span>${date.getDate()}</span>
+      <strong>${used.toLocaleString("en-US")}</strong>
+      ${resetNames.length ? `<em>${resetNames.map(escapeHtml).join(", ")}</em>` : ""}
+    `;
+    button.addEventListener("click", () => {
+      state.selectedDate = dateKey(date);
+      el.datePicker.value = state.selectedDate;
+      saveState();
+      playTone("tap");
+      rebuild();
+    });
+    el.flowCalendarGrid.appendChild(button);
+  });
+}
+
+function flowResetNamesForDate(date) {
+  const key = dateKey(date);
+  return state.flow.accounts
+    .filter((account) => dateKey(resetDateForMonth(date.getFullYear(), date.getMonth(), account.resetDay)) === key)
+    .map((account) => account.name);
+}
+
+function recordFlowUsage(delta) {
+  const amount = Math.round(Number(delta) || 0);
+  if (!amount) return;
+  const key = dateKey(new Date());
+  state.flow.history[key] = Math.max(0, flowUsedOnDate(key) + amount);
+}
+
+function flowUsedOnDate(key) {
+  return clampNumber(state.flow.history?.[key] || 0, 0, 100000000);
+}
+
+function flowDayGradient(ratio) {
+  const clamped = Math.max(0, Math.min(1, ratio));
+  if (clamped <= 0) return "linear-gradient(135deg, hsl(219 24% 18%), hsl(225 22% 12%))";
+  const hueA = Math.round(202 - 34 * clamped);
+  const hueB = Math.round(258 - 96 * clamped);
+  const lightA = 24 + Math.round(18 * clamped);
+  const lightB = 15 + Math.round(14 * clamped);
+  return `linear-gradient(135deg, hsl(${hueA} 76% ${lightA}%), hsl(${hueB} 60% ${lightB}%))`;
 }
 
 function handleFlowResetDay(event) {
@@ -480,10 +549,11 @@ function renderSettingsAccountList(type) {
   const target = type === "gemini" ? el.geminiSettingsAccounts : el.flowSettingsAccounts;
   const accounts = type === "gemini" ? state.gemini.accounts : state.flow.accounts;
   target.innerHTML = accounts.map((account) => `
-    <div class="settings-account">
+    <div class="settings-account ${type}">
       <input class="settings-name" value="${escapeAttribute(account.name)}" data-type="${type}" data-id="${account.id}" aria-label="${type} account name">
       ${type === "gemini"
-        ? `<input class="settings-time" type="time" value="${account.time}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} base reset">`
+        ? `<input class="settings-time" type="time" value="${account.time}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} start reset time">
+          <input class="settings-anchor-date" type="date" value="${account.anchorDate}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} start reset date">`
         : `<input class="settings-reset-day" type="number" min="1" max="31" value="${account.resetDay}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} reset day">`}
       <button class="remove-account" type="button" data-type="${type}" data-id="${account.id}" title="Remove ${escapeAttribute(account.name)}">x</button>
     </div>
@@ -504,6 +574,16 @@ function renderSettingsAccountList(type) {
       const account = state.gemini.accounts.find((item) => item.id === input.dataset.id);
       if (!account) return;
       account.time = input.value || account.time;
+      saveState();
+      playTone("tap");
+      rebuild();
+    });
+  });
+  target.querySelectorAll(".settings-anchor-date").forEach((input) => {
+    input.addEventListener("change", () => {
+      const account = state.gemini.accounts.find((item) => item.id === input.dataset.id);
+      if (!account) return;
+      account.anchorDate = isDateKey(input.value) ? input.value : account.anchorDate;
       saveState();
       playTone("tap");
       rebuild();
@@ -548,7 +628,6 @@ function buildScheduleBetween(rangeStart, rangeEnd) {
   const rows = [];
   let start = new Date(windowPlan.firstWindowStart);
   while (start < rangeStart) start = addMinutes(start, state.gemini.cycleMinutes);
-  while (addMinutes(start, -state.gemini.cycleMinutes) >= rangeStart) start = addMinutes(start, -state.gemini.cycleMinutes);
   while (start < rangeEnd) {
     const end = addMinutes(start, state.gemini.windowMinutes);
     rows.push({
@@ -761,9 +840,10 @@ function loadState() {
       id: account.id || uniqueAccountId(account.name, fresh.gemini.accounts),
       name: cleanName(account.name),
       time: account.time || "12:00",
+      anchorDate: dateKey(new Date()),
     }));
     if (!fresh.gemini.accounts.some((account) => account.id === "anoy")) {
-      fresh.gemini.accounts.push({ id: "anoy", name: "ANOY", time: "18:35" });
+      fresh.gemini.accounts.push({ id: "anoy", name: "ANOY", time: "18:35", anchorDate: dateKey(new Date()) });
     }
   }
   Object.entries(oldEntries || {}).forEach(([rowId, entry]) => {
@@ -790,7 +870,7 @@ function defaultGeminiSettings() {
     cycleMinutes: 300,
     windowMinutes: 60,
     videosPerAccount: 4,
-    accounts: DEFAULT_NAMES.map((name, index) => ({ id: name.toLowerCase(), name, time: DEFAULT_TIMES[index] })),
+    accounts: DEFAULT_NAMES.map((name, index) => ({ id: name.toLowerCase(), name, time: DEFAULT_TIMES[index], anchorDate: dateKey(new Date()) })),
     entries: {},
   };
 }
@@ -799,6 +879,7 @@ function defaultFlowSettings() {
   return {
     monthlyCredits: 1000,
     reminderThreshold: 20,
+    history: {},
     accounts: DEFAULT_NAMES.map((name, index) => ({
       id: name.toLowerCase(),
       name,
@@ -827,6 +908,7 @@ function normalizeState(source) {
   next.gemini.entries = next.gemini.entries || {};
   next.flow.monthlyCredits = clampNumber(next.flow.monthlyCredits, 1, 100000);
   next.flow.reminderThreshold = clampNumber(next.flow.reminderThreshold, 0, 100000);
+  next.flow.history = normalizeFlowHistory(next.flow.history);
   next.flow.accounts = normalizeFlowAccounts(next.flow.accounts, next.flow.monthlyCredits);
   return next;
 }
@@ -839,6 +921,7 @@ function normalizeGeminiAccounts(accounts) {
       id: account.id || uniqueAccountId(account.name, source),
       name: cleanName(account.name),
       time: /^\d{2}:\d{2}$/.test(account.time || "") ? account.time : "12:00",
+      anchorDate: isDateKey(account.anchorDate) ? account.anchorDate : dateKey(new Date()),
     }));
 }
 
@@ -856,13 +939,23 @@ function normalizeFlowAccounts(accounts, max) {
     }));
 }
 
-function runtimeAccount(account) {
-  return { ...account, reset: referenceDateFromTime(account.time) };
+function normalizeFlowHistory(history) {
+  if (!history || typeof history !== "object" || Array.isArray(history)) return {};
+  return Object.fromEntries(
+    Object.entries(history)
+      .filter(([key]) => isDateKey(key))
+      .map(([key, value]) => [key, clampNumber(value, 0, 100000000)])
+  );
 }
 
-function referenceDateFromTime(time) {
-  const [hour, minute] = time.split(":").map(Number);
-  return new Date(REFERENCE_YEAR, REFERENCE_MONTH, REFERENCE_DAY, hour, minute, 0, 0);
+function runtimeAccount(account) {
+  return { ...account, reset: referenceDateFromAccount(account) };
+}
+
+function referenceDateFromAccount(account) {
+  const [hour, minute] = account.time.split(":").map(Number);
+  const anchor = parseDateKey(account.anchorDate || dateKey(new Date()));
+  return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), hour, minute, 0, 0);
 }
 
 function referenceMonthStart() {
@@ -870,6 +963,7 @@ function referenceMonthStart() {
 }
 
 function nextResetAfter(account, date) {
+  if (date < account.reset) return new Date(account.reset);
   const elapsed = date - account.reset;
   const cycleMs = state.gemini.cycleMinutes * 60000;
   const cycles = Math.floor(elapsed / cycleMs) + 1;
@@ -878,10 +972,16 @@ function nextResetAfter(account, date) {
 
 function dayGradient(ratio) {
   const clamped = Math.max(0, Math.min(1, ratio));
-  const hue = Math.round(3 + 117 * clamped);
-  const lightA = clamped >= 0.75 ? 36 : 28 + Math.round(8 * clamped);
-  const lightB = clamped >= 0.75 ? 20 : 15 + Math.round(5 * clamped);
-  return `linear-gradient(135deg, hsl(${hue} 54% ${lightA}%), hsl(${hue} 42% ${lightB}%))`;
+  if (clamped <= 0) return "linear-gradient(135deg, hsl(356 52% 32%), hsl(348 42% 18%))";
+  if (clamped < 0.5) {
+    const hue = Math.round(8 + 64 * (clamped / 0.5));
+    return `linear-gradient(135deg, hsl(${hue} 70% 35%), hsl(${hue - 8} 56% 19%))`;
+  }
+  const progress = (clamped - 0.5) / 0.5;
+  const hue = Math.round(72 + 78 * progress);
+  const lightA = 34 + Math.round(8 * progress);
+  const lightB = 20 + Math.round(7 * progress);
+  return `linear-gradient(135deg, hsl(${hue} 62% ${lightA}%), hsl(${hue + 10} 48% ${lightB}%))`;
 }
 
 function windowStateLabel(row) {
@@ -937,6 +1037,12 @@ function clampNumber(value, min, max) {
 function parseDateKey(value) {
   const [year, month, day] = String(value).split("-").map(Number);
   return new Date(year, month - 1, day, 0, 0, 0, 0);
+}
+
+function isDateKey(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return false;
+  const parsed = parseDateKey(value);
+  return dateKey(parsed) === value;
 }
 
 function dateKey(date) {
