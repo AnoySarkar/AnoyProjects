@@ -472,7 +472,7 @@ input {
 
 .account-row {
   display: grid;
-  grid-template-columns: minmax(86px, 0.85fr) minmax(112px, 1.4fr) 45px;
+  grid-template-columns: minmax(130px, 1.2fr) minmax(100px, 1.2fr) 45px;
   gap: 8px;
   align-items: center;
   min-height: 46px;
@@ -501,8 +501,8 @@ input {
 }
 
 .account-row.is-locked .account-meta small::after {
-  color: var(--yellow);
-  content: " log previous";
+  color: var(--subtle);
+  content: " (upcoming)";
 }
 
 .account-row.is-locked input[type="range"] {
@@ -523,6 +523,14 @@ input {
 
 .account-meta b {
   font-size: 0.9rem;
+}
+
+/* Muted cycle-time bracket shown next to account name: TRI (12:38 PM – 5:38 PM) */
+.cycle-range {
+  font-size: 0.78em;
+  font-weight: 400;
+  color: var(--subtle);
+  letter-spacing: 0;
 }
 
 .account-meta small {

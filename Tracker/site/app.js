@@ -1,14 +1,10 @@
 const STORAGE_KEY = "gemini-flow-tracker-data-v1";
 const OLD_ENTRIES_KEY = "window-command-entries-v4";
 const OLD_SETTINGS_KEY = "window-command-settings-v4";
-const REFERENCE_YEAR = 2026;
-const REFERENCE_MONTH = 6;
-const REFERENCE_DAY = 12;
 const DEFAULT_NAMES = ["TRI", "MOU", "LION", "AVI", "MIND", "ANOY"];
 const DEFAULT_TIMES = ["12:38", "13:09", "14:29", "15:33", "17:35", "18:35"];
 
 let state = loadState();
-let windowPlan = null;
 let daySchedule = [];
 let monthSchedule = [];
 let audioContext = null;
@@ -191,7 +187,6 @@ function bindSettingsInputs() {
 function rebuild(options = {}) {
   state = normalizeState(state);
   applyFlowResets();
-  windowPlan = calculateWindowPlan();
   daySchedule = buildDaySchedule(selectedDate());
   monthSchedule = buildMonthSchedule(selectedDate());
   renderMode();
@@ -227,9 +222,16 @@ function renderGemini() {
 }
 
 function renderSchedule() {
+  // Snapshot which windows are currently open BEFORE clearing the DOM.
+  // This preserves the user's manually opened/closed state across periodic re-renders.
+  const existingDetails = [...el.windowList.querySelectorAll("details[data-row-id]")];
+  // isReRender = true when the DOM already shows this same day's windows
+  const isReRender = existingDetails.some((d) => daySchedule.some((row) => row.id === d.dataset.rowId));
+  const openRowIds = new Set(existingDetails.filter((d) => d.open).map((d) => d.dataset.rowId));
+
   el.windowList.innerHTML = "";
   if (!daySchedule.length) {
-    el.windowList.innerHTML = `<div class="empty-state">No valid Gemini window. Adjust reset times or window length in Settings.</div>`;
+    el.windowList.innerHTML = `<div class="empty-state">No blocks scheduled for this day. Check account reset times in Settings.</div>`;
     return;
   }
 
@@ -237,9 +239,11 @@ function renderSchedule() {
   daySchedule.forEach((row, index) => {
     const totals = rowTotals(row);
     const stateLabel = windowStateLabel(row);
-    const carryAccounts = carryOverAccounts(row);
-    const lockedAccounts = lockedAccountsForRow(row);
-    const open = index === focusIndex || (Math.abs(index - focusIndex) === 1 && carryAccounts.length > 0);
+    const lockedKeys = lockedAccountsForRow(row);
+    // Use the user's saved open/close state on re-renders; fall back to focus logic on first render or day change
+    const open = isReRender
+      ? openRowIds.has(row.id)
+      : index === focusIndex;
     const details = document.createElement("details");
     details.className = "window-card";
     details.dataset.rowId = row.id;
@@ -264,7 +268,7 @@ function renderSchedule() {
         </button>
       </div>
       <div class="account-sliders">
-        ${row.order.map((account) => accountSliderHtml(row, account, carryAccounts.includes(account.id), lockedAccounts.includes(account.id))).join("")}
+        ${row.order.map((entry) => accountSliderHtml(row, entry, lockedKeys.includes(entry.entryKey))).join("")}
       </div>
     `;
     el.windowList.appendChild(details);
@@ -273,26 +277,43 @@ function renderSchedule() {
   el.windowList.querySelectorAll(".gemini-range").forEach((input) => {
     input.addEventListener("input", handleGeminiSlider);
     input.addEventListener("change", handleGeminiSlider);
+    // Clicking the right 25% of the bar fills the account to max in one tap
+    input.addEventListener("pointerdown", (e) => {
+      if (input.disabled) return;
+      const rect = input.getBoundingClientRect();
+      if ((e.clientX - rect.left) / rect.width >= 0.75) {
+        e.preventDefault();
+        input.value = state.gemini.videosPerAccount;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
   });
   el.windowList.querySelectorAll(".fill-window-button").forEach((button) => {
     button.addEventListener("click", handleFillWindow);
   });
 }
 
-function accountSliderHtml(row, account, isCarryOver = false, isLocked = false) {
-  const value = getAccountCount(row, account);
-  const reset = nextResetAfter(runtimeAccount(account), row.start);
-  const minutesLeft = Math.max(0, Math.round((reset - new Date()) / 60000));
-  const resetText = isLocked ? `wait ${minutesLeft} min` : row.end < new Date() ? formatTimeLabel(reset) : `${minutesLeft} min (${formatTimeLabel(reset)})`;
+function accountSliderHtml(row, entry, isLocked = false) {
+  const value = getAccountCount(row, entry);
+  // Exact cycle window this entry represents
+  const cycleEnd = addMinutes(entry.cycleStart, state.gemini.cycleMinutes);
+  const cycleRange = `${formatTimeLabel(entry.cycleStart)} – ${formatTimeLabel(cycleEnd)}`;
+  const minutesLeft = Math.max(0, Math.round((cycleEnd - new Date()) / 60000));
+  const resetText = isLocked
+    ? `unlocks at ${formatTimeLabel(entry.cycleStart)}`
+    : row.end < new Date()
+      ? `done`
+      : `${minutesLeft} min left`;
   const max = state.gemini.videosPerAccount;
   const pct = max ? Math.round((value / max) * 100) : 0;
   return `
-    <label class="account-row ${isCarryOver ? "carry-over" : ""} ${isLocked ? "is-locked" : ""}" style="--fill:${pct}%">
+    <label class="account-row ${isLocked ? "is-locked" : ""}" style="--fill:${pct}%">
       <span class="account-meta">
-        <b>${escapeHtml(account.name)}</b>
+        <b>${escapeHtml(entry.name)} <span class="cycle-range">(${cycleRange})</span></b>
         <small>${resetText}</small>
       </span>
-      <input class="gemini-range" type="range" min="0" max="${max}" step="1" value="${value}" data-row="${row.id}" data-account="${account.id}" ${isLocked ? "disabled" : ""} aria-label="${escapeAttribute(account.name)} videos in ${row.window}">
+      <input class="gemini-range" type="range" min="0" max="${max}" step="1" value="${value}" data-row="${row.id}" data-account="${entry.id}" data-entry-key="${entry.entryKey}" ${isLocked ? "disabled" : ""} aria-label="${escapeAttribute(entry.name)} ${cycleRange}">
       <output>${value}/${max}</output>
     </label>
   `;
@@ -301,11 +322,13 @@ function accountSliderHtml(row, account, isCarryOver = false, isLocked = false) 
 function handleGeminiSlider(event) {
   const input = event.currentTarget;
   const row = rowById(input.dataset.row);
-  const account = state.gemini.accounts.find((item) => item.id === input.dataset.account);
-  if (!row || !account || input.disabled) return;
+  if (!row || input.disabled) return;
+  // Find the specific order entry by entryKey — this carries the exact cycleStart
+  const orderEntry = row.order.find((e) => e.entryKey === input.dataset.entryKey);
+  if (!orderEntry) return;
   const count = clampNumber(input.value, 0, state.gemini.videosPerAccount);
   if (event.type === "change") input.value = count;
-  setAccountCount(row, account, count);
+  setAccountCount(row, orderEntry, count);
   input.closest(".account-row")?.style.setProperty("--fill", `${state.gemini.videosPerAccount ? (Number(input.value) / state.gemini.videosPerAccount) * 100 : 0}%`);
   input.nextElementSibling.textContent = `${count}/${state.gemini.videosPerAccount}`;
   playTone("tap");
@@ -321,10 +344,10 @@ function handleFillWindow(event) {
   if (!row) return;
   const totals = rowTotals(row);
   const nextValue = totals.done >= totals.max ? 0 : state.gemini.videosPerAccount;
-  const lockedAccounts = lockedAccountsForRow(row);
+  const lockedKeys = lockedAccountsForRow(row);
   row.order
-    .filter((account) => !lockedAccounts.includes(account.id))
-    .forEach((account) => setAccountCount(row, account, nextValue));
+    .filter((entry) => !lockedKeys.includes(entry.entryKey))
+    .forEach((entry) => setAccountCount(row, entry, nextValue));
   playTone("success");
   renderSchedule();
   renderCalendar();
@@ -628,50 +651,74 @@ function buildMonthSchedule(date) {
   return buildScheduleBetween(start, new Date(date.getFullYear(), date.getMonth() + 1, 1));
 }
 
+// Four fixed 6-hour display windows per day: 12AM–6AM, 6AM–12PM, 12PM–6PM, 6PM–12AM.
+// Each account appears once per overlapping 5-hour cycle within the window.
+// An account can appear twice if two of its cycles overlap the same 6-hour window.
+// Every order entry embeds cycleStart + entryKey + isCarryOver for unambiguous logging.
 function buildScheduleBetween(rangeStart, rangeEnd) {
-  if (!windowPlan || windowPlan.overlapMinutes < state.gemini.windowMinutes || !state.gemini.accounts.length) return [];
+  if (!state.gemini.accounts.length) return [];
+
+  const SLOT_MS = 6 * 3600000; // 6-hour fixed window
+  const cycleMs = state.gemini.cycleMinutes * 60000;
   const rows = [];
-  let start = new Date(windowPlan.firstWindowStart);
-  while (start < rangeStart) start = addMinutes(start, state.gemini.cycleMinutes);
-  while (addMinutes(start, -state.gemini.cycleMinutes) >= rangeStart) start = addMinutes(start, -state.gemini.cycleMinutes);
-  while (start < rangeEnd) {
-    const end = addMinutes(start, state.gemini.windowMinutes);
-    rows.push({
-      id: `${dateKey(start)}-${pad(start.getHours())}${pad(start.getMinutes())}`,
-      start: new Date(start),
-      end,
-      window: `${formatTimeLabel(start)} - ${formatTimeLabel(end)}`,
-      order: orderForWindow(start),
-    });
-    start = addMinutes(start, state.gemini.cycleMinutes);
+
+  // Start from the 6-hour boundary (0h/6h/12h/18h) at or before rangeStart
+  let slotStart = alignToWindowSlot(rangeStart);
+
+  while (slotStart.getTime() < rangeEnd.getTime()) {
+    if (slotStart.getTime() >= rangeStart.getTime()) {
+      const slotEnd = new Date(slotStart.getTime() + SLOT_MS);
+      const orderEntries = [];
+
+      state.gemini.accounts.forEach((account) => {
+        const resetMs = runtimeAccount(account).reset.getTime();
+        const slotStartMs = slotStart.getTime();
+        const slotEndMs = slotEnd.getTime();
+
+        // Only include cycles whose START falls within [slotStart, slotEnd).
+        // firstN = first n where resetMs + n*cycleMs >= slotStartMs.
+        // Negative n is valid: cycles extend backwards from the anchor date.
+        const firstN = Math.ceil((slotStartMs - resetMs) / cycleMs);
+
+        for (let n = firstN; ; n++) {
+          const cycleStartMs = resetMs + n * cycleMs;
+          if (cycleStartMs >= slotEndMs) break; // Past the window, done
+          // cycleStartMs >= slotStartMs is guaranteed by firstN
+
+          const cycleStart = new Date(cycleStartMs);
+          const entryKey = `${account.id}-${dateKey(cycleStart)}-${pad(cycleStart.getHours())}${pad(cycleStart.getMinutes())}`;
+          orderEntries.push({
+            id: account.id,
+            name: account.name,
+            time: account.time,
+            anchorDate: account.anchorDate,
+            cycleStart,   // exact start of THIS 5-hour cycle
+            entryKey,     // unique storage key for this appearance
+          });
+        }
+      });
+
+      // Sort chronologically so the earliest cycle appears first
+      orderEntries.sort((a, b) => a.cycleStart - b.cycleStart);
+
+      rows.push({
+        id: `${dateKey(slotStart)}-${pad(slotStart.getHours())}${pad(slotStart.getMinutes())}`,
+        start: slotStart,
+        end: slotEnd,
+        window: `${formatTimeLabel(slotStart)} – ${formatTimeLabel(slotEnd)}`,
+        order: orderEntries,
+      });
+    }
+    slotStart = new Date(slotStart.getTime() + SLOT_MS);
   }
+
   return rows;
 }
 
-function calculateWindowPlan() {
-  const accounts = state.gemini.accounts.map(runtimeAccount);
-  if (accounts.length === 1) return { firstWindowStart: accounts[0].reset, overlapMinutes: state.gemini.cycleMinutes };
-  const phases = accounts
-    .map((account) => ({ ...account, phase: positiveModulo(minutesBetween(referenceMonthStart(), account.reset), state.gemini.cycleMinutes) }))
-    .sort((a, b) => a.phase - b.phase);
-  let bestGap = -1;
-  let gapStart = phases[0];
-  phases.forEach((account, index) => {
-    const next = phases[(index + 1) % phases.length];
-    const gap = positiveModulo(next.phase - account.phase, state.gemini.cycleMinutes);
-    if (gap > bestGap) {
-      bestGap = gap;
-      gapStart = account;
-    }
-  });
-  const centerSlack = Math.max(0, Math.floor((bestGap - state.gemini.windowMinutes) / 2));
-  return { firstWindowStart: addMinutes(gapStart.reset, centerSlack), overlapMinutes: bestGap };
-}
-
-function orderForWindow(windowStart) {
-  return [...state.gemini.accounts]
-    .sort((a, b) => nextResetAfter(runtimeAccount(a), windowStart) - nextResetAfter(runtimeAccount(b), windowStart))
-    .map((account) => ({ id: account.id, name: account.name, time: account.time, anchorDate: account.anchorDate }));
+// Returns the 6-hour boundary (0h, 6h, 12h, 18h) at or before the given date
+function alignToWindowSlot(date) {
+  const slotHour = Math.floor(date.getHours() / 6) * 6;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), slotHour, 0, 0, 0);
 }
 
 function focusedWindowIndex() {
@@ -683,31 +730,20 @@ function focusedWindowIndex() {
   return Math.max(0, daySchedule.length - 1);
 }
 
-function carryOverAccounts(row) {
-  const now = new Date();
-  if (row.start <= now && row.end >= now) return [];
-  return row.order
-    .filter((account) => {
-      const reset = nextResetAfter(runtimeAccount(account), row.start);
-      return row.start < now && reset > now;
-    })
-    .map((account) => account.id);
-}
-
+// Locked = cycle hasn't started yet (can't log future resets).
+// Returns entryKeys so duplicated accounts are disambiguated correctly.
 function lockedAccountsForRow(row) {
   const now = new Date();
-  if (row.end <= now) return [];
+  if (row.end <= now) return []; // Entire window is past — nothing locked
   return row.order
-    .filter((account) => {
-      const previousOpenRow = [...daySchedule]
-        .reverse()
-        .find((candidate) => candidate.start < row.start && candidate.start < now && nextResetAfter(runtimeAccount(account), candidate.start) > now);
-      return Boolean(previousOpenRow);
-    })
-    .map((account) => account.id);
+    .filter((entry) => entry.cycleStart > now)
+    .map((entry) => entry.entryKey);
 }
 
 function accountCycleEntryKey(row, account) {
+  // Prefer the pre-computed entryKey embedded in order entries (always unambiguous)
+  if (account.entryKey) return account.entryKey;
+  // Fallback for migration/legacy paths that pass raw state accounts
   const cycle = accountCycleFor(account, accountCycleReferenceDate(row));
   return `${account.id}-${dateKey(cycle.start)}-${pad(cycle.start.getHours())}${pad(cycle.start.getMinutes())}`;
 }
@@ -734,10 +770,11 @@ function rowById(id) {
 }
 
 function rowTotals(row) {
-  const lockedAccounts = lockedAccountsForRow(row);
-  const activeAccounts = row.order.filter((account) => !lockedAccounts.includes(account.id));
-  const max = activeAccounts.length * state.gemini.videosPerAccount;
-  const done = activeAccounts.reduce((sum, account) => sum + getAccountCount(row, account), 0);
+  const lockedKeys = lockedAccountsForRow(row);
+  const activeEntries = row.order.filter((entry) => !lockedKeys.includes(entry.entryKey));
+  // max = ALL entries (including upcoming/locked) so the denominator always shows window capacity
+  const max = row.order.length * state.gemini.videosPerAccount;
+  const done = activeEntries.reduce((sum, entry) => sum + getAccountCount(row, entry), 0);
   const missed = row.end < new Date() ? Math.max(0, max - done) : 0;
   return { done, max, missed };
 }
@@ -758,12 +795,16 @@ function getAccountCount(row, account) {
 }
 
 function setAccountCount(row, account, count) {
-  const cycle = accountCycleFor(account, accountCycleReferenceDate(row));
   const key = accountCycleEntryKey(row, account);
+  // Use embedded cycleStart when available (always the case for new order entries)
+  const cycleStart = account.cycleStart instanceof Date
+    ? account.cycleStart
+    : accountCycleFor(account, accountCycleReferenceDate(row)).start;
+  const cycleEnd = addMinutes(cycleStart, state.gemini.cycleMinutes);
   state.gemini.cycleEntries[key] = {
     accountId: account.id,
-    cycleStart: cycle.start.toISOString(),
-    cycleEnd: cycle.end.toISOString(),
+    cycleStart: cycleStart.toISOString(),
+    cycleEnd: cycleEnd.toISOString(),
     count: clampNumber(count, 0, state.gemini.videosPerAccount),
     updatedAt: new Date().toISOString(),
   };
@@ -1056,9 +1097,6 @@ function referenceDateFromAccount(account) {
   return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), hour, minute, 0, 0);
 }
 
-function referenceMonthStart() {
-  return new Date(REFERENCE_YEAR, REFERENCE_MONTH, 1, 0, 0, 0, 0);
-}
 
 function nextResetAfter(account, date) {
   if (date < account.reset) return new Date(account.reset);
