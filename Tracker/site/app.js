@@ -628,6 +628,7 @@ function buildScheduleBetween(rangeStart, rangeEnd) {
   const rows = [];
   let start = new Date(windowPlan.firstWindowStart);
   while (start < rangeStart) start = addMinutes(start, state.gemini.cycleMinutes);
+  while (addMinutes(start, -state.gemini.cycleMinutes) >= rangeStart) start = addMinutes(start, -state.gemini.cycleMinutes);
   while (start < rangeEnd) {
     const end = addMinutes(start, state.gemini.windowMinutes);
     rows.push({
