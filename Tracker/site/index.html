@@ -11,7 +11,7 @@
     <meta name="description" content="Compact Gemini video-window and Flow credit tracker.">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=19">
+    <link rel="stylesheet" href="styles.css?v=21">
   </head>
   <body>
     <main class="app-shell">
@@ -65,17 +65,15 @@
             </div>
           </div>
 
-          <div class="stat-strip" aria-label="Selected day summary">
-            <div><span>Done</span><strong id="selectedDayVideos">0</strong></div>
-            <div><span>Missed</span><strong id="selectedDayMissed">0</strong></div>
-            <div><span>Rate</span><strong id="selectedDayCompletion">0%</strong></div>
+          <div class="stat-strip" aria-label="Video stats">
+            <div><span>Day</span><strong id="selectedDayVideos">0</strong></div>
+            <div><span>Week</span><strong id="weekVideos">0</strong></div>
             <div><span>Month</span><strong id="monthAchieved">0</strong></div>
           </div>
 
           <div class="calendar-wrap">
             <div class="calendar-head">
               <span id="monthTitle">Selected month</span>
-              <span id="monthMissedVideos">0 missed</span>
             </div>
             <div class="calendar-grid" id="calendarGrid" aria-label="Month day grid"></div>
           </div>
@@ -128,7 +126,7 @@
             <h3>Gemini</h3>
             <label><span>Block hours</span><input id="geminiCycleHours" type="number" min="1" max="24" step="0.25"></label>
             <label hidden><span>Window minutes</span><input id="geminiWindowMinutes" type="number" min="10" max="240" step="5"></label>
-            <label><span>Videos per account</span><input id="geminiVideoLimit" type="number" min="0" max="20" step="1"></label>
+            <label><span>Videos per account</span><input id="geminiVideoLimit" type="number" min="0" max="20" step="1" inputmode="numeric"></label>
             <div class="settings-list" id="geminiSettingsAccounts"></div>
             <div class="add-row">
               <input id="newGeminiAccountName" type="text" maxlength="12" placeholder="Name" aria-label="New Gemini account">
@@ -139,12 +137,13 @@
 
           <section class="settings-section">
             <h3>Flow</h3>
-            <label><span>Monthly credits</span><input id="flowMonthlyCredits" type="number" min="1" max="100000" step="1"></label>
-            <label><span>Reminder threshold</span><input id="flowReminderThreshold" type="number" min="0" max="100000" step="1"></label>
+            <label><span>Monthly credits</span><input id="flowMonthlyCredits" type="number" min="1" max="100000" step="1" inputmode="numeric"></label>
+            <label><span>Credits per video</span><input id="flowCreditsPerVideo" type="number" min="1" max="10000" step="1" inputmode="numeric"></label>
+            <label><span>Reminder threshold</span><input id="flowReminderThreshold" type="number" min="0" max="100000" step="1" inputmode="numeric"></label>
             <div class="settings-list" id="flowSettingsAccounts"></div>
             <div class="add-row">
               <input id="newFlowAccountName" type="text" maxlength="12" placeholder="Name" aria-label="New Flow account">
-              <input id="newFlowResetDay" type="number" min="1" max="31" placeholder="Day" aria-label="New Flow reset day">
+              <input id="newFlowResetDay" type="number" min="1" max="31" placeholder="Day" aria-label="New Flow reset day" inputmode="numeric">
               <button class="small-button" id="addFlowAccountButton" type="button">Add</button>
             </div>
           </section>
@@ -157,6 +156,6 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=19"></script>
+    <script src="app.js?v=21"></script>
   </body>
 </html>

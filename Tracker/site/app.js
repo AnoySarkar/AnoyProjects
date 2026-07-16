@@ -1,8 +1,9 @@
 const STORAGE_KEY = "gemini-flow-tracker-data-v1";
 const OLD_ENTRIES_KEY = "window-command-entries-v4";
 const OLD_SETTINGS_KEY = "window-command-settings-v4";
-const DEFAULT_NAMES = ["TRI", "MOU", "LION", "AVI", "MIND", "ANOY"];
-const DEFAULT_TIMES = ["12:38", "13:09", "14:29", "15:33", "17:35", "18:35"];
+const DEFAULT_NAMES = ["ANOY", "AVI", "MOU", "MIND", "LION", "TRI"];
+const DEFAULT_TIMES = ["14:18", "14:33", "17:09", "15:50", "13:29", "16:38"];
+const DEFAULT_FLOW_RESET_DAYS = [2, 21, 24, 12, 22, 1];
 
 let state = loadState();
 let daySchedule = [];
@@ -25,11 +26,9 @@ const el = {
   todayButton: document.querySelector("#todayButton"),
   scheduleTitle: document.querySelector("#scheduleTitle"),
   selectedDayVideos: document.querySelector("#selectedDayVideos"),
-  selectedDayMissed: document.querySelector("#selectedDayMissed"),
-  selectedDayCompletion: document.querySelector("#selectedDayCompletion"),
+  weekVideos: document.querySelector("#weekVideos"),
   monthTitle: document.querySelector("#monthTitle"),
   monthAchieved: document.querySelector("#monthAchieved"),
-  monthMissedVideos: document.querySelector("#monthMissedVideos"),
   calendarGrid: document.querySelector("#calendarGrid"),
   windowList: document.querySelector("#windowList"),
   flowList: document.querySelector("#flowList"),
@@ -47,6 +46,7 @@ const el = {
   geminiWindowMinutes: document.querySelector("#geminiWindowMinutes"),
   geminiVideoLimit: document.querySelector("#geminiVideoLimit"),
   flowMonthlyCredits: document.querySelector("#flowMonthlyCredits"),
+  flowCreditsPerVideo: document.querySelector("#flowCreditsPerVideo"),
   flowReminderThreshold: document.querySelector("#flowReminderThreshold"),
   geminiSettingsAccounts: document.querySelector("#geminiSettingsAccounts"),
   flowSettingsAccounts: document.querySelector("#flowSettingsAccounts"),
@@ -60,9 +60,15 @@ const el = {
 
 init();
 
+// ============================================================
+// INIT
+// ============================================================
+
 function init() {
   state = normalizeState(state);
   applyFlowResets();
+  // Always open on today's date
+  state.selectedDate = dateKey(new Date());
   el.datePicker.value = state.selectedDate;
   bindEvents();
   updateSoundButton();
@@ -139,7 +145,10 @@ function bindSettingsInputs() {
     [el.flowMonthlyCredits, () => {
       const next = clampNumber(el.flowMonthlyCredits.value, 1, 100000);
       state.flow.monthlyCredits = next;
-      state.flow.accounts.forEach((account) => account.creditsLeft = clampNumber(account.creditsLeft, 0, next));
+      state.flow.accounts.forEach((account) => { account.creditsLeft = clampNumber(account.creditsLeft, 0, next); });
+    }],
+    [el.flowCreditsPerVideo, () => {
+      state.flow.creditsPerVideo = clampNumber(el.flowCreditsPerVideo.value, 1, 10000);
     }],
     [el.flowReminderThreshold, () => {
       state.flow.reminderThreshold = clampNumber(el.flowReminderThreshold.value, 0, 100000);
@@ -157,7 +166,13 @@ function bindSettingsInputs() {
     const name = cleanName(el.newGeminiAccountName.value);
     const time = el.newGeminiAccountTime.value;
     if (!name || !time) return;
-    state.gemini.accounts.push({ id: uniqueAccountId(name, state.gemini.accounts), name, time, anchorDate: state.selectedDate || dateKey(new Date()) });
+    state.gemini.accounts.push({
+      id: uniqueAccountId(name, state.gemini.accounts),
+      name,
+      time,
+      anchorDate: state.selectedDate || dateKey(new Date()),
+      autofill: state.gemini.videosPerAccount,
+    });
     el.newGeminiAccountName.value = "";
     el.newGeminiAccountTime.value = "";
     saveState();
@@ -175,6 +190,7 @@ function bindSettingsInputs() {
       creditsLeft: state.flow.monthlyCredits,
       resetDay,
       lastResetMonth: "",
+      lastReminderKey: "",
     });
     el.newFlowAccountName.value = "";
     el.newFlowResetDay.value = "";
@@ -183,6 +199,10 @@ function bindSettingsInputs() {
     rebuild();
   });
 }
+
+// ============================================================
+// REBUILD / MODE
+// ============================================================
 
 function rebuild(options = {}) {
   state = normalizeState(state);
@@ -200,10 +220,14 @@ function rebuild(options = {}) {
 
 function setMode(mode) {
   state.activeMode = mode;
+  // Gemini tab always jumps to today
+  if (mode === "gemini") {
+    state.selectedDate = dateKey(new Date());
+    el.datePicker.value = state.selectedDate;
+  }
   saveState();
   playTone("tap");
-  renderMode();
-  if (mode === "gemini") scrollToCurrentWindow();
+  rebuild({ scroll: mode === "gemini" });
 }
 
 function renderMode() {
@@ -214,6 +238,10 @@ function renderMode() {
   el.flowView.classList.toggle("active", !gemini);
 }
 
+// ============================================================
+// GEMINI RENDERING
+// ============================================================
+
 function renderGemini() {
   renderTitles();
   renderCalendar();
@@ -222,10 +250,8 @@ function renderGemini() {
 }
 
 function renderSchedule() {
-  // Snapshot which windows are currently open BEFORE clearing the DOM.
-  // This preserves the user's manually opened/closed state across periodic re-renders.
+  // Snapshot open/closed state before wiping the DOM
   const existingDetails = [...el.windowList.querySelectorAll("details[data-row-id]")];
-  // isReRender = true when the DOM already shows this same day's windows
   const isReRender = existingDetails.some((d) => daySchedule.some((row) => row.id === d.dataset.rowId));
   const openRowIds = new Set(existingDetails.filter((d) => d.open).map((d) => d.dataset.rowId));
 
@@ -237,24 +263,23 @@ function renderSchedule() {
 
   const focusIndex = focusedWindowIndex();
   const now = new Date();
+
   daySchedule.forEach((row, index) => {
     const totals = rowTotals(row);
     const stateLabel = windowStateLabel(row);
     const lockedKeys = lockedAccountsForRow(row);
-    
-    // Check if any account in this window is still available (live and not full)
+
     const hasAvailableAccounts = row.order.some((entry) => {
       const val = getAccountCount(row, entry);
       const cycleEnd = addMinutes(entry.cycleStart, state.gemini.cycleMinutes);
       const isLive = entry.cycleStart <= now && cycleEnd > now;
-      const max = state.gemini.videosPerAccount;
-      return isLive && val < max;
+      return isLive && val < state.gemini.videosPerAccount;
     });
 
-    // Use the user's saved open/close state on re-renders; fall back to focus logic on first render or day change
     const open = isReRender
       ? openRowIds.has(row.id)
       : (index === focusIndex || hasAvailableAccounts);
+
     const details = document.createElement("details");
     details.className = "window-card";
     details.dataset.rowId = row.id;
@@ -269,7 +294,7 @@ function renderSchedule() {
           <strong>${row.window}</strong>
         </div>
         <div class="summary-score">
-          <b>${totals.done}/${totals.max}</b>
+          <button class="score-count-btn" type="button" data-row="${row.id}" title="Tap to set custom total">${totals.done}</button>
           <span>${totals.missed ? `${totals.missed} missed` : "on track"}</span>
         </div>
       </summary>
@@ -279,90 +304,148 @@ function renderSchedule() {
         </button>
       </div>
       <div class="account-sliders">
-        ${row.order.map((entry) => accountSliderHtml(row, entry, lockedKeys.includes(entry.entryKey))).join("")}
+        ${row.order.map((entry) => accountRowHtml(row, entry, lockedKeys.includes(entry.entryKey))).join("")}
       </div>
     `;
     el.windowList.appendChild(details);
   });
 
-  el.windowList.querySelectorAll(".gemini-range").forEach((input) => {
-    input.addEventListener("input", handleGeminiSlider);
-    input.addEventListener("change", handleGeminiSlider);
-    // Clicking the right 25% of the bar fills the account to max in one tap
-    input.addEventListener("pointerdown", (e) => {
-      if (input.disabled) return;
-      const rect = input.getBoundingClientRect();
-      if ((e.clientX - rect.left) / rect.width >= 0.75) {
-        e.preventDefault();
-        input.value = state.gemini.videosPerAccount;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    });
+  el.windowList.querySelectorAll(".gemini-toggle").forEach((btn) => {
+    btn.addEventListener("click", handleGeminiToggle);
   });
-  el.windowList.querySelectorAll(".fill-window-button").forEach((button) => {
-    button.addEventListener("click", handleFillWindow);
+  el.windowList.querySelectorAll(".account-count-btn").forEach((btn) => {
+    btn.addEventListener("click", handleAccountCountClick);
+  });
+  el.windowList.querySelectorAll(".score-count-btn").forEach((btn) => {
+    btn.addEventListener("click", handleScoreCountClick);
+  });
+  el.windowList.querySelectorAll(".fill-window-button").forEach((btn) => {
+    btn.addEventListener("click", handleFillWindow);
   });
 }
 
-function accountSliderHtml(row, entry, isLocked = false) {
+function accountRowHtml(row, entry, isLocked = false) {
   const now = new Date();
   const value = getAccountCount(row, entry);
-  // Exact cycle window this entry represents
   const cycleEnd = addMinutes(entry.cycleStart, state.gemini.cycleMinutes);
-  const cycleRange = `${formatTimeLabel(entry.cycleStart)} – ${formatTimeLabel(cycleEnd)}`;
   const minutesLeft = Math.max(0, Math.round((cycleEnd - now) / 60000));
 
   const isLive = entry.cycleStart <= now && cycleEnd > now;
   const isPast = cycleEnd < now;
   const max = state.gemini.videosPerAccount;
-  const isFull = value >= max;
+  const isFull = max > 0 && value >= max;
 
   let stateClass = "";
+  if (isLocked) stateClass = "is-locked";
+  else if (isPast || isFull) stateClass = "is-grey";
+  else if (isLive) stateClass = "is-live";
+
+  const isOn = value > 0;
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+
+  // Countdown label & colour — always show time to next/current reset,
+  // even for past cycles. For past cycles, look up the cycle active *right now*.
+  const activeCycleEnd = isPast ? accountCycleFor(entry, now).end : cycleEnd;
+  const minsLeft = Math.max(0, Math.round((activeCycleEnd - now) / 60000));
+
+  let countdownClass = "reset-ok";
+  let resetText = "";
   if (isLocked) {
-    stateClass = "is-locked";
-  } else if (isPast || isFull) {
-    stateClass = "is-grey";
-  } else if (isLive) {
-    stateClass = "is-live";
+    resetText = `🔒 unlocks ${formatTimeLabel(entry.cycleStart)}`;
+  } else {
+    if (minsLeft < 15) countdownClass = "reset-urgent";
+    else if (minsLeft < 60) countdownClass = "reset-warn";
+    resetText = minsLeft < 2 ? "resetting now" : `${minsLeft} min left`;
   }
 
-  const resetText = isLocked
-    ? `unlocks at ${formatTimeLabel(entry.cycleStart)}`
-    : row.end < now
-      ? `done`
-      : `${minutesLeft} min left`;
-  const pct = max ? Math.round((value / max) * 100) : 0;
+  const cycleTimeStr = `${formatTimeLabel(entry.cycleStart)} – ${formatTimeLabel(cycleEnd)}`;
+
   return `
-    <label class="account-row ${stateClass}" style="--fill:${pct}%">
-      <span class="account-meta">
-        <b>${escapeHtml(entry.name)} <span class="cycle-range">(${cycleRange})</span></b>
-        <small>${resetText}</small>
-      </span>
-      <input class="gemini-range" type="range" min="0" max="${max}" step="1" value="${value}" data-row="${row.id}" data-account="${entry.id}" data-entry-key="${entry.entryKey}" ${isLocked ? "disabled" : ""} aria-label="${escapeAttribute(entry.name)} ${cycleRange}">
-      <output>${value}/${max}</output>
-    </label>
+    <div class="account-row ${stateClass}" style="--fill:${pct}%">
+      <div class="account-meta">
+        <b>${escapeHtml(entry.name)}</b>
+        <span class="cycle-range">${cycleTimeStr}</span>
+        <small class="${countdownClass}">${resetText}</small>
+      </div>
+      <div class="account-controls">
+        <button class="gemini-toggle ${isOn ? "is-on" : ""}" type="button"
+          data-row="${row.id}" data-account="${entry.id}" data-entry-key="${entry.entryKey}"
+          ${isLocked ? "disabled" : ""}
+          aria-label="${escapeAttribute(entry.name)} ${isOn ? "on" : "off"}" aria-pressed="${isOn}">
+          <span></span>
+        </button>
+        <button class="account-count-btn ${isOn ? "is-on" : ""}" type="button"
+          data-row="${row.id}" data-account="${entry.id}" data-entry-key="${entry.entryKey}"
+          ${isLocked ? "disabled" : ""}
+          aria-label="Edit count for ${escapeAttribute(entry.name)}">
+          ${value}
+        </button>
+      </div>
+    </div>
   `;
 }
 
-function handleGeminiSlider(event) {
-  const input = event.currentTarget;
-  const row = rowById(input.dataset.row);
-  if (!row || input.disabled) return;
-  // Find the specific order entry by entryKey — this carries the exact cycleStart
-  const orderEntry = row.order.find((e) => e.entryKey === input.dataset.entryKey);
+// Toggle ON = autofill value, OFF = 0
+function handleGeminiToggle(event) {
+  const btn = event.currentTarget;
+  const row = rowById(btn.dataset.row);
+  if (!row || btn.disabled) return;
+  const orderEntry = row.order.find((e) => e.entryKey === btn.dataset.entryKey);
   if (!orderEntry) return;
-  const count = clampNumber(input.value, 0, state.gemini.videosPerAccount);
-  if (event.type === "change") input.value = count;
-  setAccountCount(row, orderEntry, count);
-  input.closest(".account-row")?.style.setProperty("--fill", `${state.gemini.videosPerAccount ? (Number(input.value) / state.gemini.videosPerAccount) * 100 : 0}%`);
-  input.nextElementSibling.textContent = `${count}/${state.gemini.videosPerAccount}`;
+  const account = state.gemini.accounts.find((a) => a.id === btn.dataset.account);
+  const currentValue = getAccountCount(row, orderEntry);
+  const autofill = account?.autofill ?? state.gemini.videosPerAccount;
+  const nextValue = currentValue > 0 ? 0 : Math.max(1, autofill);
+  setAccountCount(row, orderEntry, nextValue);
   playTone("tap");
-  refreshWindowSummary(row.id);
-  if (event.type === "change") {
-    renderCalendar();
-    renderGeminiStats();
-  }
+  renderSchedule();
+  renderCalendar();
+  renderGeminiStats();
+}
+
+// Click count number → prompt for custom value
+function handleAccountCountClick(event) {
+  event.stopPropagation();
+  const btn = event.currentTarget;
+  const row = rowById(btn.dataset.row);
+  if (!row || btn.disabled) return;
+  const orderEntry = row.order.find((e) => e.entryKey === btn.dataset.entryKey);
+  if (!orderEntry) return;
+  const current = getAccountCount(row, orderEntry);
+  const raw = window.prompt(`Videos for ${orderEntry.name}:`, current);
+  if (raw === null || raw.trim() === "") return;
+  const count = Math.max(0, Math.round(Number(raw)));
+  if (Number.isNaN(count)) return;
+  setAccountCount(row, orderEntry, count);
+  playTone("success");
+  renderSchedule();
+  renderCalendar();
+  renderGeminiStats();
+}
+
+// Click window summary score → set total, distributed equally
+function handleScoreCountClick(event) {
+  event.stopPropagation();
+  const btn = event.currentTarget;
+  const row = rowById(btn.dataset.row);
+  if (!row) return;
+  const totals = rowTotals(row);
+  const raw = window.prompt(`Total videos for this window:\n(Split equally across accounts)`, totals.done);
+  if (raw === null || raw.trim() === "") return;
+  const target = Math.max(0, Math.round(Number(raw)));
+  if (Number.isNaN(target)) return;
+  const lockedKeys = lockedAccountsForRow(row);
+  const unlocked = row.order.filter((e) => !lockedKeys.includes(e.entryKey));
+  if (!unlocked.length) return;
+  const perAccount = Math.floor(target / unlocked.length);
+  const remainder = target % unlocked.length;
+  unlocked.forEach((entry, i) => {
+    setAccountCount(row, entry, perAccount + (i < remainder ? 1 : 0));
+  });
+  playTone("success");
+  renderSchedule();
+  renderCalendar();
+  renderGeminiStats();
 }
 
 function handleFillWindow(event) {
@@ -386,22 +469,24 @@ function refreshWindowSummary(rowId) {
   if (!row || !card) return;
   const totals = rowTotals(row);
   const score = card.querySelector(".summary-score");
-  score.innerHTML = `<b>${totals.done}/${totals.max}</b><span>${totals.missed ? `${totals.missed} missed` : "on track"}</span>`;
+  score.innerHTML = `<button class="score-count-btn" type="button" data-row="${rowId}" title="Tap to set custom total">${totals.done}</button><span>${totals.missed ? `${totals.missed} missed` : "on track"}</span>`;
+  card.querySelector(".score-count-btn")?.addEventListener("click", handleScoreCountClick);
 }
 
 function renderCalendar() {
   el.calendarGrid.innerHTML = "";
+  // No target — colour by raw count relative to a "full day" estimate
+  const maxPerDay = Math.max(1, state.gemini.videosPerAccount * state.gemini.accounts.length);
   daysInSelectedMonth().forEach((date) => {
-    const schedule = buildDaySchedule(date);
-    const totals = totalsForSchedule(schedule);
-    const ratio = totals.potential ? totals.achieved / totals.potential : 0;
+    const count = videosOnDate(date);
+    const ratio = Math.min(count / maxPerDay, 1);
     const button = document.createElement("button");
     button.className = "calendar-day";
     button.type = "button";
     button.style.setProperty("--day-bg", dayGradient(ratio));
     button.classList.toggle("selected", dateKey(date) === state.selectedDate);
     button.classList.toggle("today", dateKey(date) === dateKey(new Date()));
-    button.innerHTML = `<span>${date.getDate()}</span><strong>${totals.achieved}</strong>`;
+    button.innerHTML = `<span>${date.getDate()}</span><strong>${count > 0 ? count : ""}</strong>`;
     button.addEventListener("click", () => {
       state.selectedDate = dateKey(date);
       el.datePicker.value = state.selectedDate;
@@ -414,14 +499,46 @@ function renderCalendar() {
 }
 
 function renderGeminiStats() {
-  const dayTotals = totalsForSchedule(daySchedule);
-  const monthTotals = totalsForSchedule(monthSchedule);
-  const completion = dayTotals.potential ? Math.round((dayTotals.achieved / dayTotals.potential) * 100) : 0;
-  el.selectedDayVideos.textContent = dayTotals.achieved.toLocaleString("en-US");
-  el.selectedDayMissed.textContent = dayTotals.missedVideos.toLocaleString("en-US");
-  el.selectedDayCompletion.textContent = `${completion}%`;
-  el.monthAchieved.textContent = monthTotals.achieved.toLocaleString("en-US");
-  el.monthMissedVideos.textContent = `${monthTotals.missedVideos.toLocaleString("en-US")} missed`;
+  el.selectedDayVideos.textContent = videosOnDate(new Date()).toLocaleString("en-US");
+  el.weekVideos.textContent = videosThisWeek().toLocaleString("en-US");
+  el.monthAchieved.textContent = videosThisMonth().toLocaleString("en-US");
+}
+
+// Sum of all logged video counts for a specific date
+function videosOnDate(date) {
+  const key = dateKey(date);
+  return Object.values(state.gemini.cycleEntries)
+    .filter((e) => e.cycleStart && dateKey(new Date(e.cycleStart)) === key)
+    .reduce((sum, e) => sum + Math.max(0, Math.round(Number(e.count) || 0)), 0);
+}
+
+// Mon–today of the current calendar week
+function videosThisWeek() {
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun
+  const daysFromMon = dow === 0 ? 6 : dow - 1;
+  const mon = new Date(today);
+  mon.setDate(today.getDate() - daysFromMon);
+  mon.setHours(0, 0, 0, 0);
+  let total = 0;
+  const cur = new Date(mon);
+  while (cur <= today) {
+    total += videosOnDate(cur);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return total;
+}
+
+// 1st of month through today
+function videosThisMonth() {
+  const today = new Date();
+  let total = 0;
+  const cur = new Date(today.getFullYear(), today.getMonth(), 1);
+  while (cur <= today) {
+    total += videosOnDate(cur);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return total;
 }
 
 function renderTitles() {
@@ -430,43 +547,59 @@ function renderTitles() {
   el.monthTitle.textContent = selected.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
+// ============================================================
+// FLOW RENDERING
+// ============================================================
+
 function renderFlow() {
   el.flowList.innerHTML = "";
   renderFlowCalendar();
+
   const max = state.flow.monthlyCredits;
+  const cpv = state.flow.creditsPerVideo || 15;
   const alerts = [];
   let totalLeft = 0;
   let soon = 0;
 
-  state.flow.accounts.forEach((account) => {
+  // Sort accounts so the one with the nearest reset day is on top
+  const sortedAccounts = [...state.flow.accounts].sort((a, b) => {
+    return nextMonthlyReset(a.resetDay) - nextMonthlyReset(b.resetDay);
+  });
+
+  sortedAccounts.forEach((account) => {
     const reset = nextMonthlyReset(account.resetDay);
     const daysLeft = daysUntil(reset);
     const used = Math.max(0, max - account.creditsLeft);
     totalLeft += account.creditsLeft;
+    const videosMade = Math.floor(used / cpv);
+
     if (daysLeft <= 1 && account.creditsLeft > state.flow.reminderThreshold) {
       soon += 1;
       alerts.push(`${account.name}: ${account.creditsLeft} credits left, resets ${daysLeft === 0 ? "today" : "tomorrow"}.`);
     }
+
     const pct = max ? Math.round((account.creditsLeft / max) * 100) : 0;
+    const resetLabel = daysLeft === 0 ? "Resets today" : daysLeft === 1 ? "Resets tomorrow" : `Resets in ${daysLeft} days`;
+
     const card = document.createElement("article");
     card.className = "flow-card";
     card.style.setProperty("--fill", `${pct}%`);
     card.innerHTML = `
       <div class="flow-top">
         <div>
-          <span class="window-kicker">${daysLeft} days left</span>
+          <span class="window-kicker">${resetLabel}</span>
           <h3>${escapeHtml(account.name)}</h3>
         </div>
         <strong class="flow-left-value">${account.creditsLeft.toLocaleString("en-US")}</strong>
       </div>
-      <label class="credit-slider">
-        <span>Credit left</span>
-        <input class="flow-range" type="range" min="0" max="${max}" step="1" value="${account.creditsLeft}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} credits left">
-      </label>
-      <div class="flow-bottom">
-        <span class="flow-used-value">Used ${used.toLocaleString("en-US")}</span>
-        <label>Reset day <input class="reset-day-input" type="number" min="1" max="31" value="${account.resetDay}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} monthly reset day"></label>
+      <div class="flow-credit-row">
+        <input class="flow-credit-input" type="number" min="0" max="${max}" value="${account.creditsLeft}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} credits left" inputmode="numeric">
         <button class="small-button refill-button" type="button" data-id="${account.id}">Full</button>
+      </div>
+      <div class="flow-meta-row">
+        <span class="flow-videos-made">🎬 ${videosMade}</span>
+        <span class="flow-used-val">${used.toLocaleString("en-US")} used</span>
+        <label class="flow-reset-label">Day <input class="reset-day-input" type="number" min="1" max="31" value="${account.resetDay}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} reset day" inputmode="numeric"></label>
       </div>
     `;
     el.flowList.appendChild(card);
@@ -477,9 +610,9 @@ function renderFlow() {
   el.flowResetSoon.textContent = soon.toLocaleString("en-US");
   el.flowAlerts.innerHTML = alerts.length ? alerts.map((text) => `<p>${escapeHtml(text)}</p>`).join("") : `<p>No urgent Flow reset reminders.</p>`;
 
-  el.flowList.querySelectorAll(".flow-range").forEach((input) => {
-    input.addEventListener("input", handleFlowSlider);
-    input.addEventListener("change", handleFlowSlider);
+  el.flowList.querySelectorAll(".flow-credit-input").forEach((input) => {
+    input.addEventListener("change", handleFlowCreditInput);
+    input.addEventListener("blur", handleFlowCreditInput);
   });
   el.flowList.querySelectorAll(".reset-day-input").forEach((input) => {
     input.addEventListener("change", handleFlowResetDay);
@@ -498,22 +631,33 @@ function renderFlow() {
   });
 }
 
-function handleFlowSlider(event) {
+function handleFlowCreditInput(event) {
   const input = event.currentTarget;
   const account = state.flow.accounts.find((item) => item.id === input.dataset.id);
   if (!account) return;
   const previousLeft = account.creditsLeft;
-  account.creditsLeft = clampNumber(input.value, 0, state.flow.monthlyCredits);
-  recordFlowUsage(previousLeft - account.creditsLeft);
-  if (event.type === "change") input.value = account.creditsLeft;
+  const newVal = clampNumber(input.value, 0, state.flow.monthlyCredits);
+  input.value = newVal;
+  if (newVal === previousLeft) return;
+  account.creditsLeft = newVal;
+  recordFlowUsage(previousLeft - newVal);
+
   const card = input.closest(".flow-card");
-  card?.style.setProperty("--fill", `${state.flow.monthlyCredits ? (Number(input.value) / state.flow.monthlyCredits) * 100 : 0}%`);
+  const pct = state.flow.monthlyCredits ? (newVal / state.flow.monthlyCredits) * 100 : 0;
+  card?.style.setProperty("--fill", `${pct}%`);
+
   const leftValue = card?.querySelector(".flow-left-value");
-  const usedValue = card?.querySelector(".flow-used-value");
-  if (leftValue) leftValue.textContent = account.creditsLeft.toLocaleString("en-US");
-  if (usedValue) usedValue.textContent = `Used ${Math.max(0, state.flow.monthlyCredits - account.creditsLeft).toLocaleString("en-US")}`;
+  const videosMadeEl = card?.querySelector(".flow-videos-made");
+  const usedValEl = card?.querySelector(".flow-used-val");
+  const used = Math.max(0, state.flow.monthlyCredits - newVal);
+  const cpv = state.flow.creditsPerVideo || 15;
+  const videosMade = Math.floor(used / cpv);
+
+  if (leftValue) leftValue.textContent = newVal.toLocaleString("en-US");
+  if (videosMadeEl) videosMadeEl.textContent = `🎬 ${videosMade} video${videosMade !== 1 ? "s" : ""} made`;
+  if (usedValEl) usedValEl.textContent = `${used.toLocaleString("en-US")} used`;
+
   saveState();
-  if (event.type === "change") renderFlow();
 }
 
 function renderFlowCalendar() {
@@ -589,11 +733,16 @@ function handleFlowResetDay(event) {
   renderSettings();
 }
 
+// ============================================================
+// SETTINGS
+// ============================================================
+
 function renderSettings() {
   el.geminiCycleHours.value = (state.gemini.cycleMinutes / 60).toString();
   el.geminiWindowMinutes.value = state.gemini.windowMinutes;
   el.geminiVideoLimit.value = state.gemini.videosPerAccount;
   el.flowMonthlyCredits.value = state.flow.monthlyCredits;
+  el.flowCreditsPerVideo.value = state.flow.creditsPerVideo || 15;
   el.flowReminderThreshold.value = state.flow.reminderThreshold;
   renderSettingsAccountList("gemini");
   renderSettingsAccountList("flow");
@@ -602,14 +751,17 @@ function renderSettings() {
 function renderSettingsAccountList(type) {
   const target = type === "gemini" ? el.geminiSettingsAccounts : el.flowSettingsAccounts;
   const accounts = type === "gemini" ? state.gemini.accounts : state.flow.accounts;
+
   target.innerHTML = accounts.map((account) => `
     <div class="settings-account ${type}">
       <input class="settings-name" value="${escapeAttribute(account.name)}" data-type="${type}" data-id="${account.id}" aria-label="${type} account name">
       ${type === "gemini"
-        ? `<input class="settings-time" type="time" value="${account.time}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} start reset time">
-          <input class="settings-anchor-date" type="date" value="${account.anchorDate}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} start reset date">`
-        : `<input class="settings-reset-day" type="number" min="1" max="31" value="${account.resetDay}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} reset day">`}
-      <button class="remove-account" type="button" data-type="${type}" data-id="${account.id}" title="Remove ${escapeAttribute(account.name)}">x</button>
+        ? `<input class="settings-time" type="time" value="${account.time}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} reset time">
+           <button class="remove-account" type="button" data-type="${type}" data-id="${account.id}" title="Remove ${escapeAttribute(account.name)}">x</button>
+           <input class="settings-anchor-date" type="date" value="${account.anchorDate}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} anchor date">
+           <input class="settings-autofill" type="number" min="0" max="99" value="${account.autofill ?? state.gemini.videosPerAccount}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} autofill count" title="Videos when toggled ON" placeholder="Auto" inputmode="numeric">`
+        : `<input class="settings-reset-day" type="number" min="1" max="31" value="${account.resetDay}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} reset day" inputmode="numeric">
+           <button class="remove-account" type="button" data-type="${type}" data-id="${account.id}" title="Remove ${escapeAttribute(account.name)}">x</button>`}
     </div>
   `).join("");
 
@@ -643,6 +795,15 @@ function renderSettingsAccountList(type) {
       rebuild();
     });
   });
+  target.querySelectorAll(".settings-autofill").forEach((input) => {
+    input.addEventListener("change", () => {
+      const account = state.gemini.accounts.find((item) => item.id === input.dataset.id);
+      if (!account) return;
+      account.autofill = clampNumber(input.value, 0, 99);
+      saveState();
+      playTone("tap");
+    });
+  });
   target.querySelectorAll(".settings-reset-day").forEach((input) => {
     input.addEventListener("change", () => {
       const account = state.flow.accounts.find((item) => item.id === input.dataset.id);
@@ -667,6 +828,10 @@ function renderSettingsAccountList(type) {
   });
 }
 
+// ============================================================
+// SCHEDULE BUILDER
+// ============================================================
+
 function buildDaySchedule(date) {
   const start = startOfDay(date);
   return buildScheduleBetween(start, addDays(start, 1));
@@ -677,18 +842,15 @@ function buildMonthSchedule(date) {
   return buildScheduleBetween(start, new Date(date.getFullYear(), date.getMonth() + 1, 1));
 }
 
-// Four fixed 6-hour display windows per day: 12AM–6AM, 6AM–12PM, 12PM–6PM, 6PM–12AM.
-// Each account appears once per overlapping 5-hour cycle within the window.
-// An account can appear twice if two of its cycles overlap the same 6-hour window.
-// Every order entry embeds cycleStart + entryKey + isCarryOver for unambiguous logging.
+// Four fixed 6-hour display windows per day.
+// Each account appears once per overlapping cycle within the window.
 function buildScheduleBetween(rangeStart, rangeEnd) {
   if (!state.gemini.accounts.length) return [];
 
-  const SLOT_MS = 6 * 3600000; // 6-hour fixed window
+  const SLOT_MS = 6 * 3600000;
   const cycleMs = state.gemini.cycleMinutes * 60000;
   const rows = [];
 
-  // Start from the 6-hour boundary (0h/6h/12h/18h) at or before rangeStart
   let slotStart = alignToWindowSlot(rangeStart);
 
   while (slotStart.getTime() < rangeEnd.getTime()) {
@@ -700,17 +862,11 @@ function buildScheduleBetween(rangeStart, rangeEnd) {
         const resetMs = runtimeAccount(account).reset.getTime();
         const slotStartMs = slotStart.getTime();
         const slotEndMs = slotEnd.getTime();
-
-        // Only include cycles whose START falls within [slotStart, slotEnd).
-        // firstN = first n where resetMs + n*cycleMs >= slotStartMs.
-        // Negative n is valid: cycles extend backwards from the anchor date.
         const firstN = Math.ceil((slotStartMs - resetMs) / cycleMs);
 
         for (let n = firstN; ; n++) {
           const cycleStartMs = resetMs + n * cycleMs;
-          if (cycleStartMs >= slotEndMs) break; // Past the window, done
-          // cycleStartMs >= slotStartMs is guaranteed by firstN
-
+          if (cycleStartMs >= slotEndMs) break;
           const cycleStart = new Date(cycleStartMs);
           const entryKey = `${account.id}-${dateKey(cycleStart)}-${pad(cycleStart.getHours())}${pad(cycleStart.getMinutes())}`;
           orderEntries.push({
@@ -718,13 +874,12 @@ function buildScheduleBetween(rangeStart, rangeEnd) {
             name: account.name,
             time: account.time,
             anchorDate: account.anchorDate,
-            cycleStart,   // exact start of THIS 5-hour cycle
-            entryKey,     // unique storage key for this appearance
+            cycleStart,
+            entryKey,
           });
         }
       });
 
-      // Sort chronologically so the earliest cycle appears first
       orderEntries.sort((a, b) => a.cycleStart - b.cycleStart);
 
       rows.push({
@@ -741,7 +896,6 @@ function buildScheduleBetween(rangeStart, rangeEnd) {
   return rows;
 }
 
-// Returns the 6-hour boundary (0h, 6h, 12h, 18h) at or before the given date
 function alignToWindowSlot(date) {
   const slotHour = Math.floor(date.getHours() / 6) * 6;
   return new Date(date.getFullYear(), date.getMonth(), date.getDate(), slotHour, 0, 0, 0);
@@ -756,20 +910,17 @@ function focusedWindowIndex() {
   return Math.max(0, daySchedule.length - 1);
 }
 
-// Locked = cycle hasn't started yet (can't log future resets).
-// Returns entryKeys so duplicated accounts are disambiguated correctly.
+// Locked = cycle hasn't started yet
 function lockedAccountsForRow(row) {
   const now = new Date();
-  if (row.end <= now) return []; // Entire window is past — nothing locked
+  if (row.end <= now) return [];
   return row.order
     .filter((entry) => entry.cycleStart > now)
     .map((entry) => entry.entryKey);
 }
 
 function accountCycleEntryKey(row, account) {
-  // Prefer the pre-computed entryKey embedded in order entries (always unambiguous)
   if (account.entryKey) return account.entryKey;
-  // Fallback for migration/legacy paths that pass raw state accounts
   const cycle = accountCycleFor(account, accountCycleReferenceDate(row));
   return `${account.id}-${dateKey(cycle.start)}-${pad(cycle.start.getHours())}${pad(cycle.start.getMinutes())}`;
 }
@@ -798,7 +949,6 @@ function rowById(id) {
 function rowTotals(row) {
   const lockedKeys = lockedAccountsForRow(row);
   const activeEntries = row.order.filter((entry) => !lockedKeys.includes(entry.entryKey));
-  // max = ALL entries (including upcoming/locked) so the denominator always shows window capacity
   const max = row.order.length * state.gemini.videosPerAccount;
   const done = activeEntries.reduce((sum, entry) => sum + getAccountCount(row, entry), 0);
   const missed = row.end < new Date() ? Math.max(0, max - done) : 0;
@@ -815,14 +965,14 @@ function totalsForSchedule(schedule) {
   }, { achieved: 0, potential: 0, missedVideos: 0 });
 }
 
+// No upper clamp — allows custom counts (e.g. 33) entered via prompt
 function getAccountCount(row, account) {
   const key = accountCycleEntryKey(row, account);
-  return clampNumber(state.gemini.cycleEntries?.[key]?.count || 0, 0, state.gemini.videosPerAccount);
+  return Math.max(0, Math.round(Number(state.gemini.cycleEntries?.[key]?.count || 0)));
 }
 
 function setAccountCount(row, account, count) {
   const key = accountCycleEntryKey(row, account);
-  // Use embedded cycleStart when available (always the case for new order entries)
   const cycleStart = account.cycleStart instanceof Date
     ? account.cycleStart
     : accountCycleFor(account, accountCycleReferenceDate(row)).start;
@@ -831,11 +981,15 @@ function setAccountCount(row, account, count) {
     accountId: account.id,
     cycleStart: cycleStart.toISOString(),
     cycleEnd: cycleEnd.toISOString(),
-    count: clampNumber(count, 0, state.gemini.videosPerAccount),
+    count: Math.max(0, Math.round(Number(count)) || 0),
     updatedAt: new Date().toISOString(),
   };
   saveState();
 }
+
+// ============================================================
+// FLOW RESETS & REMINDERS
+// ============================================================
 
 function applyFlowResets() {
   const now = new Date();
@@ -893,6 +1047,10 @@ function daysUntil(date) {
   return Math.max(0, Math.ceil((startOfDay(date) - startOfDay(new Date())) / 86400000));
 }
 
+// ============================================================
+// DATE NAV
+// ============================================================
+
 function changeDay(offset) {
   const next = addDays(selectedDate(), offset);
   state.selectedDate = dateKey(next);
@@ -904,13 +1062,20 @@ function changeDay(offset) {
 
 function scrollToCurrentWindow() {
   requestAnimationFrame(() => {
-    const target = document.querySelector(".window-card.is-current") || document.querySelector(".window-card[open]") || document.querySelector("#geminiView");
+    const target =
+      document.querySelector(".window-card.is-current") ||
+      document.querySelector(".window-card[open]") ||
+      document.querySelector("#geminiView");
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
   });
 }
 
+// ============================================================
+// DOWNLOAD / UPLOAD
+// ============================================================
+
 function downloadJson() {
-  const payload = { app: "Gemini Flow Tracker", version: 1, exportedAt: new Date().toISOString(), state };
+  const payload = { app: "Gemini Flow Tracker", version: 2, exportedAt: new Date().toISOString(), state };
   downloadFile(`gemini-flow-backup-${dateKey(new Date())}.json`, JSON.stringify(payload, null, 2), "application/json");
 }
 
@@ -946,6 +1111,10 @@ function downloadFile(filename, content, type) {
   URL.revokeObjectURL(url);
 }
 
+// ============================================================
+// STATE — defaults, normalise, persist
+// ============================================================
+
 function loadState() {
   const saved = loadJson(STORAGE_KEY, null);
   if (saved) return saved;
@@ -958,16 +1127,17 @@ function loadState() {
       name: cleanName(account.name),
       time: account.time || "12:00",
       anchorDate: dateKey(new Date()),
+      autofill: fresh.gemini.videosPerAccount,
     }));
     if (!fresh.gemini.accounts.some((account) => account.id === "anoy")) {
-      fresh.gemini.accounts.push({ id: "anoy", name: "ANOY", time: "18:35", anchorDate: dateKey(new Date()) });
+      fresh.gemini.accounts.push({ id: "anoy", name: "ANOY", time: "14:18", anchorDate: dateKey(new Date()), autofill: 4 });
     }
   }
   Object.entries(oldEntries || {}).forEach(([rowId, entry]) => {
     if (!entry || !Number(entry.count)) return;
     fresh.gemini.entries[rowId] = { accounts: {}, updatedAt: entry.updatedAt || "" };
     const first = fresh.gemini.accounts[0];
-    if (first) fresh.gemini.entries[rowId].accounts[first.id] = clampNumber(entry.count, 0, fresh.gemini.videosPerAccount);
+    if (first) fresh.gemini.entries[rowId].accounts[first.id] = Math.max(0, Math.round(Number(entry.count) || 0));
   });
   return fresh;
 }
@@ -987,7 +1157,13 @@ function defaultGeminiSettings() {
     cycleMinutes: 300,
     windowMinutes: 60,
     videosPerAccount: 4,
-    accounts: DEFAULT_NAMES.map((name, index) => ({ id: name.toLowerCase(), name, time: DEFAULT_TIMES[index], anchorDate: dateKey(new Date()) })),
+    accounts: DEFAULT_NAMES.map((name, index) => ({
+      id: name.toLowerCase(),
+      name,
+      time: DEFAULT_TIMES[index],
+      anchorDate: dateKey(new Date()),
+      autofill: 4,
+    })),
     entries: {},
     cycleEntries: {},
   };
@@ -996,13 +1172,14 @@ function defaultGeminiSettings() {
 function defaultFlowSettings() {
   return {
     monthlyCredits: 1000,
+    creditsPerVideo: 15,
     reminderThreshold: 20,
     history: {},
     accounts: DEFAULT_NAMES.map((name, index) => ({
       id: name.toLowerCase(),
       name,
       creditsLeft: 1000,
-      resetDay: Math.min(28, index + 1),
+      resetDay: DEFAULT_FLOW_RESET_DAYS[index],
       lastResetMonth: "",
       lastReminderKey: "",
     })),
@@ -1024,9 +1201,10 @@ function normalizeState(source) {
   next.gemini.videosPerAccount = clampNumber(next.gemini.videosPerAccount, 0, 20);
   next.gemini.accounts = normalizeGeminiAccounts(next.gemini.accounts);
   next.gemini.entries = next.gemini.entries || {};
-  next.gemini.cycleEntries = normalizeGeminiCycleEntries(next.gemini.cycleEntries, next.gemini.videosPerAccount);
+  next.gemini.cycleEntries = normalizeGeminiCycleEntries(next.gemini.cycleEntries);
   migrateWindowEntriesToCycles(next.gemini);
   next.flow.monthlyCredits = clampNumber(next.flow.monthlyCredits, 1, 100000);
+  next.flow.creditsPerVideo = clampNumber(next.flow.creditsPerVideo || 15, 1, 10000);
   next.flow.reminderThreshold = clampNumber(next.flow.reminderThreshold, 0, 100000);
   next.flow.history = normalizeFlowHistory(next.flow.history);
   next.flow.accounts = normalizeFlowAccounts(next.flow.accounts, next.flow.monthlyCredits);
@@ -1042,10 +1220,11 @@ function normalizeGeminiAccounts(accounts) {
       name: cleanName(account.name),
       time: /^\d{2}:\d{2}$/.test(account.time || "") ? account.time : "12:00",
       anchorDate: isDateKey(account.anchorDate) ? account.anchorDate : dateKey(new Date()),
+      autofill: clampNumber(account.autofill ?? 4, 0, 99),
     }));
 }
 
-function normalizeGeminiCycleEntries(entries, max) {
+function normalizeGeminiCycleEntries(entries) {
   if (!entries || typeof entries !== "object" || Array.isArray(entries)) return {};
   return Object.fromEntries(
     Object.entries(entries)
@@ -1054,7 +1233,7 @@ function normalizeGeminiCycleEntries(entries, max) {
         accountId: entry.accountId,
         cycleStart: entry.cycleStart || "",
         cycleEnd: entry.cycleEnd || "",
-        count: clampNumber(entry.count, 0, max),
+        count: Math.max(0, Math.round(Number(entry.count) || 0)),
         updatedAt: entry.updatedAt || "",
       }])
   );
@@ -1075,7 +1254,7 @@ function migrateWindowEntriesToCycles(gemini) {
         accountId: account.id,
         cycleStart: cycle.start.toISOString(),
         cycleEnd: cycle.end.toISOString(),
-        count: clampNumber(count, 0, gemini.videosPerAccount),
+        count: Math.max(0, Math.round(Number(count) || 0)),
         updatedAt: entry.updatedAt || "",
       };
     });
@@ -1113,16 +1292,20 @@ function normalizeFlowHistory(history) {
   );
 }
 
+// ============================================================
+// ACCOUNT RUNTIME
+// ============================================================
+
 function runtimeAccount(account) {
   return { ...account, reset: referenceDateFromAccount(account) };
 }
 
+// Anchor date + time = fixed reference point; all future cycles project from here
 function referenceDateFromAccount(account) {
   const [hour, minute] = account.time.split(":").map(Number);
   const anchor = parseDateKey(account.anchorDate || dateKey(new Date()));
   return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), hour, minute, 0, 0);
 }
-
 
 function nextResetAfter(account, date) {
   if (date < account.reset) return new Date(account.reset);
@@ -1131,6 +1314,10 @@ function nextResetAfter(account, date) {
   const cycles = Math.floor(elapsed / cycleMs) + 1;
   return addMinutes(account.reset, cycles * state.gemini.cycleMinutes);
 }
+
+// ============================================================
+// GRADIENT HELPERS
+// ============================================================
 
 function dayGradient(ratio) {
   const clamped = Math.max(0, Math.min(1, ratio));
@@ -1152,6 +1339,10 @@ function windowStateLabel(row) {
   if (row.start > now) return "Upcoming";
   return "Past";
 }
+
+// ============================================================
+// DATE HELPERS
+// ============================================================
 
 function selectedDate() {
   return parseDateKey(state.selectedDate);
@@ -1249,6 +1440,10 @@ function loadJson(key, fallback) {
     return fallback;
   }
 }
+
+// ============================================================
+// UI HELPERS
+// ============================================================
 
 function updateSoundButton() {
   el.soundButton.classList.toggle("active", Boolean(state.sound));

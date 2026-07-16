@@ -24,6 +24,7 @@
 
 html {
   color-scheme: dark;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -45,9 +46,9 @@ button {
 }
 
 .app-shell {
-  width: min(980px, calc(100% - 24px));
+  width: min(980px, calc(100% - 16px));
   margin: 0 auto;
-  padding: max(12px, env(safe-area-inset-top)) 0 32px;
+  padding: max(12px, env(safe-area-inset-top)) 0 max(32px, env(safe-area-inset-bottom));
 }
 
 .app-header,
@@ -115,12 +116,14 @@ h3 {
   background: rgba(255, 255, 255, 0.055);
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .icon-button,
 .small-button,
 .mode-button {
-  min-height: 36px;
+  min-height: 40px;
   border-radius: 999px;
   font-weight: 800;
 }
@@ -134,14 +137,14 @@ h3 {
 }
 
 .small-button {
-  padding: 0 13px;
+  padding: 0 14px;
 }
 
 .square-button {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 12px;
 }
 
@@ -163,19 +166,23 @@ h3 {
 }
 
 button:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 .icon-button svg,
 .square-button svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
 }
+
+/* ============================================================
+   MODE TOGGLE
+   ============================================================ */
 
 .mode-toggle {
   display: grid;
@@ -205,6 +212,10 @@ button:active {
 .mode-view.active {
   display: block;
 }
+
+/* ============================================================
+   PANELS & CARDS
+   ============================================================ */
 
 .panel,
 .window-card,
@@ -243,13 +254,17 @@ input {
 
 .day-nav input {
   width: 142px;
-  min-height: 38px;
+  min-height: 40px;
   padding: 0 9px;
 }
 
+/* ============================================================
+   STAT STRIP
+   ============================================================ */
+
 .stat-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
   margin-bottom: 10px;
 }
@@ -264,7 +279,7 @@ input {
 
 .stat-strip span,
 .window-kicker,
-.credit-slider span,
+.flow-credit-label,
 .settings-section label span {
   display: block;
   color: var(--muted);
@@ -282,6 +297,10 @@ input {
   font-size: clamp(1.25rem, 5vw, 1.65rem);
   line-height: 1;
 }
+
+/* ============================================================
+   CALENDAR
+   ============================================================ */
 
 .calendar-wrap {
   padding-top: 2px;
@@ -335,6 +354,7 @@ input {
   color: white;
   background: var(--day-bg);
   text-align: left;
+  touch-action: manipulation;
 }
 
 .calendar-day.selected {
@@ -364,6 +384,10 @@ input {
   line-height: 1;
 }
 
+/* ============================================================
+   GEMINI WINDOW CARDS
+   ============================================================ */
+
 .window-list,
 .flow-list {
   display: grid;
@@ -390,7 +414,7 @@ input {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 58px;
+  min-height: 62px;
   padding: 10px 12px;
   cursor: pointer;
   list-style: none;
@@ -410,19 +434,39 @@ input {
 }
 
 .summary-score {
-  min-width: 72px;
-  text-align: right;
-}
-
-.summary-score b {
-  display: block;
-  font-size: 1.05rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
 .summary-score span {
-  display: block;
   color: var(--muted);
   font-size: 0.72rem;
+}
+
+/* Tappable score number — opens prompt to set custom total */
+.score-count-btn {
+  display: grid;
+  place-items: center;
+  min-width: 48px;
+  min-height: 42px;
+  padding: 4px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  font-size: 1.4rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 120ms ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.score-count-btn:hover,
+.score-count-btn:active {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .account-sliders {
@@ -437,24 +481,26 @@ input {
   padding: 0 10px 7px;
 }
 
+/* Fill-all toggle switch */
 .fill-window-button {
   position: relative;
-  width: 48px;
-  height: 28px;
+  width: 52px;
+  height: 30px;
   padding: 0;
   border: 1px solid var(--panel-line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease;
+  touch-action: manipulation;
 }
 
 .fill-window-button span {
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 999px;
   background: var(--muted);
   transition: transform 160ms ease, background 160ms ease;
@@ -466,160 +512,175 @@ input {
 }
 
 .fill-window-button.active span {
-  transform: translateX(20px);
+  transform: translateX(22px);
   background: var(--green);
 }
 
+/* ============================================================
+   ACCOUNT ROW — toggle-based, no range slider
+   ============================================================ */
+
 .account-row {
   display: grid;
-  grid-template-columns: minmax(130px, 1.2fr) minmax(100px, 1.2fr) 45px;
-  gap: 8px;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
   align-items: center;
-  min-height: 46px;
-  padding: 7px;
+  min-height: 68px;
+  padding: 10px 12px;
   border: 1px solid var(--panel-line);
   border-radius: 12px;
+  /* Left portion coloured based on completion % */
   background: linear-gradient(90deg, rgba(54, 217, 138, 0.18) 0 var(--fill), rgba(255, 255, 255, 0.045) var(--fill) 100%);
   transition: background 120ms linear, border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.account-row.carry-over {
-  border-color: rgba(245, 196, 81, 0.6);
-  box-shadow: inset 0 0 0 1px rgba(245, 196, 81, 0.18), 0 0 18px rgba(245, 196, 81, 0.09);
-  background: linear-gradient(90deg, rgba(245, 196, 81, 0.22) 0 var(--fill), rgba(245, 196, 81, 0.085) var(--fill) 100%);
-}
-
-.account-row.carry-over .account-meta small::after {
-  color: var(--yellow);
-  content: " still open";
-}
-
 .account-row.is-locked {
-  opacity: 0.52;
-  border-color: rgba(255, 255, 255, 0.08);
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.045) 0 var(--fill), rgba(255, 255, 255, 0.025) var(--fill) 100%);
-}
-
-.account-row.is-locked .account-meta small::after {
-  color: var(--subtle);
-  content: " (upcoming)";
-}
-
-.account-row.is-locked input[type="range"] {
-  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: rgba(255, 255, 255, 0.07);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 var(--fill), rgba(255, 255, 255, 0.02) var(--fill) 100%);
 }
 
 .account-row.is-live {
   border-color: rgba(54, 217, 138, 0.65);
-  box-shadow: 0 0 10px rgba(54, 217, 138, 0.15);
+  box-shadow: 0 0 12px rgba(54, 217, 138, 0.14);
   background: linear-gradient(90deg, rgba(54, 217, 138, 0.22) 0 var(--fill), rgba(255, 255, 255, 0.065) var(--fill) 100%);
 }
 
 .account-row.is-grey {
-  opacity: 0.45;
+  opacity: 0.44;
   filter: grayscale(100%);
   border-color: rgba(255, 255, 255, 0.06);
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 var(--fill), rgba(255, 255, 255, 0.02) var(--fill) 100%);
 }
 
+/* Account name + time + countdown */
 .account-meta {
   min-width: 0;
 }
 
-.account-meta b,
-.account-meta small {
+.account-meta b {
   display: block;
+  font-size: 0.95rem;
+  font-weight: 800;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.account-meta b {
-  font-size: 0.9rem;
-}
-
-/* Muted cycle-time bracket shown next to account name: TRI (12:38 PM – 5:38 PM) */
+/* Time range on its own line, fully readable */
 .cycle-range {
-  font-size: 0.78em;
-  font-weight: 400;
-  color: var(--subtle);
-  letter-spacing: 0;
-}
-
-.account-meta small {
-  margin-top: 2px;
+  display: block;
+  margin-top: 3px;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-input[type="range"] {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 100%;
-  height: 28px;
+/* Countdown: colour indicates urgency */
+.account-meta small {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.reset-ok   { color: var(--green); }
+.reset-warn { color: var(--yellow); }
+.reset-urgent { color: var(--red); }
+
+/* Right side: toggle + count */
+.account-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Toggle pill */
+.gemini-toggle {
+  position: relative;
+  width: 54px;
+  height: 30px;
+  flex-shrink: 0;
   padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  touch-action: pan-y;
-}
-
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 8px;
+  border: 1px solid var(--panel-line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
+.gemini-toggle span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
   width: 22px;
   height: 22px;
-  margin-top: -7px;
-  border: 3px solid #0f1013;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--cyan), var(--blue));
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  background: var(--muted);
+  transition: transform 160ms ease, background 160ms ease;
+  pointer-events: none;
 }
 
-input[type="range"]:active::-webkit-slider-thumb {
-  transform: scale(1.14);
-  box-shadow: 0 0 0 7px rgba(54, 213, 232, 0.16), 0 4px 12px rgba(0, 0, 0, 0.42);
+.gemini-toggle.is-on {
+  border-color: rgba(54, 217, 138, 0.6);
+  background: rgba(54, 217, 138, 0.28);
 }
 
-input[type="range"]::-moz-range-track {
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+.gemini-toggle.is-on span {
+  transform: translateX(24px);
+  background: var(--green);
 }
 
-input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border: 3px solid #0f1013;
-  border-radius: 999px;
-  background: var(--cyan);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+.gemini-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
 }
 
-input[type="range"]:disabled::-webkit-slider-thumb {
-  background: var(--subtle);
-  box-shadow: none;
-}
-
-input[type="range"]:disabled::-moz-range-thumb {
-  background: var(--subtle);
-  box-shadow: none;
-}
-
-.account-row output {
+/* Tappable count — opens prompt for custom value */
+.account-count-btn {
+  display: grid;
+  place-items: center;
+  min-width: 46px;
+  min-height: 46px;
+  padding: 0 8px;
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 1.2rem;
   font-weight: 900;
-  text-align: right;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
+
+.account-count-btn.is-on {
+  color: var(--cyan);
+  border-color: rgba(54, 213, 232, 0.42);
+  background: rgba(54, 213, 232, 0.12);
+}
+
+.account-count-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   FLOW CARDS — compact 3-row layout
+   ============================================================ */
 
 .flow-card {
-  padding: 12px;
+  padding: 8px 10px;
   border-color: rgba(54, 213, 232, 0.16);
+  /* Left portion coloured = credits remaining */
   background: linear-gradient(90deg, rgba(54, 213, 232, 0.18) 0 var(--fill), rgba(167, 139, 250, 0.055) var(--fill) 100%), var(--panel-soft);
   box-shadow: none;
   transition: background 120ms linear;
@@ -627,40 +688,92 @@ input[type="range"]:disabled::-moz-range-thumb {
 
 .flow-top {
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 7px;
 }
 
-.flow-top strong {
-  font-size: 1.65rem;
-  line-height: 1;
-}
-
-.credit-slider {
-  display: grid;
-  gap: 2px;
-}
-
-.flow-bottom {
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 0.78rem;
+.flow-top h3 {
+  font-size: 0.98rem;
+  margin: 0;
   font-weight: 800;
 }
 
-.flow-bottom label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.flow-top strong {
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
-.flow-bottom input {
-  width: 58px;
-  min-height: 32px;
-  padding: 0 7px;
+/* Credit input + Full button on one row */
+.flow-credit-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.flow-credit-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: right;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  -moz-appearance: textfield;
+}
+
+.flow-credit-input::-webkit-inner-spin-button,
+.flow-credit-input::-webkit-outer-spin-button {
+  opacity: 0.5;
+  height: 28px;
+}
+
+.flow-credit-input:focus {
+  border-color: rgba(54, 213, 232, 0.5);
+  outline: none;
+  background: rgba(54, 213, 232, 0.07);
+}
+
+/* Meta row: videos made · used · reset day */
+.flow-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  flex-wrap: wrap;
+}
+
+.flow-videos-made {
+  color: var(--cyan);
+}
+
+.flow-used-val {
+  color: var(--muted);
+}
+
+.flow-reset-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--subtle);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.flow-reset-label input {
+  width: 46px;
+  min-height: 28px;
+  padding: 0 4px;
+  font-size: 0.76rem;
+  border-radius: 8px;
 }
 
 .flow-alerts {
@@ -677,8 +790,12 @@ input[type="range"]:disabled::-moz-range-thumb {
   margin-top: 4px;
 }
 
+/* ============================================================
+   SETTINGS DIALOG
+   ============================================================ */
+
 .settings-dialog {
-  width: min(920px, calc(100% - 20px));
+  width: min(920px, calc(100% - 16px));
   max-height: min(780px, calc(100vh - 24px));
   padding: 0;
   border: 0;
@@ -739,7 +856,7 @@ input[type="range"]:disabled::-moz-range-thumb {
 .add-row input,
 .settings-account input {
   width: 100%;
-  min-height: 38px;
+  min-height: 40px;
   padding: 0 9px;
 }
 
@@ -749,33 +866,43 @@ input[type="range"]:disabled::-moz-range-thumb {
   margin-top: 3px;
 }
 
+/* Flow account row: name | reset-day | remove */
 .settings-account,
 .add-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(82px, 0.7fr) 34px;
+  grid-template-columns: minmax(0, 1fr) minmax(68px, 0.55fr) 34px;
   gap: 6px;
 }
 
+/* Gemini account rows:
+   Row 1: name | time | remove
+   Row 2: anchor-date (col 1-2) | autofill (col 3)        */
 .settings-account.gemini {
-  grid-template-columns: minmax(0, 1fr) minmax(82px, 0.7fr) 34px;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 0.6fr) 34px;
 }
 
 .settings-account.gemini .settings-anchor-date {
   grid-column: 1 / 3;
 }
 
+/* settings-autofill naturally flows to col 3 of the second row */
+.settings-autofill {
+  /* no extra placement needed */
+}
+
 .add-row {
-  grid-template-columns: minmax(0, 1fr) minmax(82px, 0.7fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(68px, 0.55fr) auto;
 }
 
 .remove-account {
   width: 34px;
-  min-height: 38px;
+  min-height: 40px;
   border: 1px solid rgba(255, 69, 58, 0.3);
   border-radius: 11px;
   color: var(--red);
   background: rgba(255, 95, 87, 0.09);
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .empty-state {
@@ -792,9 +919,13 @@ summary:focus-visible {
   outline-offset: 2px;
 }
 
+/* ============================================================
+   RESPONSIVE — mobile first
+   ============================================================ */
+
 @media (max-width: 760px) {
   .app-shell {
-    width: min(100% - 14px, 980px);
+    width: min(100% - 12px, 980px);
     padding-top: 8px;
   }
 
@@ -825,7 +956,7 @@ summary:focus-visible {
 
   .day-nav {
     display: grid;
-    grid-template-columns: 38px minmax(0, 1fr) 38px auto;
+    grid-template-columns: 40px minmax(0, 1fr) 40px auto;
   }
 
   .day-nav input {
@@ -833,17 +964,17 @@ summary:focus-visible {
   }
 
   .stat-strip {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 5px;
   }
 
   .stat-strip div {
-    min-height: 50px;
+    min-height: 52px;
     padding: 7px;
   }
 
   .stat-strip span {
-    font-size: 0.6rem;
+    font-size: 0.58rem;
   }
 
   .stat-strip strong {
@@ -851,12 +982,11 @@ summary:focus-visible {
   }
 
   .calendar-grid {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 4px;
   }
 
   .calendar-day {
-    min-height: 38px;
+    min-height: 40px;
     padding: 5px;
     border-radius: 8px;
   }
@@ -874,24 +1004,28 @@ summary:focus-visible {
   }
 
   .window-summary {
-    min-height: 52px;
+    min-height: 58px;
     padding: 8px 10px;
   }
 
   .account-row {
-    grid-template-columns: minmax(76px, 0.8fr) minmax(88px, 1.3fr) 38px;
-    gap: 6px;
-    min-height: 42px;
-    padding: 6px;
+    min-height: 62px;
+    padding: 9px 10px;
+    gap: 8px;
   }
 
   .account-meta b {
-    font-size: 0.82rem;
+    font-size: 0.88rem;
+  }
+
+  .cycle-range {
+    font-size: 0.76rem;
   }
 
   .account-meta small {
-    font-size: 0.66rem;
+    font-size: 0.74rem;
   }
+
 
   .settings-grid {
     grid-template-columns: 1fr;
@@ -900,7 +1034,7 @@ summary:focus-visible {
 
 @media (max-width: 430px) {
   .day-nav {
-    grid-template-columns: 38px minmax(0, 1fr) 38px;
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
   }
 
   .today-button {
@@ -916,22 +1050,51 @@ summary:focus-visible {
   }
 
   .summary-score {
-    min-width: 58px;
+    min-width: 48px;
   }
 
-  .summary-score b {
-    font-size: 0.95rem;
-  }
-
-  .summary-score span {
-    font-size: 0.64rem;
+  .score-count-btn {
+    min-width: 44px;
+    min-height: 40px;
+    font-size: 1.25rem;
+    padding: 3px 9px;
   }
 
   .account-row {
-    grid-template-columns: minmax(62px, 0.7fr) minmax(84px, 1fr) 36px;
+    padding: 8px 8px;
+    gap: 6px;
+    min-height: 58px;
   }
 
-  .flow-bottom {
-    align-items: stretch;
+  .account-meta b {
+    font-size: 0.84rem;
+  }
+
+  .cycle-range {
+    font-size: 0.72rem;
+  }
+
+  .account-meta small {
+    font-size: 0.7rem;
+  }
+
+  .gemini-toggle {
+    width: 48px;
+    height: 28px;
+  }
+
+  .gemini-toggle span {
+    width: 20px;
+    height: 20px;
+  }
+
+  .gemini-toggle.is-on span {
+    transform: translateX(20px);
+  }
+
+  .account-count-btn {
+    min-width: 42px;
+    min-height: 42px;
+    font-size: 1.05rem;
   }
 }
