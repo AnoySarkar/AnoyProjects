@@ -757,9 +757,12 @@ function renderSettingsAccountList(type) {
       <input class="settings-name" value="${escapeAttribute(account.name)}" data-type="${type}" data-id="${account.id}" aria-label="${type} account name">
       ${type === "gemini"
         ? `<input class="settings-time" type="time" value="${account.time}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} reset time">
+           <label class="autofill-wrap" title="Videos added when you tap the toggle ON">
+             <span>ON fills</span>
+             <input class="settings-autofill" type="number" min="0" max="999" value="${account.autofill ?? state.gemini.videosPerAccount}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} autofill count" inputmode="numeric">
+           </label>
            <button class="remove-account" type="button" data-type="${type}" data-id="${account.id}" title="Remove ${escapeAttribute(account.name)}">x</button>
-           <input class="settings-anchor-date" type="date" value="${account.anchorDate}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} anchor date">
-           <input class="settings-autofill" type="number" min="0" max="99" value="${account.autofill ?? state.gemini.videosPerAccount}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} autofill count" title="Videos when toggled ON" placeholder="Auto" inputmode="numeric">`
+           <input class="settings-anchor-date" type="date" value="${account.anchorDate}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} anchor date">`
         : `<input class="settings-reset-day" type="number" min="1" max="31" value="${account.resetDay}" data-type="${type}" data-id="${account.id}" aria-label="${escapeAttribute(account.name)} reset day" inputmode="numeric">
            <button class="remove-account" type="button" data-type="${type}" data-id="${account.id}" title="Remove ${escapeAttribute(account.name)}">x</button>`}
     </div>
