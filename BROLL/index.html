@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>B-Roll Tracker — MindFrame</title>
+  <meta name="description" content="Multi-script B-roll tracker with scoring, prompt library, heatmap and undo/redo." />
+  <meta name="theme-color" content="#08080f" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ══ STICKY TOP ══════════════════════════════════════════ -->
+  <div id="sticky-top">
+
+    <!-- Project / Script Tabs -->
+    <div id="project-bar" role="tablist" aria-label="Scripts"></div>
+
+    <!-- Header -->
+    <header id="top-header">
+      <div class="logo">
+        <div class="logo-icon" aria-hidden="true">🎬</div>
+        <span class="logo-name">B-Roll Tracker</span>
+      </div>
+
+      <div class="hdr-stats">
+        <div class="hpill"><span class="hpill-v" id="st-total">0</span><span class="hpill-l">clips</span></div>
+        <div class="hpill c-accent"><span class="hpill-v" id="st-scored">0/0</span><span class="hpill-l">scored</span></div>
+        <div class="hpill c-green"><span class="hpill-v" id="st-green">0</span><span class="hpill-l">≥9</span></div>
+        <div class="hpill"><span class="hpill-v" id="st-avg">—</span><span class="hpill-l">avg</span></div>
+      </div>
+
+      <div class="hdr-actions">
+        <button class="hbtn undo-btn disabled" id="btn-undo" disabled title="Undo (Ctrl+Z)">↩</button>
+        <button class="hbtn redo-btn disabled" id="btn-redo" disabled title="Redo (Ctrl+Y)">↪</button>
+        <div class="ur-sep"></div>
+        <button class="hbtn" id="btn-reset"  title="Reset scores">↺ <span>Reset</span></button>
+        <button class="hbtn" id="btn-export" title="Export JSON">📥 <span>Export</span></button>
+        <button class="hbtn" id="btn-import" title="Import JSON">📤 <span>Import</span></button>
+        <button class="hbtn danger" id="btn-clear" title="Clear this script">🗑 <span>Clear</span></button>
+      </div>
+    </header>
+
+    <!-- Heatmap -->
+    <div id="heatmap-panel">
+      <div class="hm-header">
+        <span class="hm-label">Overview</span>
+        <span class="hm-sub" id="hm-hint">load a script to begin</span>
+      </div>
+      <div id="heatmap-grid" role="list"></div>
+      <div class="hm-progress">
+        <span class="hm-prog-label">Scored</span>
+        <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-s" style="background:linear-gradient(90deg,#6c6dfa,#a594ff);width:0%"></div></div>
+        <span class="hm-prog-pct" id="prog-s-pct">0%</span>
+        <span class="hm-prog-label" style="margin-left:8px">≥9</span>
+        <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-g" style="background:linear-gradient(90deg,#2a7a2a,#00922e);width:0%"></div></div>
+        <span class="hm-prog-pct" id="prog-g-pct">0%</span>
+      </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div id="filter-bar" class="hidden" role="search">
+      <button class="chip active" data-filter="all"      id="chip-all">All</button>
+      <button class="chip"        data-filter="unscored" id="chip-un">Unscored</button>
+      <button class="chip"        data-filter="needs"    id="chip-needs">Needs Work</button>
+      <button class="chip"        data-filter="above:9"  id="chip-9">9+ ✅</button>
+      <button class="chip"        data-filter="perfect"  id="chip-10">10 🏆</button>
+      <div class="fb-sep"></div>
+      <div class="fb-input-wrap" title="Filter below score">
+        <span>below</span>
+        <input type="number" id="fb-below" min="0" max="10" step="0.5" />
+      </div>
+      <div class="fb-input-wrap" title="Filter above score">
+        <span>above</span>
+        <input type="number" id="fb-above" min="0" max="10" step="0.5" />
+      </div>
+      <span class="fb-count" id="fb-count" aria-live="polite">—</span>
+      <div class="sort-grp">
+        <button class="sort-btn active" data-sort="num"  title="Sort by #">#</button>
+        <button class="sort-btn"        data-sort="asc"  title="Low first">↑</button>
+        <button class="sort-btn"        data-sort="desc" title="High first">↓</button>
+      </div>
+    </div>
+  </div>
+  <!-- /sticky-top -->
+
+  <!-- ══ MAIN CONTENT ════════════════════════════════════════ -->
+  <main id="main-content">
+
+    <!-- Script Input -->
+    <section id="input-section">
+      <div id="input-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <div class="it-left">
+          <span>📋 Script</span>
+          <span class="it-badge" id="it-badge">empty</span>
+        </div>
+        <span class="it-chevron">▲</span>
+      </div>
+      <div id="input-body">
+        <textarea id="script-textarea"
+          placeholder="1 First line of script&#10;2 Second line&#10;3 And so on..."
+          aria-label="Script input" rows="6" spellcheck="false"></textarea>
+        <div class="input-actions">
+          <button class="hbtn primary" id="btn-load">▶ Load Script</button>
+          <span class="inp-hint"><kbd>Ctrl+Enter</kbd> to load</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- B-Roll Cards -->
+    <div id="cards-container" role="list"></div>
+    <div id="no-results" role="status">
+      <p>🔍 No clips match. <a onclick="document.getElementById('chip-all').click()">Show all</a></p>
+    </div>
+    <div id="empty-state" role="status">
+      <div class="empty-icon">🎬</div>
+      <h2 class="empty-title">No script loaded</h2>
+      <p class="empty-sub">Paste a numbered script above and press <strong>Load Script</strong>.</p>
+    </div>
+
+    <!-- ══ COPY SETTINGS ═══════════════════════════════════════ -->
+    <section id="cset-section">
+      <div id="cset-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <span>⚙️ Copy Settings</span>
+        <span class="cset-hint" id="cset-hint">off</span>
+        <span style="flex:1"></span>
+        <span class="it-chevron">▼</span>
+      </div>
+      <div id="cset-body">
+        <div class="cset-flow">
+          <div class="cset-side">
+            <div class="cset-side-hdr">
+              <div>
+                <div class="cset-side-label">📥 PREFIX</div>
+                <div class="cset-side-sub">added before prompt</div>
+              </div>
+              <button class="hbtn" id="cset-clear-pre">Clear</button>
+            </div>
+            <textarea id="cset-prefix" placeholder="Text before…" rows="3"></textarea>
+          </div>
+          <div class="cset-mid">
+            <span class="cset-arrow">↓</span>
+            <div class="cset-mid-pill">PROMPT</div>
+            <span class="cset-arrow">↓</span>
+          </div>
+          <div class="cset-side">
+            <div class="cset-side-hdr">
+              <div>
+                <div class="cset-side-label">📤 SUFFIX</div>
+                <div class="cset-side-sub">added after prompt</div>
+              </div>
+              <button class="hbtn" id="cset-clear-suf">Clear</button>
+            </div>
+            <textarea id="cset-suffix" placeholder="Text after…" rows="3"></textarea>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ VIDEO PROMPT LIBRARY ════════════════════════════════ -->
+    <section id="library-section">
+      <div id="library-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <div class="lib-title">
+          <span>📹 Prompt Library</span>
+          <span class="lib-badge" id="lib-badge">0</span>
+        </div>
+        <span class="it-chevron">▼</span>
+      </div>
+
+      <div id="library-body">
+        <!-- Batch Tabs -->
+        <div id="batch-tab-bar" role="tablist"></div>
+
+        <!-- Tab Panels -->
+        <div id="batch-content-area">
+          <div id="batch-panel-new" role="tabpanel">
+            <textarea id="prompt-textarea"
+              placeholder="Paste BROLL blocks here…"
+              aria-label="Prompt batch input" rows="7" spellcheck="false"></textarea>
+            <div class="lib-actions">
+              <button class="hbtn primary" id="btn-import-prompts">📥 Import</button>
+              <button class="hbtn" id="btn-clear-prompt-input">✕ Clear</button>
+              <button class="hbtn danger" id="btn-clear-prompts" style="margin-left:auto">🗑 All Prompts</button>
+            </div>
+          </div>
+          <div id="batch-panel-detail" class="hidden" role="tabpanel"></div>
+        </div>
+
+        <!-- Prompts view -->
+        <div id="library-view"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<datalist id="score-steps">
+  <option value="0"><option value="0.5"><option value="1"><option value="1.5">
+  <option value="2"><option value="2.5"><option value="3"><option value="3.5">
+  <option value="4"><option value="4.5"><option value="5"><option value="5.5">
+  <option value="6"><option value="6.5"><option value="7"><option value="7.5">
+  <option value="8"><option value="8.5"><option value="9"><option value="9.5">
+  <option value="10">
+</datalist>
+
+<input type="file" id="file-input" accept=".json" class="hidden" />
+<div id="toast" role="alert" aria-live="assertive"></div>
+
+<div id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal-box">
+    <h2 class="modal-title" id="modal-title">Confirm</h2>
+    <div class="modal-sub" id="modal-body">Are you sure?</div>
+    <div class="modal-actions">
+      <button class="hbtn" id="modal-cancel">Cancel</button>
+      <button class="hbtn danger" id="modal-ok">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<button id="jump-top" aria-label="Back to top" title="Back to top">↑</button>
+
+<script src="app.js"></script>
+</body>
+</html>
