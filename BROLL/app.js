@@ -977,4 +977,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   const jt=_el('jump-top');
   window.addEventListener('scroll',()=>jt?.classList.toggle('visible',scrollY>300),{passive:true});
   jt?.addEventListener('click',()=>scrollTo({top:0,behavior:'smooth'}));
+
+  /* Service Worker for PWA / TWA */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').then(
+        reg => console.log('SW registered:', reg.scope),
+        err => console.warn('SW reg failed:', err)
+      );
+    });
+  }
 });

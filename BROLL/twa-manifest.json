@@ -1,0 +1,26 @@
+{
+  "packageId": "com.mindframe.brolltracker",
+  "host": "localhost",
+  "name": "B-Roll Tracker — MindFrame",
+  "launcherName": "B-Roll",
+  "display": "standalone",
+  "themeColor": "#08080F",
+  "navigationColor": "#08080F",
+  "navigationColorDark": "#08080F",
+  "navigationBarColor": "#08080F",
+  "navigationBarColorDark": "#08080F",
+  "backgroundColor": "#08080F",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "icon-512.png",
+  "maskableIconUrl": "icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android-keystore.ks",
+    "alias": "android"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "antigravity-twa"
+}
