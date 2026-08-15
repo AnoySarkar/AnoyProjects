@@ -1,0 +1,22 @@
+{
+  "name": "MindFrame Scheduler",
+  "short_name": "MF Schedule",
+  "description": "Manage and schedule MindFrame content across platforms",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
