@@ -19,11 +19,13 @@ function saveEntries(entries) {
 // ─── State ──────────────────────────────────
 let entries = loadEntries();
 let currentPage = 'home';
-let activeFilter = 'all';
+let activeFilter = 'upcoming';   // default to Upcoming
 let searchQuery = '';
 let editingId = null;
 let pendingDeleteId = null;
 let pendingDateEditId = null;
+let calYear  = new Date().getFullYear();
+let calMonth = new Date().getMonth(); // 0-indexed
 
 // ─── History (undo/redo) ─────────────────────
 const MAX_HISTORY = 50;
@@ -80,10 +82,28 @@ function navigate(page, extra = {}) {
 
   currentPage = page;
 
-  if (page === 'home') renderDashboard();
-  if (page === 'add') setupAddPage(extra);
+  if (page === 'home')     renderDashboard();
+  if (page === 'add')      setupAddPage(extra);
   if (page === 'detail' && extra.id) renderDetail(extra.id);
   if (page === 'settings') renderSettings();
+  if (page === 'calendar') renderCalendar();
+}
+
+// ─── Auto-upload check ──────────────────────
+function checkAutoUpload() {
+  let changed = false;
+  entries = entries.map(e => {
+    if (e.entryStatus === 'scheduled') {
+      const d = e.rawDate ? parseEntryDate(e.rawDate) : null;
+      const s = getStatus(d);
+      if (s === 'today' || s === 'past') {
+        changed = true;
+        return { ...e, entryStatus: 'uploaded' };
+      }
+    }
+    return e;
+  });
+  if (changed) { saveEntries(entries); }
 }
 
 // ─── Toast ──────────────────────────────────
@@ -186,8 +206,35 @@ function daysUntil(dateObj) {
 }
 
 // ─── Type Helpers ───────────────────────────
-const TYPE_LABELS = { P: 'Part', S: 'Short', E: 'Episode' };
-const TYPE_ACCENTS = { P: 'var(--purple)', S: 'var(--cyan)', E: 'var(--amber)' };
+const TYPE_LABELS  = { P:'Part', S:'Short', E:'Episode', L:'Long' };
+const TYPE_ACCENTS = { P:'var(--purple)', S:'var(--cyan)', E:'var(--amber)', L:'#06b6d4' };
+
+// Sections expected per type — for missing-field detection
+const SECTION_DEFS = {
+  P: ['yttitle','ig','yt','tt','pin','script'],
+  S: ['yttitle','ig','yt','tt','pin','script'],
+  E: ['yttitle','ig','yt','tt','pin','script'],
+  L: ['yttitle','yt'],
+};
+const SECTION_META = {
+  yttitle: { icon:'▶️', iconClass:'yt',     label:'YouTube Title',       sublabel:'Video title' },
+  ig:      { icon:'📸', iconClass:'ig',     label:'Instagram Caption',   sublabel:'Ready to copy' },
+  yt:      { icon:'▶️', iconClass:'yt',     label:'YouTube Description', sublabel:'Video description' },
+  tt:      { icon:'🎵', iconClass:'tt',     label:'TikTok Caption',      sublabel:'Ready to copy' },
+  pin:     { icon:'📌', iconClass:'pin',    label:'Pinned Comment',      sublabel:'For YouTube' },
+  script:  { icon:'📝', iconClass:'script', label:'Script',              sublabel:'Script lines' },
+};
+function getEntryField(e, sid) {
+  switch(sid) {
+    case 'yttitle': return e.youtubeTitle || '';
+    case 'ig':      return e.instagram || '';
+    case 'yt':      return e.youtube || '';
+    case 'tt':      return e.tiktok || '';
+    case 'pin':     return e.pinnedComment || '';
+    case 'script':  return (e.script && e.script.length) ? e.script : [];
+  }
+  return '';
+}
 
 // ─── ID Generator ───────────────────────────
 function genId() {
@@ -208,27 +255,43 @@ function parseContent(raw) {
 
   // ── Line 1: header ──
   const headerLine = lines[0].trim();
-  // Primary: compact format "P6 1207" or "S3 0109"
   const compactHeader = headerLine.match(/^([A-Za-z]+)\s*(\d+)\s+(\d{4})$/i);
   if (compactHeader) {
-    result.type   = compactHeader[1].toUpperCase().slice(0, 1);
-    result.number = compactHeader[2];
+    result.type    = compactHeader[1].toUpperCase().slice(0, 1);
+    result.number  = compactHeader[2];
     result.rawDate = compactHeader[3].trim();
   } else {
-    // Fallback: legacy "P6 24 OCTOBER"
     const headerMatch = headerLine.match(/^([A-Za-z]+)\s*(\d+)\s+(.+)$/i);
     if (headerMatch) {
-      result.type   = headerMatch[1].toUpperCase().slice(0, 1);
-      result.number = headerMatch[2];
+      result.type    = headerMatch[1].toUpperCase().slice(0, 1);
+      result.number  = headerMatch[2];
       result.rawDate = headerMatch[3].trim();
     } else {
-      const m2 = headerLine.match(/([PSE])\s*(\d+)/i);
+      const m2 = headerLine.match(/([PSELpsел])\s*(\d+)/i);
       if (m2) {
-        result.type   = m2[1].toUpperCase();
-        result.number = m2[2];
+        result.type    = m2[1].toUpperCase();
+        result.number  = m2[2];
         result.rawDate = headerLine.replace(m2[0], '').trim();
       }
     }
+  }
+
+  // ── L (Long) type: title = first non-empty line, rest = description ──
+  if (result.type === 'L') {
+    let foundTitle = false;
+    const descLines = [];
+    for (let i = 1; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      if (!trimmed && !foundTitle) continue; // skip blanks before title
+      if (!foundTitle) {
+        result.youtubeTitle = trimmed;
+        foundTitle = true;
+      } else {
+        descLines.push(lines[i]);
+      }
+    }
+    result.youtube = descLines.join('\n').trim();
+    return result;
   }
 
   // ── Parse sections ──
@@ -322,27 +385,34 @@ function renderDashboard() {
     return a._dateObj - b._dateObj;
   });
 
-  // Filter
+  // Search
   const q = searchQuery.toLowerCase();
   if (q) {
     list = list.filter(e =>
       (e.type + e.number).toLowerCase().includes(q) ||
       (e.rawDate || '').toLowerCase().includes(q) ||
+      (e.youtubeTitle || '').toLowerCase().includes(q) ||
       (e.instagram || '').toLowerCase().includes(q) ||
       (e.youtube || '').toLowerCase().includes(q) ||
-      (e.youtubeTitle || '').toLowerCase().includes(q) ||
       (e.tiktok || '').toLowerCase().includes(q) ||
       (e.script || []).some(s => s.text.toLowerCase().includes(q))
     );
   }
 
-  if (activeFilter !== 'all') {
-    if (['upcoming', 'today', 'past'].includes(activeFilter)) {
-      list = list.filter(e => getStatus(e._dateObj) === activeFilter);
-    } else {
-      list = list.filter(e => e.type === activeFilter);
-    }
+  // Filter
+  if (activeFilter === 'upcoming') {
+    list = list.filter(e => {
+      const s = getStatus(e._dateObj);
+      return s === 'upcoming' || s === 'today';
+    });
+  } else if (activeFilter === 'unscheduled') {
+    list = list.filter(e => !e.entryStatus || e.entryStatus === 'none');
+  } else if (activeFilter === 'scheduled') {
+    list = list.filter(e => e.entryStatus === 'scheduled');
+  } else if (activeFilter === 'uploaded') {
+    list = list.filter(e => e.entryStatus === 'uploaded');
   }
+  // 'all' = no filter
 
   // Count upcoming for badge
   const upcomingCount = entries.filter(e => {
@@ -395,13 +465,17 @@ function renderDashboard() {
   }
 
   container.innerHTML = list.map(e => {
-    const status = getStatus(e._dateObj);
-    const accent = TYPE_ACCENTS[e.type] || 'var(--purple)';
+    const status  = getStatus(e._dateObj);
+    const accent  = TYPE_ACCENTS[e.type] || 'var(--purple)';
     const preview = e.instagram || e.youtube || e.tiktok || '';
-    const days = e._dateObj ? daysUntil(e._dateObj) : null;
+    const days    = e._dateObj ? daysUntil(e._dateObj) : null;
     const dateDisplay = e._dateObj ? formatDisplayDate(e._dateObj) : (e.rawDate || '—');
     const statusLabel = status === 'today' ? 'Today' : status === 'upcoming' ? `In ${days}d` : 'Past';
     const statusClass = `status-${status}`;
+
+    // Card bg class based on entryStatus
+    const entryStatus = e.entryStatus || 'none';
+    const cardBgClass = entryStatus === 'scheduled' ? 'card-scheduled' : entryStatus === 'uploaded' ? 'card-uploaded' : '';
 
     // Platform quick-copy buttons
     const plats = [];
@@ -425,13 +499,12 @@ function renderDashboard() {
     );
 
     // Status cycle button
-    const entryStatus = e.entryStatus || 'none';
     const statusCycleClass = entryStatus === 'scheduled' ? 'state-scheduled' : entryStatus === 'uploaded' ? 'state-uploaded' : '';
-    const statusCycleIcon = entryStatus === 'scheduled' ? '🗓️' : entryStatus === 'uploaded' ? '✓' : '○';
-    const statusCycleTitle = entryStatus === 'scheduled' ? 'Scheduled — click to mark Uploaded' : entryStatus === 'uploaded' ? 'Uploaded — click to reset' : 'Click to mark Scheduled';
+    const statusCycleIcon  = entryStatus === 'scheduled' ? '🗓️' : entryStatus === 'uploaded' ? '✓' : '○';
+    const statusCycleTitle = entryStatus === 'scheduled' ? 'Scheduled — tap to mark Uploaded' : entryStatus === 'uploaded' ? 'Uploaded — tap to reset' : 'Tap to mark Scheduled';
 
     return `
-      <div class="entry-card" style="--card-accent:${accent}" onclick="navigate('detail', {id:'${e.id}'})">
+      <div class="entry-card ${cardBgClass}" style="--card-accent:${accent}" onclick="navigate('detail', {id:'${e.id}'})">
         <div class="card-top">
           <div class="card-code">
             <span class="type-pill type-${e.type}">${TYPE_LABELS[e.type] || e.type}</span>
@@ -439,11 +512,12 @@ function renderDashboard() {
           </div>
           <span class="status-pill ${statusClass}">${statusLabel}</span>
         </div>
+        ${e.youtubeTitle ? `<div class="card-title">${escHtml(e.youtubeTitle)}</div>` : ''}
         <button class="card-date-btn" onclick="openDateEdit(event,'${e.id}')" title="Tap to change date">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           ${dateDisplay}
         </button>
-        ${preview ? `<div class="card-preview">${escHtml(preview.slice(0, 120))}</div>` : ''}
+        ${preview ? `<div class="card-preview">${escHtml(preview.slice(0, 100))}</div>` : ''}
         <div class="card-bottom-row">
           <div class="card-platforms">${plats.join('')}</div>
           <button class="status-cycle-btn ${statusCycleClass}" title="${statusCycleTitle}" onclick="cycleStatus(event,'${e.id}')">${statusCycleIcon}</button>
@@ -667,7 +741,7 @@ function renderDetail(id) {
   if (!e) { navigate('home'); return; }
 
   const dateObj = e.rawDate ? parseEntryDate(e.rawDate) : null;
-  const status = getStatus(dateObj);
+  const status  = getStatus(dateObj);
 
   // Hero
   const pill = document.getElementById('detailTypePill');
@@ -685,71 +759,62 @@ function renderDetail(id) {
   document.getElementById('editEntryBtn').onclick = () => navigate('add', { editId: id });
   document.getElementById('deleteEntryBtn').onclick = () => openDeleteModal(id);
 
-  // Content blocks
-  const sections = [];
-
-  if (e.script && e.script.length) {
-    sections.push({
-      id: 'script',
-      icon: '📝',
-      iconClass: 'script',
-      label: 'Script',
-      sublabel: `${e.script.length} line${e.script.length !== 1 ? 's' : ''}`,
-      content: null,
-      scriptLines: e.script
-    });
-  }
-  if (e.instagram) {
-    sections.push({ id: 'ig', icon: '📸', iconClass: 'ig', label: 'Instagram Caption', sublabel: 'Ready to copy', content: e.instagram });
-  }
-  if (e.youtubeTitle) {
-    sections.push({ id: 'yttitle', icon: '▶️', iconClass: 'yt', label: 'YouTube Title', sublabel: 'Video title', content: e.youtubeTitle });
-  }
-  if (e.youtube) {
-    sections.push({ id: 'yt', icon: '▶️', iconClass: 'yt', label: 'YouTube Description', sublabel: 'Shorts description', content: e.youtube });
-  }
-  if (e.tiktok) {
-    sections.push({ id: 'tt', icon: '🎵', iconClass: 'tt', label: 'TikTok Caption', sublabel: 'Ready to copy', content: e.tiktok });
-  }
-  if (e.pinnedComment) {
-    sections.push({ id: 'pin', icon: '📌', iconClass: 'pin', label: 'Pinned Comment', sublabel: 'For YouTube', content: e.pinnedComment });
-  }
-
+  // Build sections using SECTION_DEFS — show all expected, mark missing red
+  const expectedSids = SECTION_DEFS[e.type] || SECTION_DEFS['P'];
   const container = document.getElementById('contentSections');
-  container.innerHTML = sections.map((s, idx) => {
-    const bodyContent = s.scriptLines
-      ? `<div class="script-lines">${s.scriptLines.map(sl =>
-          `<div class="script-line"><span class="line-num">${sl.num}</span><span class="line-text">${escHtml(sl.text)}</span></div>`
-        ).join('')}</div>`
-      : escHtml(s.content || '');
+
+  container.innerHTML = expectedSids.map((sid, idx) => {
+    const meta    = SECTION_META[sid];
+    const rawVal  = getEntryField(e, sid);
+    const isEmpty = !rawVal || (Array.isArray(rawVal) && rawVal.length === 0);
+
+    // Body HTML
+    let bodyHTML;
+    if (sid === 'script' && !isEmpty) {
+      bodyHTML = `<div class="script-lines">${rawVal.map(sl =>
+        `<div class="script-line"><span class="line-num">${sl.num}</span><span class="line-text">${escHtml(sl.text)}</span></div>`
+      ).join('')}</div>`;
+    } else if (!isEmpty) {
+      bodyHTML = escHtml(rawVal);
+    } else {
+      bodyHTML = `<span style="color:var(--rose);font-size:12px">⚠️ No content — edit entry to add.</span>`;
+    }
+
+    const copyBtn = (!isEmpty && sid !== 'script')
+      ? `<button class="copy-btn" id="copy-${sid}" onclick="copySection(event,'${sid}',${JSON.stringify(String(rawVal)).replace(/'/g, "\\'")})" title="Copy">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+           Copy
+         </button>`
+      : '';
+    const missingBadge = isEmpty ? `<span class="block-missing-badge">Missing</span>` : '';
 
     return `
-      <div class="content-block" id="block-${s.id}">
-        <div class="block-header" onclick="toggleBlock('${s.id}')">
+      <div class="content-block${isEmpty ? ' block-missing' : ''}" id="block-${sid}">
+        <div class="block-header" onclick="toggleBlock('${sid}')">
           <div class="block-header-left">
-            <div class="block-icon ${s.iconClass}">${s.icon}</div>
+            <div class="block-icon ${meta.iconClass}">${meta.icon}</div>
             <div>
-              <div class="block-label">${s.label}</div>
-              <div class="block-sublabel">${s.sublabel}</div>
+              <div class="block-label">${meta.label}</div>
+              <div class="block-sublabel">${meta.sublabel}</div>
             </div>
           </div>
           <div class="block-actions">
-            ${s.content ? `<button class="copy-btn" id="copy-${s.id}" onclick="copySection(event, '${s.id}', ${JSON.stringify(s.content).replace(/'/g, "\\'")})" title="Copy to clipboard">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              Copy
-            </button>` : ''}
+            ${missingBadge}
+            ${copyBtn}
             <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
         </div>
-        <div class="block-body collapsed" id="body-${s.id}">${bodyContent}</div>
+        <div class="block-body collapsed" id="body-${sid}">${bodyHTML}</div>
       </div>
     `;
   }).join('');
 
-  // Auto-expand first block
-  if (sections.length > 0) {
-    toggleBlock(sections[0].id, true);
-  }
+  // Auto-expand first non-missing block
+  const firstFilled = expectedSids.find(sid => {
+    const v = getEntryField(e, sid);
+    return v && !(Array.isArray(v) && v.length === 0);
+  });
+  if (firstFilled) toggleBlock(firstFilled, true);
 }
 
 function toggleBlock(id, forceOpen = false) {
@@ -791,6 +856,92 @@ function copySection(event, id, text) {
     document.body.removeChild(ta);
     showToast('Copied ✓');
   });
+}
+
+// ════════════════════════════════════════════
+//   CALENDAR
+// ════════════════════════════════════════════
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+const DAY_NAMES   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+function renderCalendar() {
+  document.getElementById('calMonthTitle').textContent = `${MONTH_NAMES[calMonth]} ${calYear}`;
+
+  // Map rawDate key (DDMM) → entry for this month/year
+  const entryMap = {};
+  entries.forEach(e => {
+    const d = e.rawDate ? parseEntryDate(e.rawDate) : null;
+    if (d && d.getFullYear() === calYear && d.getMonth() === calMonth) {
+      const key = `${String(d.getDate()).padStart(2,'0')}${String(d.getMonth()+1).padStart(2,'0')}`;
+      entryMap[key] = e;
+    }
+  });
+
+  // Find Monday of the week containing day 1
+  const firstOfMonth = new Date(calYear, calMonth, 1);
+  const lastOfMonth  = new Date(calYear, calMonth + 1, 0);
+  const startCursor  = new Date(firstOfMonth);
+  const dow = (firstOfMonth.getDay() + 6) % 7; // 0=Mon .. 6=Sun
+  startCursor.setDate(startCursor.getDate() - dow);
+
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+
+  // Build week groups
+  const weeks = [];
+  const cursor = new Date(startCursor);
+  while (cursor <= lastOfMonth) {
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      week.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    if (week.some(d => d.getMonth() === calMonth)) weeks.push(week);
+  }
+
+  const container = document.getElementById('calendarBody');
+  container.innerHTML = weeks.map(week => {
+    const wStart = week[0], wEnd = week[6];
+    const sName = DAY_NAMES[(wStart.getDay()+6)%7];
+    const eName = DAY_NAMES[(wEnd.getDay()+6)%7];
+    const weekLabel = `${sName} ${wStart.getDate()} ${MONTH_NAMES[wStart.getMonth()].slice(0,3)} → ${eName} ${wEnd.getDate()} ${MONTH_NAMES[wEnd.getMonth()].slice(0,3)}`;
+
+    const daysHTML = week.map(day => {
+      const isCurrentMonth = day.getMonth() === calMonth;
+      const dayNum   = day.getDate();
+      const monthNum = day.getMonth() + 1;
+      const key      = `${String(dayNum).padStart(2,'0')}${String(monthNum).padStart(2,'0')}`;
+      const entry    = entryMap[key];
+      const dayName  = DAY_NAMES[(day.getDay()+6)%7];
+      const isToday  = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}` === todayKey;
+      const todayCls = isToday ? ' cal-day--today' : '';
+      const otherCls = !isCurrentMonth ? ' cal-day--other-month' : '';
+
+      if (entry) {
+        const eStatus = entry.entryStatus || 'none';
+        const accent  = TYPE_ACCENTS[entry.type] || 'var(--purple)';
+        return `
+          <div class="cal-day cal-day--filled cal-day--${eStatus}${todayCls}" onclick="navigate('detail',{id:'${entry.id}'})">
+            <span class="cal-day-name">${dayName}</span>
+            <span class="cal-day-num">${dayNum}</span>
+            <div class="cal-day-content">
+              <span class="cal-day-code" style="color:${accent}">${entry.type}${entry.number}</span>
+              ${entry.youtubeTitle ? `<span class="cal-day-ytitle">${escHtml(entry.youtubeTitle)}</span>` : ''}
+            </div>
+            <div class="cal-day-dot"></div>
+          </div>`;
+      } else {
+        return `
+          <div class="cal-day cal-day--empty${todayCls}${otherCls}">
+            <span class="cal-day-name">${dayName}</span>
+            <span class="cal-day-num">${dayNum}</span>
+          </div>`;
+      }
+    }).join('');
+
+    return `<div class="cal-week"><div class="cal-week-header">${weekLabel}</div>${daysHTML}</div>`;
+  }).join('');
 }
 
 // ════════════════════════════════════════════
@@ -915,7 +1066,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── Search toggle ──
-  const searchWrap = document.getElementById('searchWrap');
+  const searchWrap  = document.getElementById('searchWrap');
   const searchInput = document.getElementById('searchInput');
   document.getElementById('searchToggleBtn').addEventListener('click', () => {
     const open = searchWrap.style.display !== 'none';
@@ -959,6 +1110,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') closeDateEditModal();
   });
 
+  // ── Calendar navigation ──
+  document.getElementById('calPrevBtn').addEventListener('click', () => {
+    calMonth--;
+    if (calMonth < 0) { calMonth = 11; calYear--; }
+    renderCalendar();
+  });
+  document.getElementById('calNextBtn').addEventListener('click', () => {
+    calMonth++;
+    if (calMonth > 11) { calMonth = 0; calYear++; }
+    renderCalendar();
+  });
+  document.getElementById('calTodayBtn').addEventListener('click', () => {
+    calMonth = new Date().getMonth();
+    calYear  = new Date().getFullYear();
+    renderCalendar();
+  });
+
   // ── Settings ──
   document.getElementById('exportBtn').addEventListener('click', exportData);
   document.getElementById('importDataBtn').addEventListener('click', () =>
@@ -970,8 +1138,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
 
-  // ── Initial render ──
-  pushHistory(); // seed initial state
+  // ── Initial ──
+  checkAutoUpload();   // auto-mark past scheduled → uploaded
+  pushHistory();       // seed undo history
   renderDashboard();
 
   // ── PWA Service Worker ──
