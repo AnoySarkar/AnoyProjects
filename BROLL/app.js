@@ -45,20 +45,36 @@ function scoreLbl(s) { return (s === null || s === undefined) ? '—' : `${s}`; 
 
 /* ── State ─────────────────────────────────────────────────── */
 const ST = {
-  brolls:    [],
-  scores:    {},
-  prompts:   {},
-  batches:   [],
-  usedSets:  {},
-  prefix:    '',
-  suffix:    '',
-  filter:    'all',
-  sortBy:    'num',
-  activeBatch: 'new',
-  inputOpen: true,
-  libOpen:   false,
-  csetOpen:  false,
+  brolls:            [],
+  scores:            {},
+  prompts:           {},
+  batches:           [],
+  usedSets:          {},
+  setRatings:        {},   // { [brollNum]: { [setIdx]: { score, why } } }
+  ratingBatches:     [],   // [ { id, label, date, raw, brolls, count } ]
+  activeRatingBatch: 'new',
+  prefix:            '',
+  suffix:            '',
+  filter:            'all',
+  sortBy:            'num',
+  activeBatch:       'new',
+  inputOpen:         true,
+  libOpen:           false,
+  csetOpen:          false,
 };
+
+/* ── Global Prefix / Suffix (shared across all scripts) ─────── */
+const GLOBAL_CSET_KEY = 'br_global_cset';
+function saveGlobalCset() {
+  try { localStorage.setItem(GLOBAL_CSET_KEY, JSON.stringify({ prefix: ST.prefix, suffix: ST.suffix })); } catch {}
+}
+function loadGlobalCset() {
+  try {
+    const d = JSON.parse(localStorage.getItem(GLOBAL_CSET_KEY) || 'null');
+    if (d) { ST.prefix = d.prefix || ''; ST.suffix = d.suffix || ''; return; }
+  } catch {}
+  ST.prefix = ''; ST.suffix = '';
+}
 
 /* ── Projects / Multi-Script ────────────────────────────────── */
 const PROJECTS = {};
@@ -66,7 +82,7 @@ let   ACTIVE_PID = null;
 const PROJ_KEY   = 'br_v6_proj';
 
 function _projData(name) {
-  return { name: name||'Script 1', script:'', scores:{}, prompts:{}, batches:[], usedSets:{}, prefix:'', suffix:'' };
+  return { name: name||'Script 1', script:'', scores:{}, prompts:{}, batches:[], usedSets:{}, setRatings:{}, ratingBatches:[] };
 }
 
 function saveProjects() {
@@ -74,16 +90,18 @@ function saveProjects() {
     const ta = _el('script-textarea');
     PROJECTS[ACTIVE_PID] = {
       ...PROJECTS[ACTIVE_PID],
-      script:   ta ? ta.value : (PROJECTS[ACTIVE_PID].script||''),
-      scores:   JSON.parse(JSON.stringify(ST.scores)),
-      prompts:  JSON.parse(JSON.stringify(ST.prompts)),
-      batches:  [...ST.batches],
-      usedSets: JSON.parse(JSON.stringify(ST.usedSets)),
-      prefix:   ST.prefix,
-      suffix:   ST.suffix,
+      script:        ta ? ta.value : (PROJECTS[ACTIVE_PID].script||''),
+      scores:        JSON.parse(JSON.stringify(ST.scores)),
+      prompts:       JSON.parse(JSON.stringify(ST.prompts)),
+      batches:       [...ST.batches],
+      usedSets:      JSON.parse(JSON.stringify(ST.usedSets)),
+      setRatings:    JSON.parse(JSON.stringify(ST.setRatings||{})),
+      ratingBatches: [...(ST.ratingBatches||[])],
+      // prefix/suffix are global — NOT saved per-project
     };
   }
   try { localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS })); } catch {}
+  saveGlobalCset();
 }
 
 function _migratePrompts(rawPr) {
@@ -101,6 +119,14 @@ function loadProjects() {
     if (raw && raw.projects && Object.keys(raw.projects).length) {
       for (const [k,v] of Object.entries(raw.projects)) PROJECTS[k] = v;
       ACTIVE_PID = (raw.active && PROJECTS[raw.active]) ? raw.active : Object.keys(PROJECTS)[0];
+      // Migrate old per-project prefix/suffix to global store (first time only)
+      if (!localStorage.getItem(GLOBAL_CSET_KEY)) {
+        const proj = PROJECTS[ACTIVE_PID]||{};
+        if (proj.prefix || proj.suffix) {
+          ST.prefix = proj.prefix||''; ST.suffix = proj.suffix||'';
+          saveGlobalCset();
+        }
+      }
       return;
     }
   } catch {}
@@ -113,8 +139,13 @@ function loadProjects() {
     const us  = JSON.parse(localStorage.getItem('br_us5')||'{}');
     const cs  = JSON.parse(localStorage.getItem('br_cs5')||'{}');
     const pid = uid();
-    PROJECTS[pid] = { name:'Script 1', script:sc, scores:s, prompts:pr, batches:ba, usedSets:us, prefix:cs.prefix||'', suffix:cs.suffix||'' };
+    PROJECTS[pid] = { name:'Script 1', script:sc, scores:s, prompts:pr, batches:ba, usedSets:us, setRatings:{}, ratingBatches:[] };
     ACTIVE_PID = pid;
+    // Migrate prefix/suffix to global
+    if (cs.prefix || cs.suffix) {
+      ST.prefix = cs.prefix||''; ST.suffix = cs.suffix||'';
+      saveGlobalCset();
+    }
     saveProjects(); return;
   } catch {}
   /* Fresh start */
@@ -129,13 +160,15 @@ function activateProject(pid) {
   saveProjects();
   ACTIVE_PID = pid;
   const proj = PROJECTS[pid];
-  ST.scores   = proj.scores  || {};
-  ST.prompts  = _migratePrompts(proj.prompts);
-  ST.batches  = proj.batches || [];
-  ST.usedSets = proj.usedSets|| {};
-  ST.prefix   = proj.prefix  || '';
-  ST.suffix   = proj.suffix  || '';
-  ST.brolls   = parseScript(proj.script || '');
+  ST.scores            = proj.scores        || {};
+  ST.prompts           = _migratePrompts(proj.prompts);
+  ST.batches           = proj.batches       || [];
+  ST.usedSets          = proj.usedSets      || {};
+  ST.setRatings        = proj.setRatings    || {};
+  ST.ratingBatches     = proj.ratingBatches || [];
+  ST.activeRatingBatch = 'new';
+  // prefix/suffix stay global — do NOT overwrite from project
+  ST.brolls            = parseScript(proj.script || '');
   ST.filter = 'all'; ST.sortBy = 'num'; ST.activeBatch = 'new';
   const ta = _el('script-textarea'); if (ta) ta.value = proj.script||'';
   document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter==='all'));
@@ -145,6 +178,8 @@ function activateProject(pid) {
   renderProjectTabs();
   renderHeatmap(); renderStats(); renderCards(true); updateAllPromptChips();
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge(); syncCsetUI();
+  updateSratingHint(); renderRatingTabs(); renderRatingPanel();
+  scrollToLastScoredBroll();
 }
 
 function createProject() {
@@ -235,6 +270,336 @@ function renderProjectTabs() {
   addBtn.title='Create new script';
   addBtn.addEventListener('click', createProject);
   bar.appendChild(addBtn);
+
+  const clrBtn=document.createElement('button');
+  clrBtn.className='proj-clr-btn'; clrBtn.id='btn-clear-copy';
+  clrBtn.textContent='⟲ History'; clrBtn.title='Clear copy history for this script';
+  bar.appendChild(clrBtn);
+}
+
+/* ── Rating Colors for Prompt Sets ─────────────────────────── */
+function getRatingColor(score) {
+  if (score === null || score === undefined) return null;
+  const s = parseFloat(score);
+  if (isNaN(s)) return null;
+  if (s >= 10)  return { border:'#9333ea', bg:'rgba(147,51,234,0.15)', text:'#c084fc' }; // 10 is purple
+  if (s >= 9.5) return { border:'#2563eb', bg:'rgba(37,99,235,0.15)',  text:'#60a5fa' }; // 9.5 is blue
+  if (s >= 9)   return { border:'#16a34a', bg:'rgba(22,163,74,0.15)',  text:'#4ade80' }; // 9 is green
+  if (s >= 8.5) return { border:'#ca8a04', bg:'rgba(202,138,4,0.15)',  text:'#facc15' }; // 8.5 is yellow
+  if (s >= 8)   return { border:'#ea580c', bg:'rgba(234,88,12,0.15)',  text:'#fb923c' }; // 8 is orange
+  if (s >= 7.5) return { border:'#f43f5e', bg:'rgba(244,63,94,0.15)',  text:'#fda4af' }; // 7.5 is light red
+  if (s >= 7)   return { border:'#dc2626', bg:'rgba(220,38,38,0.15)',  text:'#f87171' }; // 7 is red
+  return { border:'#7f1d1d', bg:'rgba(127,29,29,0.25)', text:'#ef4444' };                // below 7 is deep red
+}
+
+/* ── Set Ratings: parse, apply, delete, tabs & panels ────────── */
+function parseSetRatings(text) {
+  const results = [];
+  for (const line of text.split('\n')) {
+    const l = line.trim(); if (!l) continue;
+    // Match: NUM : NUM : SCORE : why text
+    const m = l.match(/^(\d+)\s*:\s*(\d+)\s*:\s*([\d.]+)\s*:\s*(.*)/);
+    if (!m) continue;
+    const score = parseFloat(m[3]);
+    if (isNaN(score) || score < 0 || score > 10) continue;
+    let why = m[4].trim();
+    if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
+    results.push({ brollNum: parseInt(m[1]), setIdx: parseInt(m[2]) - 1, score, why });
+  }
+  return results;
+}
+
+function applySetRatings(text) {
+  const parsed = parseSetRatings(text);
+  if (!parsed.length) { toast('⚠️ No valid rating lines found'); return; }
+  if (!ST.setRatings) ST.setRatings = {};
+  if (!ST.ratingBatches) ST.ratingBatches = [];
+
+  const brollsInBatch = [];
+  parsed.forEach(({ brollNum, setIdx, score, why }) => {
+    if (!ST.setRatings[brollNum]) ST.setRatings[brollNum] = {};
+    ST.setRatings[brollNum][setIdx] = { score, why };
+    if (!brollsInBatch.includes(brollNum)) brollsInBatch.push(brollNum);
+  });
+  brollsInBatch.sort((a, b) => a - b);
+
+  const minN = Math.min(...brollsInBatch), maxN = Math.max(...brollsInBatch);
+  const tabLabel = minN === maxN ? `#${minN}` : `#${minN}–${maxN}`;
+  const batchId = uid();
+
+  ST.ratingBatches.push({
+    id: batchId,
+    label: tabLabel,
+    date: Date.now(),
+    raw: text,
+    brolls: brollsInBatch,
+    count: parsed.length
+  });
+
+  // Stay on 'new' input tab and clear input textarea ready for next import
+  ST.activeRatingBatch = 'new';
+  const ta = _el('srating-textarea');
+  if (ta) ta.value = '';
+
+  save();
+  updateAllPromptChips();
+  updateSratingHint();
+  renderRatingTabs();
+  renderRatingPanel();
+  toast(`⭐ Applied ${parsed.length} ratings for B-roll ${tabLabel}`);
+}
+
+function deleteSetRating(num, setIdx) {
+  if (!ST.setRatings?.[num] || ST.setRatings[num][setIdx] === undefined) return;
+  const oldVal = ST.setRatings[num][setIdx];
+  record(
+    () => {
+      if (!ST.setRatings[num]) ST.setRatings[num] = {};
+      ST.setRatings[num][setIdx] = oldVal;
+      save(); updateAllPromptChips(); updateSratingHint(); renderRatingPanel();
+    },
+    () => {
+      delete ST.setRatings[num][setIdx];
+      if (!Object.keys(ST.setRatings[num]).length) delete ST.setRatings[num];
+      save(); updateAllPromptChips(); updateSratingHint(); renderRatingPanel();
+    },
+    `Delete rating for #${num} Set ${setIdx+1}`
+  );
+  delete ST.setRatings[num][setIdx];
+  if (!Object.keys(ST.setRatings[num]).length) delete ST.setRatings[num];
+  save();
+  updateAllPromptChips();
+  updateSratingHint();
+  renderRatingPanel();
+  toast(`🗑 Removed rating for #${num} Set ${setIdx+1}`);
+}
+
+function updateSratingHint() {
+  const total = Object.values(ST.setRatings||{}).reduce((s,obj) => s + Object.keys(obj).length, 0);
+  const hint = _el('srating-hint');
+  if (hint) {
+    hint.textContent = total ? `${total} rating${total !== 1 ? 's' : ''}` : '0 ratings';
+    hint.className = 'srating-hint' + (total ? ' active' : '');
+  }
+  const summary = _el('srating-summary');
+  if (summary && total) {
+    const brolls = Object.keys(ST.setRatings).length;
+    summary.textContent = `${total} rating${total!==1?'s':''} across ${brolls} B-roll${brolls!==1?'s':''}`;
+  } else if (summary) { summary.textContent = ''; }
+}
+
+/* ── Rating Tabs & Detail Panel (matches Prompt Library design) ── */
+function renderRatingTabs() {
+  const bar = _el('srating-tab-bar'); if (!bar) return;
+  bar.innerHTML = '';
+
+  const newTab = document.createElement('button');
+  newTab.className = 'batch-tab' + (ST.activeRatingBatch === 'new' ? ' active' : '');
+  newTab.innerHTML = '<span>＋ New Import</span>';
+  newTab.addEventListener('click', () => switchRatingTab('new'));
+  bar.appendChild(newTab);
+
+  [...(ST.ratingBatches || [])].reverse().forEach(b => {
+    const tab = document.createElement('button');
+    tab.className = 'batch-tab' + (ST.activeRatingBatch === b.id ? ' active' : '');
+    const lbl = document.createElement('span'); lbl.className = 'btab-label'; lbl.textContent = b.label; tab.appendChild(lbl);
+    const del = document.createElement('span'); del.className = 'btab-del'; del.textContent = '×'; del.title = 'Delete rating batch';
+    del.addEventListener('click', e => { e.stopPropagation(); showDeleteRatingBatchModal(b.id); });
+    tab.appendChild(del);
+    tab.addEventListener('click', () => switchRatingTab(b.id));
+    bar.appendChild(tab);
+  });
+}
+
+function switchRatingTab(batchId) {
+  ST.activeRatingBatch = batchId;
+  renderRatingTabs();
+  renderRatingPanel();
+}
+
+function renderRatingPanel() {
+  const np = _el('srating-panel-new'), dp = _el('srating-panel-detail');
+  if (!np || !dp) return;
+  if (ST.activeRatingBatch === 'new') {
+    np.classList.remove('hidden');
+    dp.classList.add('hidden');
+    return;
+  }
+  np.classList.add('hidden');
+  dp.classList.remove('hidden');
+
+  const b = (ST.ratingBatches || []).find(x => x.id === ST.activeRatingBatch);
+  if (!b) {
+    dp.innerHTML = '<p style="color:var(--text-3);font-size:12px;padding:12px">Rating batch not found.</p>';
+    return;
+  }
+  const dt = new Date(b.date);
+
+  dp.innerHTML = `
+    <div class="rdetail-header">
+      <div class="bdh-info">
+        <span class="rdetail-title">${escHtml(b.label)} Ratings</span>
+        <span class="rdetail-meta">${dt.toLocaleString('en-IN')} · ${b.brolls.length} B-rolls · ${b.count || b.brolls.length} ratings</span>
+      </div>
+      <div class="bdh-actions">
+        <button class="hbtn danger" id="btn-del-rbatch">🗑 Delete</button>
+      </div>
+    </div>
+    <div class="rdetail-list" id="rdetail-items"></div>
+  `;
+
+  _el('btn-del-rbatch')?.addEventListener('click', () => showDeleteRatingBatchModal(b.id));
+
+  const listEl = _el('rdetail-items');
+  if (!listEl) return;
+
+  b.brolls.forEach(num => {
+    const sets = ST.setRatings[num] || {};
+    const setIndices = Object.keys(sets).map(Number).sort((a, b) => a - b);
+    if (!setIndices.length) return;
+
+    const grp = document.createElement('div');
+    grp.className = 'rdetail-broll-group';
+
+    const brollHdr = document.createElement('div');
+    brollHdr.className = 'rdetail-broll-hdr';
+    brollHdr.innerHTML = `<span>B-ROLL #${num}</span><span>${setIndices.length} sets rated</span>`;
+    brollHdr.title = 'Click to jump to B-roll card';
+    brollHdr.style.cursor = 'pointer';
+    brollHdr.addEventListener('click', () => _el(`card-${num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    grp.appendChild(brollHdr);
+
+    const rowsWrap = document.createElement('div');
+    rowsWrap.className = 'rdetail-broll-rows';
+
+    setIndices.forEach(idx => {
+      const r = sets[idx];
+      const rColor = getRatingColor(r.score) || { border: 'var(--border)', text: 'var(--text-1)', bg: 'transparent' };
+      const row = document.createElement('div');
+      row.className = 'rdetail-row';
+      row.innerHTML = `
+        <span class="rdetail-set">Set ${idx + 1}</span>
+        <span class="rdetail-score" style="border-color:${rColor.border};color:${rColor.text};background:${rColor.bg}">${r.score}</span>
+        <span class="rdetail-why" title="${escHtml(r.why || '')}">${escHtml(r.why || '—')}</span>
+        <button class="rdetail-del" title="Remove this rating">✕</button>
+      `;
+      row.querySelector('.rdetail-del').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        deleteSetRating(num, idx);
+      });
+      rowsWrap.appendChild(row);
+    });
+
+    grp.appendChild(rowsWrap);
+    listEl.appendChild(grp);
+  });
+}
+
+function showDeleteRatingBatchModal(batchId) {
+  const b = (ST.ratingBatches || []).find(x => x.id === batchId); if (!b) return;
+  showModal(`Delete "${b.label}" ratings?`,
+    `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px;">
+      <input type="checkbox" id="modal-del-ratings" checked style="width:14px;height:14px;accent-color:var(--accent)">
+      <span>Also remove ratings from cards for these B-rolls</span>
+    </label>`,
+    () => deleteRatingBatch(batchId, _el('modal-del-ratings')?.checked)
+  );
+}
+
+function deleteRatingBatch(batchId, delRatings) {
+  const b = (ST.ratingBatches || []).find(x => x.id === batchId);
+  if (delRatings && b) {
+    b.brolls.forEach(num => {
+      delete ST.setRatings[num];
+    });
+    updateAllPromptChips();
+  }
+  ST.ratingBatches = (ST.ratingBatches || []).filter(x => x.id !== batchId);
+  if (ST.activeRatingBatch === batchId) switchRatingTab('new');
+  save();
+  renderRatingTabs();
+  updateSratingHint();
+  toast(delRatings ? '🗑 Rating batch + ratings removed' : '🗑 Rating batch removed (ratings kept)');
+}
+
+/* ── Why Popup (Hover Tooltip with Remove Option) ────────────── */
+let _whyTimer = null;
+function showWhyPopup(e, num, setIdx) {
+  if (_whyTimer) { clearTimeout(_whyTimer); _whyTimer = null; }
+  document.getElementById('why-popup')?.remove();
+  const rating = ST.setRatings?.[num]?.[setIdx];
+  const rColor = rating ? getRatingColor(rating.score) : null;
+
+  const popup = document.createElement('div');
+  popup.id = 'why-popup'; popup.className = 'why-popup';
+
+  const hdr = document.createElement('div'); hdr.className = 'why-popup-hdr';
+  const sb = document.createElement('span'); sb.className = 'why-score-badge';
+  if (rColor) {
+    sb.textContent = rating.score; sb.style.color = rColor.text;
+  } else {
+    sb.textContent = '—'; sb.style.color = 'var(--text-3)';
+  }
+  hdr.appendChild(sb);
+
+  const lbl = document.createElement('span'); lbl.className = 'why-popup-label';
+  lbl.textContent = `Set ${setIdx+1} for #${num}`; hdr.appendChild(lbl);
+
+  if (rating) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'why-del-btn';
+    delBtn.textContent = '🗑';
+    delBtn.title = 'Remove this rating';
+    delBtn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      deleteSetRating(num, setIdx);
+      popup.remove();
+    });
+    hdr.appendChild(delBtn);
+  }
+
+  const cls = document.createElement('button'); cls.className = 'why-close'; cls.textContent = '×';
+  cls.addEventListener('click', () => popup.remove()); hdr.appendChild(cls);
+  popup.appendChild(hdr);
+
+  const body = document.createElement('div'); body.className = 'why-body';
+  body.textContent = rating?.why || (rating ? 'No reason recorded.' : 'No rating yet.');
+  popup.appendChild(body);
+
+  const rect = e.currentTarget?.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
+  let posX = e.clientX;
+  let posY = e.clientY + 12;
+  if (rect) {
+    posX = rect.left;
+    posY = rect.bottom + 6;
+  }
+
+  popup.style.left = Math.min(posX, window.innerWidth - 290) + 'px';
+  popup.style.top  = Math.min(posY, window.innerHeight - 170) + 'px';
+
+  popup.addEventListener('mouseenter', () => {
+    if (_whyTimer) { clearTimeout(_whyTimer); _whyTimer = null; }
+  });
+  popup.addEventListener('mouseleave', () => {
+    hideWhyPopup(150);
+  });
+
+  document.body.appendChild(popup);
+}
+
+function hideWhyPopup(delay = 200) {
+  if (_whyTimer) clearTimeout(_whyTimer);
+  _whyTimer = setTimeout(() => {
+    document.getElementById('why-popup')?.remove();
+    _whyTimer = null;
+  }, delay);
+}
+
+
+/* ── Clear Copy History ──────────────────────────────────────── */
+function clearCopyHistory() {
+  Object.values(ST.prompts).forEach(arr => arr.forEach(e => { e.copied = false; }));
+  save(); updateAllPromptChips(); renderLibraryView();
 }
 
 /* ── Undo / Redo ────────────────────────────────────────────── */
@@ -337,16 +702,22 @@ function importPrompts(text) {
     if (!ST.prompts[num]) ST.prompts[num] = [];
     for (const t of alts) { ST.prompts[num].push({ text: t, batchId, copied: false }); total++; }
   }
-  const dateStr = new Date().toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
   const minN = Math.min(...keys.map(Number)), maxN = Math.max(...keys.map(Number));
   const tabLabel = minN===maxN ? `#${minN}` : `#${minN}–${maxN}`;
   ST.batches.push({ id:batchId, label:tabLabel, date:Date.now(), raw:text, brollCount:keys.length, promptCount:total });
+  
+  // Stay on 'new' input tab and clear input textarea ready for next import
+  ST.activeBatch = 'new';
+  const ta = _el('prompt-textarea');
+  if (ta) ta.value = '';
+
   save();
-  switchBatchTab(batchId);
+  renderBatchTabs();
+  renderBatchPanel();
   updateAllPromptChips();
   renderLibraryView();
   updateLibBadge();
-  toast(`✅ Imported ${total} prompts across ${keys.length} B-rolls`);
+  toast(`✅ Imported ${total} prompts (${tabLabel})`);
 }
 
 function deleteBatch(batchId, delPrompts) {
@@ -412,7 +783,9 @@ function fbCopy(text, cb) {
   document.body.removeChild(ta); cb();
 }
 function refreshCopyState(num, idx) {
-  const cc = _el(`pc-${num}-${idx}`); if (cc) cc.classList.add('copied');
+  // Rebuild the card chip so rating styling + copied state are both shown correctly
+  updateCardPrompts(num);
+  // Also update library chip
   const lc = _el(`lcp-${num}-${idx}`); if (lc) lc.classList.add('copied');
 }
 
@@ -512,7 +885,12 @@ function renderBatchPanel() {
       <textarea class="batch-raw-ta" readonly>${escHtml(b.raw)}</textarea>
     </div>
   `;
-  _el('btn-view-raw').addEventListener('click', () => _el('batch-raw-wrap').classList.toggle('hidden'));
+  _el('btn-view-raw').addEventListener('click', () => {
+    _el('batch-raw-wrap').classList.toggle('hidden');
+    const doCopy = () => toast('📋 Raw text copied!');
+    if (navigator.clipboard) navigator.clipboard.writeText(b.raw).then(doCopy).catch(() => fbCopy(b.raw, doCopy));
+    else fbCopy(b.raw, doCopy);
+  });
   _el('btn-del-batch').addEventListener('click', () => showDeleteBatchModal(b.id));
 }
 
@@ -611,33 +989,49 @@ function buildLibChip(num, i, entry) {
 
 /* ── Update prompt chips on card ────────────────────────────── */
 function buildPromptChip(num, i, entry) {
-  const isUsed = ST.usedSets[num] === i;
+  const rating = ST.setRatings?.[num]?.[i];
+  const rColor = rating ? getRatingColor(rating.score) : null;
+
   const chip = document.createElement('button');
-  chip.className = 'p-chip' + (entry.copied ? ' copied' : '') + (isUsed ? ' is-used' : '');
+  chip.className = 'p-chip' + (entry.copied ? ' copied' : '');
   chip.id = `pc-${num}-${i}`;
 
-  if (isUsed) {
-    const pin = document.createElement('span');
-    pin.className = 'p-chip-pin';
-    pin.textContent = '📌';
-    chip.appendChild(pin);
+  if (rColor) {
+    chip.style.borderColor = rColor.border;
+    chip.style.background = rColor.bg;
   }
 
-  const n = document.createElement('span'); n.className = 'p-chip-num'; n.textContent = i+1; chip.appendChild(n);
-  if (entry.copied) { const ck = document.createElement('span'); ck.className = 'p-chip-ck'; ck.textContent = '✓'; chip.appendChild(ck); }
+  const top = document.createElement('span'); top.className = 'p-chip-top';
+  const n = document.createElement('span'); n.className = 'p-chip-num'; n.textContent = i+1; top.appendChild(n);
+  if (entry.copied) { const ck = document.createElement('span'); ck.className = 'p-chip-ck'; ck.textContent = '✓'; top.appendChild(ck); }
+  chip.appendChild(top);
 
-  chip.title = `Set ${i+1}${entry.copied?' (copied)':''}${isUsed?' (📌 used for rating)':''}\n\n• Left-click to Copy Prompt\n• Right-click to Mark as Used Set\n\n${entry.text.slice(0,100)}${entry.text.length>100?'…':''}`;
+  if (rating) {
+    const rb = document.createElement('span'); rb.className = 'p-chip-rating';
+    rb.textContent = rating.score; rb.style.color = rColor.text; chip.appendChild(rb);
+  }
 
+  chip.title = `Set ${i+1} for #${num}${rating ? ' · ' + rating.score : ''}\n\n• Left-click: Copy prompt\n• Right-click: ${entry.copied ? 'Untick copied' : 'Mark as copied'}\n• Hover: Show why reason`;
+  
+  // Left-click: Copy prompt
   chip.addEventListener('click', e => { e.stopPropagation(); copyPrompt(num, i, chip); });
+  
+  // Right-click: Untick / toggle copied checkmark
   chip.addEventListener('contextmenu', e => {
     e.preventDefault(); e.stopPropagation();
-    const wasUsed = ST.usedSets[num] === i;
-    setUsedSet(num, i);
-    toast(wasUsed ? `Unmarked Set ${i+1} for #${num}` : `📌 Marked Set ${i+1} as used for #${num}`);
+    entry.copied = !entry.copied;
+    save();
+    refreshCopyState(num, i);
+    toast(entry.copied ? `✓ Marked Set ${i+1} as copied` : `✕ Unticked Set ${i+1} for #${num}`);
   });
+
+  // Hover: Show why popup
+  chip.addEventListener('mouseenter', e => { showWhyPopup(e, num, i); });
+  chip.addEventListener('mouseleave', () => { hideWhyPopup(150); });
 
   return chip;
 }
+
 
 function updateCardPrompts(num) {
   const card = _el(`card-${num}`); if (!card) return;
@@ -802,6 +1196,9 @@ function updateScoreVal(num,val){const sv=_el(`sv-${num}`);if(!sv)return;const c
 function setScore(num,val){
   const oldScore=ST.scores[num]??null, newScore=snap(val);
   if(oldScore===newScore)return;
+  if(newScore!==null){
+    try { localStorage.setItem('br_last_scored_' + ACTIVE_PID, num); } catch {}
+  }
   const apply=s=>{if(s===null)delete ST.scores[num];else ST.scores[num]=s;save();updateCardVisuals(num,s);updateHmCell(num);renderStats();renderFilterCount();};
   record(()=>apply(oldScore),()=>apply(newScore),`Score #${num}: ${scoreLbl(oldScore)} → ${scoreLbl(newScore)}`);
   apply(newScore);
@@ -812,6 +1209,34 @@ function clearScore(num){
   record(()=>apply(old),()=>apply(null),`Clear score #${num}`);
   apply(null);
 }
+
+function scrollToLastScoredBroll() {
+  if (!ST.brolls.length) return;
+  let targetNum = null;
+  try {
+    const saved = localStorage.getItem('br_last_scored_' + ACTIVE_PID);
+    if (saved && ST.scores[saved] !== undefined && ST.scores[saved] !== null) {
+      targetNum = parseInt(saved);
+    }
+  } catch {}
+  if (!targetNum) {
+    const scoredBrolls = ST.brolls.filter(b => ST.scores[b.num] !== undefined && ST.scores[b.num] !== null);
+    if (scoredBrolls.length) {
+      targetNum = scoredBrolls[scoredBrolls.length - 1].num;
+    }
+  }
+  if (targetNum) {
+    setTimeout(() => {
+      const el = _el(`card-${targetNum}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('card-highlight');
+        setTimeout(() => el.classList.remove('card-highlight'), 1400);
+      }
+    }, 280);
+  }
+}
+
 function updateCardVisuals(num,score){
   const col=getC(score),card=_el(`card-${num}`),cn=_el(`cn-${num}`),sv=_el(`sv-${num}`),sl=_el(`sl-${num}`);
   if(!card)return;
@@ -883,13 +1308,13 @@ function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(
 document.addEventListener('DOMContentLoaded',()=>{
   loadProjects();
   const proj = PROJECTS[ACTIVE_PID] || {};
-  ST.scores   = proj.scores   || {};
-  ST.prompts  = _migratePrompts(proj.prompts);
-  ST.batches  = proj.batches  || [];
-  ST.usedSets = proj.usedSets || {};
-  ST.prefix   = proj.prefix   || '';
-  ST.suffix   = proj.suffix   || '';
-  ST.brolls   = parseScript(proj.script || '');
+  ST.scores      = proj.scores      || {};
+  ST.prompts     = _migratePrompts(proj.prompts);
+  ST.batches     = proj.batches     || [];
+  ST.usedSets    = proj.usedSets    || {};
+  ST.setRatings  = proj.setRatings  || {};
+  ST.brolls      = parseScript(proj.script || '');
+  loadGlobalCset();   // Load prefix/suffix from global key
 
   const ta = _el('script-textarea'); if (ta) ta.value = proj.script || '';
 
@@ -900,7 +1325,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   renderProjectTabs();
   renderHeatmap(); renderStats(); renderCards(!!ST.brolls.length);
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge();
-  syncCsetUI(); refreshUR();
+  syncCsetUI(); updateSratingHint(); renderRatingTabs(); renderRatingPanel(); refreshUR();
+  scrollToLastScoredBroll();
 
   let rT; window.addEventListener('resize',()=>{clearTimeout(rT);rT=setTimeout(renderHeatmap,120);});
 
@@ -916,7 +1342,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   _el('btn-load').addEventListener('click',()=>{const t=_el('script-textarea').value.trim();if(!t){toast('⚠️ Paste script first');return;}loadScript(t,true);});
   _el('script-textarea').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')_el('btn-load').click();});
 
-  // Auto-pad 2 blank lines after paste so next paste goes right below
   const autoPad = (ta) => {
     setTimeout(() => {
       if (!ta.value.endsWith('\n\n')) ta.value = ta.value.trimEnd() + '\n\n';
@@ -932,10 +1357,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   /* Header */
   _el('btn-clear').addEventListener('click',()=>showModal('Clear this script?','Script + scores + prompts for this script will be removed.',()=>{
     _el('script-textarea').value='';
-    ST.brolls=[];ST.scores={};ST.prompts={};ST.batches=[];ST.usedSets={};
+    ST.brolls=[];ST.scores={};ST.prompts={};ST.batches=[];ST.usedSets={};ST.setRatings={};ST.ratingBatches=[];ST.activeRatingBatch='new';
     save(); expandInput();
     renderProjectTabs();
-    renderHeatmap();renderStats();renderCards();renderBatchTabs();renderBatchPanel();renderLibraryView();updateLibBadge();
+    renderHeatmap();renderStats();renderCards();renderBatchTabs();renderBatchPanel();renderLibraryView();updateLibBadge();updateSratingHint();renderRatingTabs();renderRatingPanel();
     toast('🗑️ Cleared');
   }));
   _el('btn-reset').addEventListener('click',()=>showModal('Reset all scores?','Scores cleared, script and prompts kept.',()=>{ST.scores={};save();renderHeatmap();renderStats();renderCards();toast('↺ Scores reset');}));
@@ -945,16 +1370,40 @@ document.addEventListener('DOMContentLoaded',()=>{
   _el('btn-import').addEventListener('click',()=>_el('file-input').click());
   _el('file-input').addEventListener('change',e=>{if(e.target.files[0]){importJSON(e.target.files[0]);e.target.value='';}});
 
-  /* Copy Settings */
+  /* Copy Settings — handlers save to GLOBAL cset key */
   _el('cset-toggle').addEventListener('click',()=>{
     const sec=_el('cset-section');if(!sec)return;
     ST.csetOpen=!ST.csetOpen;sec.classList.toggle('collapsed',!ST.csetOpen);
     document.querySelector('#cset-toggle .it-chevron').textContent=ST.csetOpen?'▲':'▼';
   });
-  _el('cset-prefix').addEventListener('input',e=>{ST.prefix=e.target.value;save();updateCsetHint();});
-  _el('cset-suffix').addEventListener('input',e=>{ST.suffix=e.target.value;save();updateCsetHint();});
-  _el('cset-clear-pre').addEventListener('click',()=>{ST.prefix='';_el('cset-prefix').value='';save();updateCsetHint();toast('Prefix cleared');});
-  _el('cset-clear-suf').addEventListener('click',()=>{ST.suffix='';_el('cset-suffix').value='';save();updateCsetHint();toast('Suffix cleared');});
+  _el('cset-prefix').addEventListener('input',e=>{ST.prefix=e.target.value;saveGlobalCset();updateCsetHint();});
+  _el('cset-suffix').addEventListener('input',e=>{ST.suffix=e.target.value;saveGlobalCset();updateCsetHint();});
+  _el('cset-clear-pre').addEventListener('click',()=>{ST.prefix='';_el('cset-prefix').value='';saveGlobalCset();updateCsetHint();toast('Prefix cleared');});
+  _el('cset-clear-suf').addEventListener('click',()=>{ST.suffix='';_el('cset-suffix').value='';saveGlobalCset();updateCsetHint();toast('Suffix cleared');});
+
+  /* Set Ratings section */
+  _el('srating-toggle').addEventListener('click',()=>{
+    const sec=_el('srating-section');if(!sec)return;
+    sec.classList.toggle('collapsed');
+    document.querySelector('#srating-toggle .it-chevron').textContent=sec.classList.contains('collapsed')?'▼':'▲';
+  });
+  _el('btn-apply-ratings').addEventListener('click',()=>{
+    const t=_el('srating-textarea').value.trim();if(!t){toast('⚠️ Paste rating lines first');return;}
+    applySetRatings(t);
+  });
+  _el('btn-clear-rating-input').addEventListener('click',()=>{_el('srating-textarea').value='';});
+  _el('btn-clear-all-ratings').addEventListener('click',()=>showModal('Clear all set ratings?','All set ratings and why text will be removed.',()=>{
+    ST.setRatings={};ST.ratingBatches=[];ST.activeRatingBatch='new';save();updateAllPromptChips();updateSratingHint();renderRatingTabs();renderRatingPanel();toast('🗑️ Set ratings cleared');
+  }));
+
+  /* Clear copy history — event delegation on project-bar */
+  _el('project-bar').addEventListener('click',e=>{
+    if(e.target.closest('#btn-clear-copy')){
+      showModal('Clear copy history?','All green "copied" marks for this script will be removed.',()=>{
+        clearCopyHistory();toast('⟲ Copy history cleared');
+      });
+    }
+  });
 
   /* Filter */
   document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>setFilter(c.dataset.filter)));

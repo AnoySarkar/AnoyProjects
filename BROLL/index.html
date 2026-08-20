@@ -171,6 +171,40 @@
       </div>
     </section>
 
+    <!-- ══ SET RATINGS ════════════════════════════════════════ -->
+    <section id="srating-section" class="collapsed">
+      <div id="srating-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <span>⭐ Set Ratings</span>
+        <span class="srating-hint" id="srating-hint">0 ratings</span>
+        <span style="flex:1"></span>
+        <span class="it-chevron">▼</span>
+      </div>
+      <div id="srating-body">
+        <!-- Rating Tabs -->
+        <div id="srating-tab-bar" role="tablist"></div>
+
+        <!-- Tab Panels -->
+        <div id="srating-content-area">
+          <div id="srating-panel-new" role="tabpanel">
+            <div class="srating-inner">
+              <div class="srating-format-hint">Format per line: <code>BROLL : SET : SCORE : why text</code></div>
+              <textarea id="srating-textarea"
+                placeholder="1 : 2 : 9.5 : Great cinematic push&#10;3 : 1 : 8 : Good but slightly shaky"
+                rows="5" spellcheck="false"></textarea>
+              <div class="srating-actions">
+                <button class="hbtn primary" id="btn-apply-ratings">⭐ Apply Ratings</button>
+                <button class="hbtn" id="btn-clear-rating-input">✕ Clear Input</button>
+                <button class="hbtn danger" id="btn-clear-all-ratings" style="margin-left:auto">🗑 All Ratings</button>
+              </div>
+              <div class="srating-summary" id="srating-summary"></div>
+            </div>
+          </div>
+          <div id="srating-panel-detail" class="hidden" role="tabpanel"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ══ VIDEO PROMPT LIBRARY ════════════════════════════════ -->
     <section id="library-section">
       <div id="library-toggle" role="button" tabindex="0"
