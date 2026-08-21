@@ -87,22 +87,27 @@ function _projData(name) {
 
 function saveProjects() {
   if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    // Read script from DOM; fall back to what's already saved (never lose it)
     const ta = _el('script-textarea');
+    const savedScript = ta && ta.value !== undefined && ta.value !== null
+      ? ta.value
+      : (PROJECTS[ACTIVE_PID].script || '');
     PROJECTS[ACTIVE_PID] = {
       ...PROJECTS[ACTIVE_PID],
-      script:        ta ? ta.value : (PROJECTS[ACTIVE_PID].script||''),
+      script:        savedScript,
       scores:        JSON.parse(JSON.stringify(ST.scores)),
       prompts:       JSON.parse(JSON.stringify(ST.prompts)),
-      batches:       [...ST.batches],
+      batches:       JSON.parse(JSON.stringify(ST.batches)),
       usedSets:      JSON.parse(JSON.stringify(ST.usedSets)),
       setRatings:    JSON.parse(JSON.stringify(ST.setRatings||{})),
-      ratingBatches: [...(ST.ratingBatches||[])],
+      ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches||[])),
       // prefix/suffix are global — NOT saved per-project
     };
   }
   try { localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS })); } catch {}
   saveGlobalCset();
 }
+
 
 function _migratePrompts(rawPr) {
   const p = {};
@@ -285,11 +290,7 @@ function getRatingColor(score) {
   if (s >= 10)  return { border:'#9333ea', bg:'rgba(147,51,234,0.15)', text:'#c084fc' }; // 10 is purple
   if (s >= 9.5) return { border:'#2563eb', bg:'rgba(37,99,235,0.15)',  text:'#60a5fa' }; // 9.5 is blue
   if (s >= 9)   return { border:'#16a34a', bg:'rgba(22,163,74,0.15)',  text:'#4ade80' }; // 9 is green
-  if (s >= 8.5) return { border:'#ca8a04', bg:'rgba(202,138,4,0.15)',  text:'#facc15' }; // 8.5 is yellow
-  if (s >= 8)   return { border:'#ea580c', bg:'rgba(234,88,12,0.15)',  text:'#fb923c' }; // 8 is orange
-  if (s >= 7.5) return { border:'#f43f5e', bg:'rgba(244,63,94,0.15)',  text:'#fda4af' }; // 7.5 is light red
-  if (s >= 7)   return { border:'#dc2626', bg:'rgba(220,38,38,0.15)',  text:'#f87171' }; // 7 is red
-  return { border:'#7f1d1d', bg:'rgba(127,29,29,0.25)', text:'#ef4444' };                // below 7 is deep red
+  return null; // below 9 = no color
 }
 
 /* ── Set Ratings: parse, apply, delete, tabs & panels ────────── */
@@ -522,10 +523,8 @@ function deleteRatingBatch(batchId, delRatings) {
   toast(delRatings ? '🗑 Rating batch + ratings removed' : '🗑 Rating batch removed (ratings kept)');
 }
 
-/* ── Why Popup (Hover Tooltip with Remove Option) ────────────── */
-let _whyTimer = null;
+/* ── Why Popup (click-based, closes on outside click) ────────── */
 function showWhyPopup(e, num, setIdx) {
-  if (_whyTimer) { clearTimeout(_whyTimer); _whyTimer = null; }
   document.getElementById('why-popup')?.remove();
   const rating = ST.setRatings?.[num]?.[setIdx];
   const rColor = rating ? getRatingColor(rating.score) : null;
@@ -537,6 +536,8 @@ function showWhyPopup(e, num, setIdx) {
   const sb = document.createElement('span'); sb.className = 'why-score-badge';
   if (rColor) {
     sb.textContent = rating.score; sb.style.color = rColor.text;
+  } else if (rating) {
+    sb.textContent = rating.score; sb.style.color = 'var(--text-2)';
   } else {
     sb.textContent = '—'; sb.style.color = 'var(--text-3)';
   }
@@ -563,37 +564,27 @@ function showWhyPopup(e, num, setIdx) {
   popup.appendChild(hdr);
 
   const body = document.createElement('div'); body.className = 'why-body';
-  body.textContent = rating?.why || (rating ? 'No reason recorded.' : 'No rating yet.');
+  body.textContent = rating?.why || (rating ? 'No reason recorded.' : 'No rating for this set yet.');
   popup.appendChild(body);
 
+  // Position near chip
   const rect = e.currentTarget?.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
   let posX = e.clientX;
-  let posY = e.clientY + 12;
-  if (rect) {
-    posX = rect.left;
-    posY = rect.bottom + 6;
-  }
+  let posY = (rect ? rect.bottom : e.clientY) + 6;
+  if (rect) posX = rect.left;
 
-  popup.style.left = Math.min(posX, window.innerWidth - 290) + 'px';
-  popup.style.top  = Math.min(posY, window.innerHeight - 170) + 'px';
+  popup.style.left = Math.min(posX, window.innerWidth - 295) + 'px';
+  popup.style.top  = Math.min(posY, window.innerHeight - 180) + 'px';
 
-  popup.addEventListener('mouseenter', () => {
-    if (_whyTimer) { clearTimeout(_whyTimer); _whyTimer = null; }
-  });
-  popup.addEventListener('mouseleave', () => {
-    hideWhyPopup(150);
-  });
-
+  popup.addEventListener('click', ev => ev.stopPropagation());
   document.body.appendChild(popup);
+
+  // Close when clicking anywhere else
+  setTimeout(() => {
+    document.addEventListener('click', () => document.getElementById('why-popup')?.remove(), { once: true });
+  }, 10);
 }
 
-function hideWhyPopup(delay = 200) {
-  if (_whyTimer) clearTimeout(_whyTimer);
-  _whyTimer = setTimeout(() => {
-    document.getElementById('why-popup')?.remove();
-    _whyTimer = null;
-  }, delay);
-}
 
 
 /* ── Clear Copy History ──────────────────────────────────────── */
@@ -705,7 +696,7 @@ function importPrompts(text) {
   const minN = Math.min(...keys.map(Number)), maxN = Math.max(...keys.map(Number));
   const tabLabel = minN===maxN ? `#${minN}` : `#${minN}–${maxN}`;
   ST.batches.push({ id:batchId, label:tabLabel, date:Date.now(), raw:text, brollCount:keys.length, promptCount:total });
-  
+
   // Stay on 'new' input tab and clear input textarea ready for next import
   ST.activeBatch = 'new';
   const ta = _el('prompt-textarea');
@@ -717,8 +708,36 @@ function importPrompts(text) {
   updateAllPromptChips();
   renderLibraryView();
   updateLibBadge();
-  toast(`✅ Imported ${total} prompts (${tabLabel})`);
+
+  // --- Import notification popup ---
+  const IDEAL_BROLLS = 5, IDEAL_SETS = 6, IDEAL_TOTAL = IDEAL_BROLLS * IDEAL_SETS;
+  const brollNums = keys.map(Number).sort((a,b)=>a-b);
+  let breakdown = brollNums.map(num => {
+    const setCount = parsed[String(num)].length;
+    return `<tr><td style="padding:2px 10px 2px 0">B-roll #${num}</td><td>${setCount} set${setCount!==1?'s':''}</td></tr>`;
+  }).join('');
+
+  let matchNote;
+  if (total === IDEAL_TOTAL && keys.length === IDEAL_BROLLS) {
+    matchNote = `<p style="color:#4ade80;margin-top:8px">✅ Perfect — ${IDEAL_BROLLS} B-rolls × ${IDEAL_SETS} sets = ${IDEAL_TOTAL} prompts</p>`;
+  } else {
+    const diff = total - IDEAL_TOTAL;
+    const sign = diff > 0 ? '+' : '';
+    matchNote = `<p style="color:#fb923c;margin-top:8px">⚠️ Expected ${IDEAL_TOTAL} prompts (${IDEAL_BROLLS}×${IDEAL_SETS}). Got <strong>${total}</strong> (${sign}${diff})</p>`;
+  }
+
+  showModal(
+    `📥 Import Summary — ${tabLabel}`,
+    `<div style="font-size:13px;line-height:1.5">
+      <p style="margin-bottom:6px"><strong>${total}</strong> prompt${total!==1?'s':''} imported across <strong>${keys.length}</strong> B-roll${keys.length!==1?'s':''}</p>
+      <table style="border-collapse:collapse;margin-top:4px">${breakdown}</table>
+      ${matchNote}
+    </div>`,
+    () => {} // OK just closes
+  );
 }
+
+
 
 function deleteBatch(batchId, delPrompts) {
   if (delPrompts) {
@@ -1008,14 +1027,24 @@ function buildPromptChip(num, i, entry) {
 
   if (rating) {
     const rb = document.createElement('span'); rb.className = 'p-chip-rating';
-    rb.textContent = rating.score; rb.style.color = rColor.text; chip.appendChild(rb);
+    rb.textContent = rating.score; rb.style.color = rColor ? rColor.text : 'var(--text-3)'; chip.appendChild(rb);
   }
 
-  chip.title = `Set ${i+1} for #${num}${rating ? ' · ' + rating.score : ''}\n\n• Left-click: Copy prompt\n• Right-click: ${entry.copied ? 'Untick copied' : 'Mark as copied'}\n• Hover: Show why reason`;
-  
-  // Left-click: Copy prompt
-  chip.addEventListener('click', e => { e.stopPropagation(); copyPrompt(num, i, chip); });
-  
+  const titleLines = [`Set ${i+1} for #${num}${rating ? ' · ' + rating.score : ''}`,
+    '', '• Left-click: ' + (entry.copied ? 'Show "why" reason' : 'Copy prompt'),
+    '• Right-click: ' + (entry.copied ? 'Untick copied' : 'Mark as copied')];
+  chip.title = titleLines.join('\n');
+
+  // Left-click: if already ticked → show why popup; else copy
+  chip.addEventListener('click', e => {
+    e.stopPropagation();
+    if (entry.copied && rating) {
+      showWhyPopup(e, num, i);
+    } else {
+      copyPrompt(num, i, chip);
+    }
+  });
+
   // Right-click: Untick / toggle copied checkmark
   chip.addEventListener('contextmenu', e => {
     e.preventDefault(); e.stopPropagation();
@@ -1025,12 +1054,9 @@ function buildPromptChip(num, i, entry) {
     toast(entry.copied ? `✓ Marked Set ${i+1} as copied` : `✕ Unticked Set ${i+1} for #${num}`);
   });
 
-  // Hover: Show why popup
-  chip.addEventListener('mouseenter', e => { showWhyPopup(e, num, i); });
-  chip.addEventListener('mouseleave', () => { hideWhyPopup(150); });
-
   return chip;
 }
+
 
 
 function updateCardPrompts(num) {
@@ -1272,15 +1298,55 @@ function setFilter(f){
 
 /* ── Export / Import ────────────────────────────────────────── */
 function exportData(){
-  const ta=_el('script-textarea');
-  const d={v:5,date:new Date().toISOString(),script:ta?.value||'',scores:ST.scores,prompts:ST.prompts,batches:ST.batches,usedSets:ST.usedSets,prefix:ST.prefix,suffix:ST.suffix};
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));
-  a.download=`broll-${new Date().toISOString().slice(0,10)}.json`; a.click(); toast('📥 Exported');
+  const ta = _el('script-textarea');
+  const scriptVal = ta ? ta.value : (PROJECTS[ACTIVE_PID]?.script || '');
+  const d = {
+    v: 6, date: new Date().toISOString(), script: scriptVal,
+    scores: JSON.parse(JSON.stringify(ST.scores)),
+    prompts: JSON.parse(JSON.stringify(ST.prompts)),
+    batches: JSON.parse(JSON.stringify(ST.batches)),
+    usedSets: JSON.parse(JSON.stringify(ST.usedSets)),
+    setRatings: JSON.parse(JSON.stringify(ST.setRatings || {})),
+    ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches || [])),
+    prefix: ST.prefix, suffix: ST.suffix,
+  };
+  const json = JSON.stringify(d, null, 2);
+  const filename = `broll-${new Date().toISOString().slice(0,10)}.json`;
+  try {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch {
+    const a = document.createElement('a');
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+    a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+  toast('📥 Exported');
 }
 function importJSON(file){
-  const r=new FileReader();
-  r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d.script)_el('script-textarea').value=d.script;ST.scores=d.scores||{};ST.prompts=d.prompts||{};ST.batches=d.batches||[];ST.usedSets=d.usedSets||{};if(d.prefix!==undefined)ST.prefix=d.prefix;if(d.suffix!==undefined)ST.suffix=d.suffix;if(d.script)loadScript(d.script,true);save();renderLibraryView();renderBatchTabs();updateLibBadge();syncCsetUI();toast('📤 Imported');}catch{toast('❌ Invalid file');}};
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const d = JSON.parse(ev.target.result);
+      if (d.script) { const ta = _el('script-textarea'); if (ta) ta.value = d.script; }
+      ST.scores        = d.scores        || {};
+      ST.prompts       = _migratePrompts(d.prompts || {});
+      ST.batches       = d.batches       || [];
+      ST.usedSets      = d.usedSets      || {};
+      ST.setRatings    = d.setRatings    || {};
+      ST.ratingBatches = d.ratingBatches || [];
+      if (d.prefix !== undefined) ST.prefix = d.prefix;
+      if (d.suffix !== undefined) ST.suffix = d.suffix;
+      if (d.script) loadScript(d.script, true);
+      save();
+      renderLibraryView(); renderBatchTabs(); updateLibBadge(); syncCsetUI();
+      renderRatingTabs(); renderRatingPanel(); updateSratingHint(); updateAllPromptChips();
+      toast('📤 Imported');
+    } catch(err) { console.error('Import error:', err); toast('❌ Invalid file'); }
+  };
   r.readAsText(file);
 }
 
@@ -1308,13 +1374,15 @@ function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(
 document.addEventListener('DOMContentLoaded',()=>{
   loadProjects();
   const proj = PROJECTS[ACTIVE_PID] || {};
-  ST.scores      = proj.scores      || {};
-  ST.prompts     = _migratePrompts(proj.prompts);
-  ST.batches     = proj.batches     || [];
-  ST.usedSets    = proj.usedSets    || {};
-  ST.setRatings  = proj.setRatings  || {};
-  ST.brolls      = parseScript(proj.script || '');
+  ST.scores        = proj.scores        || {};
+  ST.prompts       = _migratePrompts(proj.prompts);
+  ST.batches       = proj.batches       || [];
+  ST.usedSets      = proj.usedSets      || {};
+  ST.setRatings    = proj.setRatings    || {};
+  ST.ratingBatches = proj.ratingBatches || [];
+  ST.brolls        = parseScript(proj.script || '');
   loadGlobalCset();   // Load prefix/suffix from global key
+
 
   const ta = _el('script-textarea'); if (ta) ta.value = proj.script || '';
 
@@ -1422,10 +1490,44 @@ document.addEventListener('DOMContentLoaded',()=>{
     save();updateAllPromptChips();renderBatchTabs();renderBatchPanel();renderLibraryView();updateLibBadge();toast('🗑️ All prompts cleared');
   }));
 
-  /* Jump to top */
-  const jt=_el('jump-top');
-  window.addEventListener('scroll',()=>jt?.classList.toggle('visible',scrollY>300),{passive:true});
-  jt?.addEventListener('click',()=>scrollTo({top:0,behavior:'smooth'}));
+  /* Paste button in library */
+  _el('btn-paste-prompt')?.addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) { toast('⚠️ Clipboard is empty'); return; }
+      const ta = _el('prompt-textarea');
+      if (!ta) return;
+      if (ta.value.trim()) {
+        ta.value = ta.value.trimEnd() + '\n\n' + text;
+      } else {
+        ta.value = text;
+      }
+      // Same autoPad behavior: ensure 2 trailing newlines and move cursor to end
+      setTimeout(() => {
+        if (!ta.value.endsWith('\n\n')) ta.value = ta.value.trimEnd() + '\n\n';
+        ta.scrollTop = ta.scrollHeight;
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+        ta.focus();
+      }, 10);
+      toast('📋 Pasted from clipboard');
+    } catch {
+      toast('⚠️ Cannot read clipboard — use Ctrl+V');
+    }
+  });
+
+  /* Jump to top / bottom */
+  const jt = _el('jump-top'), jb = _el('jump-bottom');
+  window.addEventListener('scroll', () => {
+    const atTop = scrollY < 300;
+    const atBottom = (window.innerHeight + scrollY) >= document.body.scrollHeight - 300;
+    jt?.classList.toggle('visible', !atTop);
+    jb?.classList.toggle('visible', !atBottom);
+  }, { passive: true });
+  jt?.addEventListener('click', () => scrollTo({ top: 0, behavior: 'smooth' }));
+  jb?.addEventListener('click', () => scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+  // Show bottom button initially if page is scrollable
+  if (document.body.scrollHeight > window.innerHeight + 300) jb?.classList.add('visible');
+
 
   /* Service Worker for PWA / TWA */
   if ('serviceWorker' in navigator) {

@@ -228,6 +228,7 @@
               aria-label="Prompt batch input" rows="7" spellcheck="false"></textarea>
             <div class="lib-actions">
               <button class="hbtn primary" id="btn-import-prompts">📥 Import</button>
+              <button class="hbtn" id="btn-paste-prompt">📋 Paste</button>
               <button class="hbtn" id="btn-clear-prompt-input">✕ Clear</button>
               <button class="hbtn danger" id="btn-clear-prompts" style="margin-left:auto">🗑 All Prompts</button>
             </div>
@@ -266,7 +267,11 @@
   </div>
 </div>
 
-<button id="jump-top" aria-label="Back to top" title="Back to top">↑</button>
+<div id="scroll-nav">
+  <button id="jump-top" aria-label="Scroll to top" title="Scroll to top">↑</button>
+  <button id="jump-bottom" aria-label="Scroll to bottom" title="Scroll to bottom">↓</button>
+</div>
+
 
 <script src="app.js"></script>
 </body>
