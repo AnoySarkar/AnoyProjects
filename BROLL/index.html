@@ -40,6 +40,10 @@
         <div class="hpill c-accent"><span class="hpill-v" id="st-scored">0/0</span><span class="hpill-l">scored</span></div>
         <div class="hpill c-green"><span class="hpill-v" id="st-green">0</span><span class="hpill-l">≥9</span></div>
         <div class="hpill"><span class="hpill-v" id="st-avg">—</span><span class="hpill-l">avg</span></div>
+        <div class="hpill sync-pill" id="sync-status" title="Firebase Cloud Sync: Connecting..." style="cursor:pointer">
+          <span class="sync-dot" id="sync-dot"></span>
+          <span class="sync-text" id="sync-text">Cloud</span>
+        </div>
       </div>
 
       <div class="hdr-actions">
@@ -273,6 +277,11 @@
 </div>
 
 
+<!-- Firebase SDKs for Cloud Sync -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
 <script src="app.js"></script>
 </body>
 </html>
+

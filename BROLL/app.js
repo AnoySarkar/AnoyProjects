@@ -63,6 +63,223 @@ const ST = {
   csetOpen:          false,
 };
 
+/* ── Firebase Realtime Cloud Sync ────────────────────────────── */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDd6YU-594_K55H98ZoVwf9hgcVCCuaaqQ",
+  authDomain: "broll-38319.firebaseapp.com",
+  databaseURL: "https://broll-38319-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "broll-38319",
+  storageBucket: "broll-38319.firebasestorage.app",
+  messagingSenderId: "54189067078",
+  appId: "1:54189067078:web:a33c8129977a0d27fdb347",
+  measurementId: "G-JXH7R79WDV"
+};
+
+const CLIENT_ID = 'c_' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+let _fbDb = null;
+let _fbRef = null;
+let _fbSyncTimer = null;
+let _isApplyingRemote = false;
+
+function updateSyncUI(status, text) {
+  const dot = _el('sync-dot');
+  const txt = _el('sync-text');
+  const pill = _el('sync-status');
+  if (!dot || !txt) return;
+
+  dot.className = 'sync-dot';
+  if (status === 'syncing') {
+    dot.classList.add('syncing');
+    txt.textContent = text || 'Syncing…';
+    if (pill) pill.title = 'Uploading changes to Firebase Cloud…';
+  } else if (status === 'offline') {
+    dot.classList.add('offline');
+    txt.textContent = text || 'Offline';
+    if (pill) pill.title = 'Offline or cloud disconnected. Local storage is active.';
+  } else {
+    txt.textContent = text || 'Cloud';
+    if (pill) pill.title = 'Firebase Cloud Sync: Connected & synced across devices.';
+  }
+}
+
+function pushToFirebase(immediate = false) {
+  if (!_fbRef || _isApplyingRemote) return;
+
+  if (_fbSyncTimer) clearTimeout(_fbSyncTimer);
+  updateSyncUI('syncing', 'Syncing…');
+
+  const doPush = () => {
+    const ta = _el('script-textarea');
+    const savedScript = ta && ta.value !== undefined && ta.value !== null
+      ? ta.value
+      : (PROJECTS[ACTIVE_PID]?.script || '');
+
+    if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+      PROJECTS[ACTIVE_PID].script = savedScript;
+    }
+
+    const payload = {
+      active: ACTIVE_PID,
+      projects: JSON.parse(JSON.stringify(PROJECTS)),
+      globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '' },
+      lastUpdatedBy: CLIENT_ID,
+      updatedAt: Date.now()
+    };
+
+    _fbRef.set(payload)
+      .then(() => {
+        updateSyncUI('synced', 'Cloud');
+      })
+      .catch(err => {
+        console.error('Firebase save error:', err);
+        updateSyncUI('offline', 'Sync Error');
+      });
+  };
+
+  if (immediate) {
+    doPush();
+  } else {
+    _fbSyncTimer = setTimeout(doPush, 400);
+  }
+}
+
+function applyRemoteData(data) {
+  if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
+  _isApplyingRemote = true;
+  try {
+    // 1. Sync projects dictionary
+    for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+    for (const [k, v] of Object.entries(data.projects)) {
+      PROJECTS[k] = {
+        name: v.name || 'Script',
+        script: v.script || '',
+        scores: v.scores || {},
+        prompts: _migratePrompts(v.prompts || {}),
+        batches: v.batches || [],
+        usedSets: v.usedSets || {},
+        setRatings: v.setRatings || {},
+        ratingBatches: v.ratingBatches || []
+      };
+    }
+
+    // 2. Sync active project ID
+    if (data.active && PROJECTS[data.active]) {
+      ACTIVE_PID = data.active;
+    } else {
+      ACTIVE_PID = Object.keys(PROJECTS)[0] || null;
+    }
+
+    // 3. Sync global prefix/suffix
+    if (data.globalCset) {
+      ST.prefix = data.globalCset.prefix || '';
+      ST.suffix = data.globalCset.suffix || '';
+      saveGlobalCset();
+      syncCsetUI();
+    }
+
+    // 4. Update localStorage cache
+    try {
+      localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    } catch {}
+
+    // 5. Update active project working state
+    if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+      const proj = PROJECTS[ACTIVE_PID];
+      ST.scores            = proj.scores        || {};
+      ST.prompts           = _migratePrompts(proj.prompts);
+      ST.batches           = proj.batches       || [];
+      ST.usedSets          = proj.usedSets      || {};
+      ST.setRatings        = proj.setRatings    || {};
+      ST.ratingBatches     = proj.ratingBatches || [];
+      ST.brolls            = parseScript(proj.script || '');
+
+      const ta = _el('script-textarea');
+      if (ta && document.activeElement !== ta) {
+        ta.value = proj.script || '';
+      }
+      if (ST.brolls.length) collapseInput();
+    }
+
+    // 6. Re-render UI
+    renderProjectTabs();
+    renderHeatmap();
+    renderStats();
+    renderCards(false);
+    updateAllPromptChips();
+    renderBatchTabs();
+    renderBatchPanel();
+    renderLibraryView();
+    updateLibBadge();
+    renderRatingTabs();
+    renderRatingPanel();
+    updateSratingHint();
+    updateSyncUI('synced', 'Cloud');
+    toast('☁️ Synced from Cloud');
+  } catch (err) {
+    console.error('Error applying remote data:', err);
+  } finally {
+    setTimeout(() => { _isApplyingRemote = false; }, 300);
+  }
+}
+
+function initFirebaseSync() {
+  if (typeof firebase === 'undefined') {
+    console.warn('Firebase SDK not loaded, using local storage.');
+    updateSyncUI('offline', 'Local Only');
+    return;
+  }
+  try {
+    if (!firebase.apps || !firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+    _fbDb = firebase.database();
+    _fbRef = _fbDb.ref('broll_app_data');
+
+    // Monitor connection state
+    _fbDb.ref('.info/connected').on('value', snap => {
+      const connected = !!snap.val();
+      if (!connected) {
+        updateSyncUI('offline', 'Offline');
+      } else {
+        updateSyncUI('synced', 'Cloud');
+      }
+    });
+
+    // Listen for remote updates
+    let isInitialRead = true;
+    _fbRef.on('value', snap => {
+      const data = snap.val();
+      if (!data || !data.projects || Object.keys(data.projects).length === 0) {
+        // Cloud is empty, push current local state to initialize it
+        console.log('Firebase database empty, pushing local state...');
+        pushToFirebase(true);
+        isInitialRead = false;
+        return;
+      }
+      if (isInitialRead) {
+        isInitialRead = false;
+        applyRemoteData(data);
+        return;
+      }
+      // If change originated from this client tab, skip
+      if (data.lastUpdatedBy === CLIENT_ID) {
+        return;
+      }
+      applyRemoteData(data);
+    });
+
+    // Click on sync status pill to manual force sync
+    _el('sync-status')?.addEventListener('click', () => {
+      toast('🔄 Syncing with Cloud…');
+      pushToFirebase(true);
+    });
+
+  } catch (err) {
+    console.error('Firebase initialization error:', err);
+    updateSyncUI('offline', 'Local Only');
+  }
+}
+
 /* ── Global Prefix / Suffix (shared across all scripts) ─────── */
 const GLOBAL_CSET_KEY = 'br_global_cset';
 function saveGlobalCset() {
@@ -106,7 +323,9 @@ function saveProjects() {
   }
   try { localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS })); } catch {}
   saveGlobalCset();
+  pushToFirebase(); // Sync to Firebase Cloud
 }
+
 
 
 function _migratePrompts(rawPr) {
@@ -1395,6 +1614,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge();
   syncCsetUI(); updateSratingHint(); renderRatingTabs(); renderRatingPanel(); refreshUR();
   scrollToLastScoredBroll();
+  initFirebaseSync();
+
 
   let rT; window.addEventListener('resize',()=>{clearTimeout(rT);rT=setTimeout(renderHeatmap,120);});
 
