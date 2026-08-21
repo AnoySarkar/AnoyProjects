@@ -284,7 +284,9 @@ function initFirebaseSync() {
 const GLOBAL_CSET_KEY = 'br_global_cset';
 function saveGlobalCset() {
   try { localStorage.setItem(GLOBAL_CSET_KEY, JSON.stringify({ prefix: ST.prefix, suffix: ST.suffix })); } catch {}
+  pushToFirebase();
 }
+
 function loadGlobalCset() {
   try {
     const d = JSON.parse(localStorage.getItem(GLOBAL_CSET_KEY) || 'null');
