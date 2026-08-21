@@ -157,7 +157,7 @@ function applyRemoteData(data) {
         prompts: _migratePrompts(v.prompts || {}),
         batches: v.batches || [],
         usedSets: v.usedSets || {},
-        setRatings: v.setRatings || {},
+        setRatings: _migrateSetRatings(v.setRatings || {}),
         ratingBatches: v.ratingBatches || []
       };
     }
@@ -189,9 +189,10 @@ function applyRemoteData(data) {
       ST.prompts           = _migratePrompts(proj.prompts);
       ST.batches           = proj.batches       || [];
       ST.usedSets          = proj.usedSets      || {};
-      ST.setRatings        = proj.setRatings    || {};
+      ST.setRatings        = _migrateSetRatings(proj.setRatings);
       ST.ratingBatches     = proj.ratingBatches || [];
       ST.brolls            = parseScript(proj.script || '');
+
 
       const ta = _el('script-textarea');
       if (ta && document.activeElement !== ta) {
@@ -338,12 +339,44 @@ function _migratePrompts(rawPr) {
   return p;
 }
 
+function _migrateSetRatings(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const migrated = {};
+  for (const [brollNum, sets] of Object.entries(raw)) {
+    if (!sets || typeof sets !== 'object') continue;
+    migrated[brollNum] = {};
+    for (const [setIdx, r] of Object.entries(sets)) {
+      if (!r) continue;
+      if (Array.isArray(r)) {
+        migrated[brollNum][setIdx] = r.map(x => ({
+          score: parseFloat(x.score) || 0,
+          why: x.why || '',
+          date: x.date || Date.now()
+        }));
+      } else if (typeof r === 'object' && r.score !== undefined) {
+        migrated[brollNum][setIdx] = [{
+          score: parseFloat(r.score) || 0,
+          why: r.why || '',
+          date: r.date || Date.now()
+        }];
+      }
+    }
+  }
+  return migrated;
+}
+
 function loadProjects() {
   /* Try new multi-project store */
   try {
     const raw = JSON.parse(localStorage.getItem(PROJ_KEY)||'null');
     if (raw && raw.projects && Object.keys(raw.projects).length) {
-      for (const [k,v] of Object.entries(raw.projects)) PROJECTS[k] = v;
+      for (const [k,v] of Object.entries(raw.projects)) {
+        PROJECTS[k] = {
+          ...v,
+          prompts: _migratePrompts(v.prompts),
+          setRatings: _migrateSetRatings(v.setRatings)
+        };
+      }
       ACTIVE_PID = (raw.active && PROJECTS[raw.active]) ? raw.active : Object.keys(PROJECTS)[0];
       // Migrate old per-project prefix/suffix to global store (first time only)
       if (!localStorage.getItem(GLOBAL_CSET_KEY)) {
@@ -390,9 +423,10 @@ function activateProject(pid) {
   ST.prompts           = _migratePrompts(proj.prompts);
   ST.batches           = proj.batches       || [];
   ST.usedSets          = proj.usedSets      || {};
-  ST.setRatings        = proj.setRatings    || {};
+  ST.setRatings        = _migrateSetRatings(proj.setRatings);
   ST.ratingBatches     = proj.ratingBatches || [];
   ST.activeRatingBatch = 'new';
+
   // prefix/suffix stay global — do NOT overwrite from project
   ST.brolls            = parseScript(proj.script || '');
   ST.filter = 'all'; ST.sortBy = 'num'; ST.activeBatch = 'new';
@@ -515,6 +549,38 @@ function getRatingColor(score) {
 }
 
 /* ── Set Ratings: parse, apply, delete, tabs & panels ────────── */
+function getSetRatingsList(num, setIdx) {
+  const r = ST.setRatings?.[num]?.[setIdx];
+  if (!r) return [];
+  if (Array.isArray(r)) return r;
+  if (typeof r === 'object' && r.score !== undefined) return [r];
+  return [];
+}
+
+function getSetRatingSummary(num, setIdx) {
+  const list = getSetRatingsList(num, setIdx);
+  if (!list.length) return null;
+  const total = list.reduce((sum, item) => sum + (parseFloat(item.score) || 0), 0);
+  const avg = Number((total / list.length).toFixed(1));
+  const tenCount = list.filter(item => (parseFloat(item.score) || 0) >= 10).length;
+  const isMajorityTen = (tenCount / list.length) >= 0.5;
+
+  // If at least 50% of AI ratings gave 10/10, elevate color tier to purple
+  let rColor = getRatingColor(avg);
+  if (isMajorityTen) {
+    rColor = getRatingColor(10);
+  }
+
+  return {
+    ratings: list,
+    count: list.length,
+    avgScore: avg,
+    tenCount,
+    isMajorityTen,
+    color: rColor
+  };
+}
+
 function parseSetRatings(text) {
   const results = [];
   for (const line of text.split('\n')) {
@@ -540,7 +606,9 @@ function applySetRatings(text) {
   const brollsInBatch = [];
   parsed.forEach(({ brollNum, setIdx, score, why }) => {
     if (!ST.setRatings[brollNum]) ST.setRatings[brollNum] = {};
-    ST.setRatings[brollNum][setIdx] = { score, why };
+    const existing = getSetRatingsList(brollNum, setIdx);
+    existing.push({ score, why, date: Date.now() });
+    ST.setRatings[brollNum][setIdx] = existing;
     if (!brollsInBatch.includes(brollNum)) brollsInBatch.push(brollNum);
   });
   brollsInBatch.sort((a, b) => a - b);
@@ -571,33 +639,43 @@ function applySetRatings(text) {
   toast(`⭐ Applied ${parsed.length} ratings for B-roll ${tabLabel}`);
 }
 
-function deleteSetRating(num, setIdx) {
+function deleteSetRating(num, setIdx, ratingItemIdx = null) {
   if (!ST.setRatings?.[num] || ST.setRatings[num][setIdx] === undefined) return;
-  const oldVal = ST.setRatings[num][setIdx];
-  record(
-    () => {
-      if (!ST.setRatings[num]) ST.setRatings[num] = {};
-      ST.setRatings[num][setIdx] = oldVal;
-      save(); updateAllPromptChips(); updateSratingHint(); renderRatingPanel();
-    },
-    () => {
-      delete ST.setRatings[num][setIdx];
-      if (!Object.keys(ST.setRatings[num]).length) delete ST.setRatings[num];
-      save(); updateAllPromptChips(); updateSratingHint(); renderRatingPanel();
-    },
-    `Delete rating for #${num} Set ${setIdx+1}`
-  );
-  delete ST.setRatings[num][setIdx];
-  if (!Object.keys(ST.setRatings[num]).length) delete ST.setRatings[num];
+  const list = getSetRatingsList(num, setIdx);
+
+  if (ratingItemIdx === null || list.length <= 1) {
+    delete ST.setRatings[num][setIdx];
+    if (!Object.keys(ST.setRatings[num]).length) delete ST.setRatings[num];
+  } else {
+    if (ratingItemIdx >= 0 && ratingItemIdx < list.length) {
+      list.splice(ratingItemIdx, 1);
+      ST.setRatings[num][setIdx] = list;
+    }
+  }
+
   save();
   updateAllPromptChips();
   updateSratingHint();
   renderRatingPanel();
-  toast(`🗑 Removed rating for #${num} Set ${setIdx+1}`);
+  toast(ratingItemIdx === null ? `🗑 Removed ratings for #${num} Set ${setIdx+1}` : `🗑 Removed rating entry for #${num} Set ${setIdx+1}`);
 }
 
 function updateSratingHint() {
-  const total = Object.values(ST.setRatings||{}).reduce((s,obj) => s + Object.keys(obj).length, 0);
+  let total = 0;
+  let brolls = 0;
+  if (ST.setRatings) {
+    for (const [num, sets] of Object.entries(ST.setRatings)) {
+      let hasR = false;
+      for (const [idx, r] of Object.entries(sets || {})) {
+        const list = getSetRatingsList(num, idx);
+        if (list.length) {
+          total += list.length;
+          hasR = true;
+        }
+      }
+      if (hasR) brolls++;
+    }
+  }
   const hint = _el('srating-hint');
   if (hint) {
     hint.textContent = total ? `${total} rating${total !== 1 ? 's' : ''}` : '0 ratings';
@@ -605,7 +683,6 @@ function updateSratingHint() {
   }
   const summary = _el('srating-summary');
   if (summary && total) {
-    const brolls = Object.keys(ST.setRatings).length;
     summary.textContent = `${total} rating${total!==1?'s':''} across ${brolls} B-roll${brolls!==1?'s':''}`;
   } else if (summary) { summary.textContent = ''; }
 }
@@ -695,15 +772,19 @@ function renderRatingPanel() {
     rowsWrap.className = 'rdetail-broll-rows';
 
     setIndices.forEach(idx => {
-      const r = sets[idx];
-      const rColor = getRatingColor(r.score) || { border: 'var(--border)', text: 'var(--text-1)', bg: 'transparent' };
+      const summary = getSetRatingSummary(num, idx);
+      if (!summary) return;
+      const rColor = summary.color || { border: 'var(--border)', text: 'var(--text-1)', bg: 'transparent' };
+      const ratings = summary.ratings;
+      const whySummary = ratings.map((r, i) => ratings.length > 1 ? `[#${i+1}: ${r.score}] ${r.why}` : r.why).join('\n\n');
+
       const row = document.createElement('div');
       row.className = 'rdetail-row';
       row.innerHTML = `
-        <span class="rdetail-set">Set ${idx + 1}</span>
-        <span class="rdetail-score" style="border-color:${rColor.border};color:${rColor.text};background:${rColor.bg}">${r.score}</span>
-        <span class="rdetail-why" title="${escHtml(r.why || '')}">${escHtml(r.why || '—')}</span>
-        <button class="rdetail-del" title="Remove this rating">✕</button>
+        <span class="rdetail-set">Set ${idx + 1}${ratings.length > 1 ? ` (${ratings.length})` : ''}</span>
+        <span class="rdetail-score" style="border-color:${rColor.border};color:${rColor.text};background:${rColor.bg}">${summary.avgScore}</span>
+        <span class="rdetail-why" title="${escHtml(whySummary)}">${escHtml(whySummary || '—')}</span>
+        <button class="rdetail-del" title="Remove rating">✕</button>
       `;
       row.querySelector('.rdetail-del').addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -744,58 +825,141 @@ function deleteRatingBatch(batchId, delRatings) {
   toast(delRatings ? '🗑 Rating batch + ratings removed' : '🗑 Rating batch removed (ratings kept)');
 }
 
-/* ── Why Popup (click-based, closes on outside click) ────────── */
+/* ── Why Popup (shows all ratings & reasons) ─────────────────── */
 function showWhyPopup(e, num, setIdx) {
   document.getElementById('why-popup')?.remove();
-  const rating = ST.setRatings?.[num]?.[setIdx];
-  const rColor = rating ? getRatingColor(rating.score) : null;
+  const summary = getSetRatingSummary(num, setIdx);
+  const ratings = summary ? summary.ratings : [];
+  const rColor = summary ? summary.color : null;
 
   const popup = document.createElement('div');
-  popup.id = 'why-popup'; popup.className = 'why-popup';
+  popup.id = 'why-popup';
+  popup.className = 'why-popup';
 
-  const hdr = document.createElement('div'); hdr.className = 'why-popup-hdr';
-  const sb = document.createElement('span'); sb.className = 'why-score-badge';
-  if (rColor) {
-    sb.textContent = rating.score; sb.style.color = rColor.text;
-  } else if (rating) {
-    sb.textContent = rating.score; sb.style.color = 'var(--text-2)';
+  const hdr = document.createElement('div');
+  hdr.className = 'why-popup-hdr';
+
+  const sb = document.createElement('span');
+  sb.className = 'why-score-badge';
+  if (summary) {
+    sb.textContent = summary.avgScore;
+    sb.style.color = rColor ? rColor.text : 'var(--text-2)';
+    if (summary.count > 1) {
+      sb.title = `Average of ${summary.count} ratings`;
+    }
   } else {
-    sb.textContent = '—'; sb.style.color = 'var(--text-3)';
+    sb.textContent = '—';
+    sb.style.color = 'var(--text-3)';
   }
   hdr.appendChild(sb);
 
-  const lbl = document.createElement('span'); lbl.className = 'why-popup-label';
-  lbl.textContent = `Set ${setIdx+1} for #${num}`; hdr.appendChild(lbl);
+  const hdrText = document.createElement('div');
+  hdrText.className = 'why-hdr-text';
 
-  if (rating) {
-    const delBtn = document.createElement('button');
-    delBtn.className = 'why-del-btn';
-    delBtn.textContent = '🗑';
-    delBtn.title = 'Remove this rating';
-    delBtn.addEventListener('click', ev => {
+  const lbl = document.createElement('span');
+  lbl.className = 'why-popup-label';
+  lbl.textContent = `Set ${setIdx+1} for #${num}`;
+  hdrText.appendChild(lbl);
+
+  if (summary && summary.count > 1) {
+    const sub = document.createElement('span');
+    sub.className = 'why-popup-sub';
+    sub.textContent = `${summary.count} AI ratings (Avg: ${summary.avgScore})`;
+    hdrText.appendChild(sub);
+  }
+  hdr.appendChild(hdrText);
+
+  if (ratings.length) {
+    const delAllBtn = document.createElement('button');
+    delAllBtn.className = 'why-del-btn';
+    delAllBtn.textContent = '🗑';
+    delAllBtn.title = ratings.length > 1 ? 'Remove all ratings for this set' : 'Remove this rating';
+    delAllBtn.addEventListener('click', ev => {
       ev.stopPropagation();
       deleteSetRating(num, setIdx);
       popup.remove();
     });
-    hdr.appendChild(delBtn);
+    hdr.appendChild(delAllBtn);
   }
 
-  const cls = document.createElement('button'); cls.className = 'why-close'; cls.textContent = '×';
-  cls.addEventListener('click', () => popup.remove()); hdr.appendChild(cls);
+  const cls = document.createElement('button');
+  cls.className = 'why-close';
+  cls.textContent = '×';
+  cls.title = 'Close';
+  cls.addEventListener('click', () => popup.remove());
+  hdr.appendChild(cls);
   popup.appendChild(hdr);
 
-  const body = document.createElement('div'); body.className = 'why-body';
-  body.textContent = rating?.why || (rating ? 'No reason recorded.' : 'No rating for this set yet.');
-  popup.appendChild(body);
+  const listWrap = document.createElement('div');
+  listWrap.className = 'why-body-list';
 
-  // Position near chip
+  if (!ratings.length) {
+    const empty = document.createElement('div');
+    empty.className = 'why-body';
+    empty.textContent = 'No rating recorded for this set yet.';
+    listWrap.appendChild(empty);
+  } else {
+    ratings.forEach((item, rIdx) => {
+      const itemEl = document.createElement('div');
+      itemEl.className = 'why-item';
+
+      const itemHdr = document.createElement('div');
+      itemHdr.className = 'why-item-hdr';
+
+      const iColor = getRatingColor(item.score);
+      const scoreTag = document.createElement('span');
+      scoreTag.className = 'why-item-score';
+      scoreTag.textContent = item.score;
+      if (iColor) {
+        scoreTag.style.borderColor = iColor.border;
+        scoreTag.style.color = iColor.text;
+        scoreTag.style.background = iColor.bg;
+      } else {
+        scoreTag.style.borderColor = 'var(--border)';
+        scoreTag.style.color = 'var(--text-2)';
+        scoreTag.style.background = 'var(--bg-3)';
+      }
+      itemHdr.appendChild(scoreTag);
+
+      const tagLbl = document.createElement('span');
+      tagLbl.className = 'why-item-label';
+      tagLbl.textContent = ratings.length > 1 ? `Rating #${rIdx+1}` : `Reason`;
+      itemHdr.appendChild(tagLbl);
+
+      if (ratings.length > 1) {
+        const itemDelBtn = document.createElement('button');
+        itemDelBtn.className = 'why-item-del';
+        itemDelBtn.textContent = '✕';
+        itemDelBtn.title = 'Remove this rating entry';
+        itemDelBtn.addEventListener('click', ev => {
+          ev.stopPropagation();
+          deleteSetRating(num, setIdx, rIdx);
+          showWhyPopup(e, num, setIdx);
+        });
+        itemHdr.appendChild(itemDelBtn);
+      }
+
+      itemEl.appendChild(itemHdr);
+
+      const itemText = document.createElement('div');
+      itemText.className = 'why-item-text';
+      itemText.textContent = item.why || 'No explanation text provided.';
+      itemEl.appendChild(itemText);
+
+      listWrap.appendChild(itemEl);
+    });
+  }
+
+  popup.appendChild(listWrap);
+
+  // Position near chip or mouse cursor / touch coordinates
   const rect = e.currentTarget?.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
-  let posX = e.clientX;
-  let posY = (rect ? rect.bottom : e.clientY) + 6;
+  let posX = (e.clientX !== undefined && e.clientX > 0) ? e.clientX : (rect ? rect.left : 20);
+  let posY = (rect ? rect.bottom : ((e.clientY !== undefined ? e.clientY : 100))) + 6;
   if (rect) posX = rect.left;
 
-  popup.style.left = Math.min(posX, window.innerWidth - 295) + 'px';
-  popup.style.top  = Math.min(posY, window.innerHeight - 180) + 'px';
+  popup.style.left = Math.max(10, Math.min(posX, window.innerWidth - 325)) + 'px';
+  popup.style.top  = Math.max(10, Math.min(posY, window.innerHeight - 260)) + 'px';
 
   popup.addEventListener('click', ev => ev.stopPropagation());
   document.body.appendChild(popup);
@@ -805,6 +969,7 @@ function showWhyPopup(e, num, setIdx) {
     document.addEventListener('click', () => document.getElementById('why-popup')?.remove(), { once: true });
   }, 10);
 }
+
 
 
 
@@ -1003,18 +1168,22 @@ function deletePromptEntry(num, idx) {
 }
 
 /* ── Copy prompt ────────────────────────────────────────────── */
-function copyPrompt(num, idx, triggerEl) {
+function copyPrompt(num, idx, triggerEl, markCopied = true) {
   const entry = (ST.prompts[num]||[])[idx]; if (!entry) return;
   const text = getCopyText(entry.text);
   const doFlash = () => {
-    entry.copied = true; save();
-    refreshCopyState(num, idx);
-    toast(`📋 Copied set ${idx+1} for #${num}`);
+    if (markCopied) {
+      entry.copied = true;
+      save();
+      refreshCopyState(num, idx);
+      toast(`📋 Copied Set ${idx+1} for #${num}`);
+    }
   };
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(doFlash).catch(() => fbCopy(text, doFlash));
   } else { fbCopy(text, doFlash); }
 }
+
 function fbCopy(text, cb) {
   const ta = document.createElement('textarea');
   ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
@@ -1026,8 +1195,15 @@ function refreshCopyState(num, idx) {
   // Rebuild the card chip so rating styling + copied state are both shown correctly
   updateCardPrompts(num);
   // Also update library chip
-  const lc = _el(`lcp-${num}-${idx}`); if (lc) lc.classList.add('copied');
+  const lc = _el(`lcp-${num}-${idx}`);
+  if (lc) {
+    const isCopied = ST.prompts[num]?.[idx]?.copied;
+    lc.classList.toggle('copied', !!isCopied);
+    const ck = lc.querySelector('.lib-chip-check');
+    if (ck) ck.style.display = isCopied ? '' : 'none';
+  }
 }
+
 
 /* ── Used Set ───────────────────────────────────────────────── */
 function setUsedSet(num, idx) {
@@ -1229,8 +1405,8 @@ function buildLibChip(num, i, entry) {
 
 /* ── Update prompt chips on card ────────────────────────────── */
 function buildPromptChip(num, i, entry) {
-  const rating = ST.setRatings?.[num]?.[i];
-  const rColor = rating ? getRatingColor(rating.score) : null;
+  const summary = getSetRatingSummary(num, i);
+  const rColor = summary ? summary.color : null;
 
   const chip = document.createElement('button');
   chip.className = 'p-chip' + (entry.copied ? ' copied' : '');
@@ -1246,37 +1422,99 @@ function buildPromptChip(num, i, entry) {
   if (entry.copied) { const ck = document.createElement('span'); ck.className = 'p-chip-ck'; ck.textContent = '✓'; top.appendChild(ck); }
   chip.appendChild(top);
 
-  if (rating) {
+  if (summary) {
     const rb = document.createElement('span'); rb.className = 'p-chip-rating';
-    rb.textContent = rating.score; rb.style.color = rColor ? rColor.text : 'var(--text-3)'; chip.appendChild(rb);
+    rb.textContent = summary.avgScore;
+    if (summary.count > 1) {
+      rb.title = `Average: ${summary.avgScore} (${summary.count} AI ratings)`;
+    }
+    rb.style.color = rColor ? rColor.text : 'var(--text-3)';
+    chip.appendChild(rb);
   }
 
-  const titleLines = [`Set ${i+1} for #${num}${rating ? ' · ' + rating.score : ''}`,
-    '', '• Left-click: ' + (entry.copied ? 'Show "why" reason' : 'Copy prompt'),
-    '• Right-click: ' + (entry.copied ? 'Untick copied' : 'Mark as copied')];
+  const titleLines = [
+    `Set ${i+1} for #${num}` + (summary ? ` · Avg: ${summary.avgScore}` + (summary.count > 1 ? ` (${summary.count} ratings)` : '') : ''),
+    '',
+    '• Left-click: ' + (entry.copied ? 'Untick (no copy)' : 'Copy prompt & tick'),
+    '• Right-click: View all ratings & reasons',
+    '• Mobile: Hold 2s to untick / copy'
+  ];
   chip.title = titleLines.join('\n');
 
-  // Left-click: if already ticked → show why popup; else copy
+  const handleChipClick = () => {
+    if (entry.copied) {
+      // If already ticked: UNTICK ONLY (do NOT copy)
+      entry.copied = false;
+      save();
+      refreshCopyState(num, i);
+      toast(`✕ Unticked Set ${i+1} for #${num}`);
+    } else {
+      // If unticked: COPY & TICK
+      copyPrompt(num, i, chip, true);
+    }
+  };
+
+  // Left-click: If ticked -> untick only (no copy); If unticked -> copy & tick
   chip.addEventListener('click', e => {
     e.stopPropagation();
-    if (entry.copied && rating) {
-      showWhyPopup(e, num, i);
-    } else {
-      copyPrompt(num, i, chip);
+    handleChipClick();
+  });
+
+  // Right-click: View all ratings & reasons popup
+  chip.addEventListener('contextmenu', e => {
+    e.preventDefault(); e.stopPropagation();
+    showWhyPopup(e, num, i);
+  });
+
+  // Mobile 2-second hold feature
+  let holdTimer = null;
+  let touchStartX = 0, touchStartY = 0;
+  let didHoldTrigger = false;
+
+  chip.addEventListener('touchstart', e => {
+    didHoldTrigger = false;
+    if (e.touches.length === 1) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      holdTimer = setTimeout(() => {
+        didHoldTrigger = true;
+        if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
+        handleChipClick();
+      }, 2000);
+    }
+  }, { passive: true });
+
+  chip.addEventListener('touchmove', e => {
+    if (holdTimer && e.touches.length === 1) {
+      const dx = Math.abs(e.touches[0].clientX - touchStartX);
+      const dy = Math.abs(e.touches[0].clientY - touchStartY);
+      if (dx > 10 || dy > 10) {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+    }
+  }, { passive: true });
+
+  chip.addEventListener('touchend', e => {
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
+    if (didHoldTrigger) {
+      e.preventDefault();
     }
   });
 
-  // Right-click: Untick / toggle copied checkmark
-  chip.addEventListener('contextmenu', e => {
-    e.preventDefault(); e.stopPropagation();
-    entry.copied = !entry.copied;
-    save();
-    refreshCopyState(num, i);
-    toast(entry.copied ? `✓ Marked Set ${i+1} as copied` : `✕ Unticked Set ${i+1} for #${num}`);
+  chip.addEventListener('touchcancel', () => {
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    }
   });
 
   return chip;
 }
+
 
 
 
@@ -1557,7 +1795,7 @@ function importJSON(file){
       ST.prompts       = _migratePrompts(d.prompts || {});
       ST.batches       = d.batches       || [];
       ST.usedSets      = d.usedSets      || {};
-      ST.setRatings    = d.setRatings    || {};
+      ST.setRatings    = _migrateSetRatings(d.setRatings || {});
       ST.ratingBatches = d.ratingBatches || [];
       if (d.prefix !== undefined) ST.prefix = d.prefix;
       if (d.suffix !== undefined) ST.suffix = d.suffix;
@@ -1599,10 +1837,11 @@ document.addEventListener('DOMContentLoaded',()=>{
   ST.prompts       = _migratePrompts(proj.prompts);
   ST.batches       = proj.batches       || [];
   ST.usedSets      = proj.usedSets      || {};
-  ST.setRatings    = proj.setRatings    || {};
+  ST.setRatings    = _migrateSetRatings(proj.setRatings);
   ST.ratingBatches = proj.ratingBatches || [];
   ST.brolls        = parseScript(proj.script || '');
   loadGlobalCset();   // Load prefix/suffix from global key
+
 
 
   const ta = _el('script-textarea'); if (ta) ta.value = proj.script || '';
@@ -1640,8 +1879,9 @@ document.addEventListener('DOMContentLoaded',()=>{
       ta.setSelectionRange(ta.value.length, ta.value.length);
     }, 10);
   };
-  _el('script-textarea').addEventListener('paste', () => autoPad(_el('script-textarea')));
-  _el('prompt-textarea').addEventListener('paste', () => autoPad(_el('prompt-textarea')));
+  _el('script-textarea')?.addEventListener('paste', () => autoPad(_el('script-textarea')));
+  _el('prompt-textarea')?.addEventListener('paste', () => autoPad(_el('prompt-textarea')));
+  _el('srating-textarea')?.addEventListener('paste', () => autoPad(_el('srating-textarea')));
 
   _el('input-toggle').addEventListener('click',()=>{if(ST.inputOpen)collapseInput();else expandInput();});
 
@@ -1682,10 +1922,33 @@ document.addEventListener('DOMContentLoaded',()=>{
     const t=_el('srating-textarea').value.trim();if(!t){toast('⚠️ Paste rating lines first');return;}
     applySetRatings(t);
   });
+  _el('btn-paste-ratings')?.addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) { toast('⚠️ Clipboard is empty'); return; }
+      const ta = _el('srating-textarea');
+      if (!ta) return;
+      if (ta.value.trim()) {
+        ta.value = ta.value.trimEnd() + '\n\n' + text;
+      } else {
+        ta.value = text;
+      }
+      setTimeout(() => {
+        if (!ta.value.endsWith('\n\n')) ta.value = ta.value.trimEnd() + '\n\n';
+        ta.scrollTop = ta.scrollHeight;
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+        ta.focus();
+      }, 10);
+      toast('📋 Pasted ratings from clipboard');
+    } catch {
+      toast('⚠️ Cannot read clipboard — use Ctrl+V');
+    }
+  });
   _el('btn-clear-rating-input').addEventListener('click',()=>{_el('srating-textarea').value='';});
   _el('btn-clear-all-ratings').addEventListener('click',()=>showModal('Clear all set ratings?','All set ratings and why text will be removed.',()=>{
     ST.setRatings={};ST.ratingBatches=[];ST.activeRatingBatch='new';save();updateAllPromptChips();updateSratingHint();renderRatingTabs();renderRatingPanel();toast('🗑️ Set ratings cleared');
   }));
+
 
   /* Clear copy history — event delegation on project-bar */
   _el('project-bar').addEventListener('click',e=>{

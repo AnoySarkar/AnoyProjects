@@ -234,16 +234,30 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .p-chip-rating { font-size:7.5px; font-weight:800; font-family:var(--mono); line-height:1; letter-spacing:0 }
 
 /* ── Why popup ─────────────────────────────────────────────────── */
-.why-popup { position:fixed; z-index:9999; background:#13132a; border:1px solid var(--accent); border-radius:10px; padding:10px 13px; max-width:280px; min-width:200px; box-shadow:0 8px 32px rgba(0,0,0,0.75),0 0 20px rgba(124,109,250,0.25); animation:whyIn 0.13s ease both; pointer-events:auto }
+.why-popup { position:fixed; z-index:9999; background:#13132a; border:1px solid var(--accent); border-radius:10px; padding:10px 12px; max-width:320px; min-width:240px; box-shadow:0 8px 32px rgba(0,0,0,0.85),0 0 24px rgba(124,109,250,0.3); animation:whyIn 0.13s ease both; pointer-events:auto }
 @keyframes whyIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:none} }
-.why-popup-hdr { display:flex; align-items:center; gap:6px; margin-bottom:7px }
-.why-score-badge { font-size:15px; font-weight:900; font-family:var(--mono); line-height:1 }
-.why-popup-label { font-size:10px; color:var(--text-3); flex:1; font-weight:600 }
-.why-del-btn { background:none; border:none; color:var(--text-3); font-size:12px; cursor:pointer; padding:0 3px; border-radius:3px; transition:all 0.12s }
+.why-popup-hdr { display:flex; align-items:center; gap:8px; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid var(--border) }
+.why-score-badge { font-size:16px; font-weight:900; font-family:var(--mono); line-height:1; flex-shrink:0 }
+.why-hdr-text { display:flex; flex-direction:column; gap:1px; flex:1; min-width:0 }
+.why-popup-label { font-size:11px; color:var(--text-1); font-weight:700; line-height:1.2 }
+.why-popup-sub { font-size:9px; color:var(--text-3); font-weight:500; line-height:1.2 }
+.why-del-btn { background:none; border:none; color:var(--text-3); font-size:13px; cursor:pointer; padding:2px 4px; border-radius:4px; transition:all 0.12s; flex-shrink:0 }
 .why-del-btn:hover { color:#ef4444; background:rgba(239,68,68,0.15) }
-.why-close { background:none; border:none; color:var(--text-3); font-size:16px; cursor:pointer; padding:0 2px; line-height:1; margin-left:auto }
+.why-close { background:none; border:none; color:var(--text-3); font-size:16px; cursor:pointer; padding:0 3px; line-height:1; flex-shrink:0 }
 .why-close:hover { color:var(--text-1) }
+.why-body-list { display:flex; flex-direction:column; gap:6px; max-height:240px; overflow-y:auto; padding-right:2px }
+.why-body-list::-webkit-scrollbar { width:3px }
+.why-body-list::-webkit-scrollbar-thumb { background:#2a2a46; border-radius:4px }
+.why-item { background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:6px; padding:6px 8px; transition:border-color 0.12s }
+.why-item:hover { border-color:var(--border-hi) }
+.why-item-hdr { display:flex; align-items:center; gap:6px; margin-bottom:4px }
+.why-item-score { font-size:11px; font-weight:800; font-family:var(--mono); padding:1px 5px; border-radius:4px; border:1px solid; line-height:1.2 }
+.why-item-label { font-size:10px; color:var(--text-3); font-weight:600; flex:1 }
+.why-item-del { background:none; border:none; color:var(--text-3); font-size:11px; cursor:pointer; padding:0 3px; border-radius:2px; transition:all 0.12s }
+.why-item-del:hover { color:#ef4444; background:rgba(239,68,68,0.15) }
+.why-item-text { font-size:11px; color:var(--text-2); line-height:1.5; white-space:pre-wrap }
 .why-body { font-size:11px; color:var(--text-2); line-height:1.55; white-space:pre-wrap; max-height:160px; overflow-y:auto }
+
 
 /* ── Clear history button in project bar ───────────────────────── */
 .proj-clr-btn { height:22px; padding:0 8px; border-radius:5px; margin-left:2px; font-size:10px; font-weight:600; color:var(--text-3); background:transparent; border:1px solid var(--border); cursor:pointer; transition:all 0.12s; flex-shrink:0; white-space:nowrap }
@@ -437,10 +451,14 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width:600px) {
-  #top-header { padding:0 10px; gap:5px }
+  #top-header { padding:0 8px; gap:4px }
   .logo-name { display:none }
+  .sync-pill { padding:2px 6px; font-size:9px }
+  .sync-text { font-size:9.5px }
   .hdr-actions .hbtn span { display:none }
-  .hdr-actions .hbtn { padding:4px 6px }
+  .hdr-actions .hbtn { padding:4px 5px }
+  .hdr-stats { overflow-x:auto; scrollbar-width:none }
+  .hdr-stats::-webkit-scrollbar { display:none }
   #main-content { padding:8px 10px 80px }
   .broll-card { grid-template-columns:30px 1fr auto; gap:6px; padding:7px 8px }
   .c-num { width:30px; height:30px; font-size:11px }
@@ -452,6 +470,9 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
   .btab-label { max-width:80px }
   .p-chip { height:26px; min-width:28px; padding:0 8px; font-size:10px }
 }
-@media (max-width:380px) { .hpill:not(:first-child) { display:none } }
+@media (max-width:380px) {
+  .hdr-stats .hpill:not(:first-child) { display:none }
+}
 
 .hidden { display:none !important }
+

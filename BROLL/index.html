@@ -35,16 +35,18 @@
         <span class="logo-name">B-Roll Tracker</span>
       </div>
 
+      <div class="hpill sync-pill" id="sync-status" title="Firebase Cloud Sync: Connecting..." style="cursor:pointer">
+        <span class="sync-dot" id="sync-dot"></span>
+        <span class="sync-text" id="sync-text">Cloud</span>
+      </div>
+
       <div class="hdr-stats">
         <div class="hpill"><span class="hpill-v" id="st-total">0</span><span class="hpill-l">clips</span></div>
         <div class="hpill c-accent"><span class="hpill-v" id="st-scored">0/0</span><span class="hpill-l">scored</span></div>
         <div class="hpill c-green"><span class="hpill-v" id="st-green">0</span><span class="hpill-l">≥9</span></div>
         <div class="hpill"><span class="hpill-v" id="st-avg">—</span><span class="hpill-l">avg</span></div>
-        <div class="hpill sync-pill" id="sync-status" title="Firebase Cloud Sync: Connecting..." style="cursor:pointer">
-          <span class="sync-dot" id="sync-dot"></span>
-          <span class="sync-text" id="sync-text">Cloud</span>
-        </div>
       </div>
+
 
       <div class="hdr-actions">
         <button class="hbtn undo-btn disabled" id="btn-undo" disabled title="Undo (Ctrl+Z)">↩</button>
@@ -198,6 +200,7 @@
                 rows="5" spellcheck="false"></textarea>
               <div class="srating-actions">
                 <button class="hbtn primary" id="btn-apply-ratings">⭐ Apply Ratings</button>
+                <button class="hbtn" id="btn-paste-ratings">📋 Paste</button>
                 <button class="hbtn" id="btn-clear-rating-input">✕ Clear Input</button>
                 <button class="hbtn danger" id="btn-clear-all-ratings" style="margin-left:auto">🗑 All Ratings</button>
               </div>
