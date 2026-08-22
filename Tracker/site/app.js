@@ -8,7 +8,7 @@ const DEFAULT_FLOW_RESET_DAYS = [2, 21, 24, 12, 22, 1];
 const firebaseConfig = {
   apiKey: "AIzaSyDQEnpysgnuL9-8iQllH1rfvvqPzxTIu58",
   authDomain: "geminiflow-d919f.firebaseapp.com",
-  databaseURL: "https://geminiflow-d919f-default-rtdb.firebaseio.com",
+  databaseURL: "https://geminiflow-d919f-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "geminiflow-d919f",
   storageBucket: "geminiflow-d919f.firebasestorage.app",
   messagingSenderId: "996910064355",
@@ -1458,12 +1458,15 @@ function saveState() {
   }
 }
 
+let lastSyncError = "";
+
 // ============================================================
 // FIREBASE REALTIME CLOUD SYNC
 // ============================================================
 
 function initFirebase() {
   if (typeof firebase === "undefined") {
+    lastSyncError = "Firebase SDK not loaded. Check internet connection.";
     updateSyncBadge("offline", "Offline");
     return;
   }
@@ -1476,7 +1479,19 @@ function initFirebase() {
     listenToCloudUpdates();
   } catch (err) {
     console.error("Firebase init error:", err);
+    lastSyncError = err.message || String(err);
     updateSyncBadge("error", "Sync Error");
+  }
+
+  if (el.syncBadge) {
+    el.syncBadge.style.cursor = "pointer";
+    el.syncBadge.addEventListener("click", () => {
+      if (lastSyncError) {
+        alert("Firebase Sync Issue:\n" + lastSyncError + "\n\nDatabase URL: " + firebaseConfig.databaseURL);
+      } else {
+        alert("Firebase Cloud Sync is active!\nConnected to: " + firebaseConfig.databaseURL);
+      }
+    });
   }
 }
 
@@ -1485,16 +1500,24 @@ function listenToCloudUpdates() {
   updateSyncBadge("syncing", "Connecting...");
 
   // Monitor connection state
+  let hasConnectedOnce = false;
   firebase.database().ref(".info/connected").on("value", (snap) => {
     if (snap.val() === true) {
+      hasConnectedOnce = true;
+      lastSyncError = "";
       updateSyncBadge("synced", "Synced");
     } else {
-      updateSyncBadge("offline", "Offline");
+      if (hasConnectedOnce) {
+        lastSyncError = "Disconnected from Firebase server.";
+        updateSyncBadge("offline", "Offline");
+      }
     }
   });
 
   // Listen for live updates from phone or laptop
   dbRef.on("value", (snapshot) => {
+    lastSyncError = "";
+    updateSyncBadge("synced", "Synced");
     const remoteData = snapshot.val();
     if (remoteData) {
       const incomingJson = JSON.stringify(remoteData);
@@ -1521,6 +1544,7 @@ function listenToCloudUpdates() {
     }
   }, (err) => {
     console.warn("Realtime Database sync error:", err);
+    lastSyncError = err.message || String(err);
     updateSyncBadge("error", "Sync Error");
   });
 }
@@ -1535,14 +1559,17 @@ function pushStateToCloud() {
       lastSyncedJson = JSON.stringify(payload);
       dbRef.set(payload)
         .then(() => {
+          lastSyncError = "";
           updateSyncBadge("synced", "Synced");
         })
         .catch((err) => {
           console.error("Cloud push failed:", err);
+          lastSyncError = err.message || String(err);
           updateSyncBadge("error", "Sync Error");
         });
     } catch (e) {
       console.error(e);
+      lastSyncError = e.message || String(e);
       updateSyncBadge("error", "Sync Error");
     }
   }, 250);
