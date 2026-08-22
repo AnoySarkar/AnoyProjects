@@ -125,7 +125,7 @@ function pushToFirebase(immediate = false) {
     const payload = {
       active: ACTIVE_PID,
       projects: JSON.parse(JSON.stringify(PROJECTS)),
-      globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '' },
+      globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
       lastUpdatedBy: CLIENT_ID,
       updatedAt: Date.now()
     };
@@ -143,7 +143,7 @@ function pushToFirebase(immediate = false) {
   if (immediate) {
     doPush();
   } else {
-    _fbSyncTimer = setTimeout(doPush, 400);
+    _fbSyncTimer = setTimeout(doPush, 100);
   }
 }
 
@@ -167,8 +167,10 @@ function applyRemoteData(data) {
       };
     }
 
-    // 2. Sync active project ID
-    if (data.active && PROJECTS[data.active]) {
+    // 2. Sync active project ID (keep current active script if valid so user doesn't get kicked)
+    if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+      // keep current script tab active
+    } else if (data.active && PROJECTS[data.active]) {
       ACTIVE_PID = data.active;
     } else {
       ACTIVE_PID = Object.keys(PROJECTS)[0] || null;
@@ -179,9 +181,9 @@ function applyRemoteData(data) {
       ST.prefix = data.globalCset.prefix || '';
       ST.suffix = data.globalCset.suffix || '';
       if (data.globalCset.labelEnabled !== undefined) {
-        ST.labelEnabled = data.globalCset.labelEnabled;
+        ST.labelEnabled = data.globalCset.labelEnabled !== false;
       }
-      saveGlobalCset();
+      try { localStorage.setItem(GLOBAL_CSET_KEY, JSON.stringify({ prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled })); } catch {}
       syncCsetUI();
     }
 
@@ -201,7 +203,6 @@ function applyRemoteData(data) {
       ST.ratingBatches     = proj.ratingBatches || [];
       ST.myRatings         = proj.myRatings     || {};
       ST.brolls            = parseScript(proj.script || '');
-
 
       const ta = _el('script-textarea');
       if (ta && document.activeElement !== ta) {
@@ -229,9 +230,10 @@ function applyRemoteData(data) {
   } catch (err) {
     console.error('Error applying remote data:', err);
   } finally {
-    setTimeout(() => { _isApplyingRemote = false; }, 300);
+    setTimeout(() => { _isApplyingRemote = false; }, 200);
   }
 }
+
 
 function initFirebaseSync() {
   if (typeof firebase === 'undefined') {
