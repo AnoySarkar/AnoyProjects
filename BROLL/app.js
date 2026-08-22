@@ -1085,7 +1085,47 @@ function applySetRatings(text) {
   renderRatingTabs();
   renderRatingPanel();
   toast(`⭐ Applied ${parsed.length} ratings for B-roll ${tabLabel}`);
+
+  // --- Ratings notification popup ---
+  const ratingsByBroll = {};
+  parsed.forEach(({ brollNum, setIdx, score, why }) => {
+    if (!ratingsByBroll[brollNum]) ratingsByBroll[brollNum] = [];
+    ratingsByBroll[brollNum].push({ setIdx, score, why });
+  });
+
+  const IDEAL_BROLLS = 5, IDEAL_SETS = 6, IDEAL_TOTAL = IDEAL_BROLLS * IDEAL_SETS;
+  const brollNums = brollsInBatch;
+
+  let breakdown = brollNums.map(num => {
+    const list = ratingsByBroll[num] || [];
+    const setsSummary = list.map(item => `S${item.setIdx + 1}: <strong>${item.score}</strong>`).join(', ');
+    return `<tr>
+      <td style="padding:3px 12px 3px 0;white-space:nowrap;font-weight:700;color:var(--text-1)">B-roll #${num}</td>
+      <td style="padding:3px 10px 3px 0;color:var(--accent);font-family:var(--mono);font-size:11px">${list.length} rating${list.length !== 1 ? 's' : ''}</td>
+      <td style="padding:3px 0;color:var(--text-2);font-size:11px">${setsSummary}</td>
+    </tr>`;
+  }).join('');
+
+  let matchNote;
+  if (parsed.length === IDEAL_TOTAL && brollsInBatch.length === IDEAL_BROLLS) {
+    matchNote = `<p style="color:#4ade80;margin-top:8px">✅ Perfect — ${IDEAL_BROLLS} B-rolls × ${IDEAL_SETS} sets = ${IDEAL_TOTAL} ratings</p>`;
+  } else {
+    const diff = parsed.length - IDEAL_TOTAL;
+    const sign = diff > 0 ? '+' : '';
+    matchNote = `<p style="color:#fb923c;margin-top:8px">⚠️ Expected ${IDEAL_TOTAL} ratings (${IDEAL_BROLLS}×${IDEAL_SETS}). Got <strong>${parsed.length}</strong> (${sign}${diff})</p>`;
+  }
+
+  showModal(
+    `⭐ Applied Ratings Summary — ${tabLabel}`,
+    `<div style="font-size:13px;line-height:1.5">
+      <p style="margin-bottom:6px"><strong>${parsed.length}</strong> rating${parsed.length !== 1 ? 's' : ''} applied across <strong>${brollsInBatch.length}</strong> B-roll${brollsInBatch.length !== 1 ? 's' : ''}</p>
+      <table style="border-collapse:collapse;margin-top:6px;width:100%">${breakdown}</table>
+      ${matchNote}
+    </div>`,
+    () => {} // OK just closes
+  );
 }
+
 
 function deleteSetRating(num, setIdx, ratingItemIdx = null) {
   if (!ST.setRatings?.[num] || ST.setRatings[num][setIdx] === undefined) return;
@@ -2221,10 +2261,10 @@ function renderHeatmap() {
   }
 
   const N = ST.brolls.length;
-  const W = grid.clientWidth || (window.innerWidth - 32);
-  const cw = Math.max(4, Math.min(44, Math.floor((W - (N - 1) * 2) / N)));
-  const showNum = cw >= 15;
-  const fs = cw >= 22 ? 9.5 : cw >= 15 ? 7.5 : 0;
+  const W = grid.clientWidth || (window.innerWidth - 28);
+  const cw = (W - (N - 1) * 1.5) / N;
+  const showNum = cw >= 13;
+  const fs = cw >= 22 ? 9.5 : cw >= 13 ? 7.5 : 0;
 
   ST.brolls.forEach(b => {
     const mainScore = ST.scores[b.num] ?? null;
@@ -2235,13 +2275,13 @@ function renderHeatmap() {
     const col = document.createElement('div');
     col.className = 'hm-col';
     col.id = `hm-col-${b.num}`;
-    col.style.width = `${cw}px`;
 
     // Top tier (Main)
     const topTier = document.createElement('div');
     topTier.className = 'hm-col-tier top';
     topTier.id = `hm-top-${b.num}`;
     topTier.style.background = mainCol.bg;
+
 
     // Bottom tier (Real)
     const botTier = document.createElement('div');
