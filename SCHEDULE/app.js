@@ -8,6 +8,7 @@
 const firebaseConfig = {
   apiKey: "AIzaSyBcceWtrTQYBlzyp7i8yucFYW2btrhFO3M",
   authDomain: "broll-81cec.firebaseapp.com",
+  databaseURL: "https://broll-81cec-default-rtdb.firebaseio.com",
   projectId: "broll-81cec",
   storageBucket: "broll-81cec.firebasestorage.app",
   messagingSenderId: "916145882472",
@@ -17,17 +18,30 @@ const firebaseConfig = {
 
 let db = null;
 let rtdb = null;
+let auth = null;
 let isFirebaseReady = false;
 let isApplyingRemoteChange = false;
 let syncDebounceTimer = null;
-let currentSyncState = 'syncing'; // 'synced' | 'syncing' | 'offline'
+let currentSyncState = 'syncing'; // 'synced' | 'syncing' | 'offline' | 'error'
+let lastCloudTimestamp = 0;
+let lastSyncError = null;
+let broadcastChannel = null;
+
+// Unique Device / Session ID
+const DEVICE_ID = 'dev_' + Math.random().toString(36).substring(2, 9);
 
 // ─── Storage ────────────────────────────────
 const DB_KEY = 'mf_entries';
+const DB_TIME_KEY = 'mf_last_updated';
 
 function loadEntries() {
   try { return JSON.parse(localStorage.getItem(DB_KEY)) || []; }
   catch { return []; }
+}
+
+function getLocalTimestamp() {
+  try { return parseInt(localStorage.getItem(DB_TIME_KEY)) || 0; }
+  catch { return 0; }
 }
 
 function updateSyncStatusUI(status, label) {
@@ -39,17 +53,32 @@ function updateSyncStatusUI(status, label) {
     badge.className = `sync-badge status-${status}`;
   }
   if (text) {
-    text.textContent = label || (status === 'synced' ? 'Synced' : status === 'syncing' ? 'Syncing' : 'Offline');
+    text.textContent = label || (status === 'synced' ? 'Synced' : status === 'syncing' ? 'Syncing' : status === 'error' ? 'Rules Locked' : 'Offline');
   }
   if (sub) {
-    if (status === 'synced') sub.textContent = 'Connected & Live Synced (broll-81cec)';
-    else if (status === 'syncing') sub.textContent = 'Syncing with Firebase...';
+    if (status === 'synced') sub.textContent = 'Live Global Synced (broll-81cec)';
+    else if (status === 'syncing') sub.textContent = 'Syncing across devices...';
+    else if (status === 'error') sub.textContent = 'Permission denied (Check Firebase Rules)';
     else sub.textContent = 'Offline (cached locally)';
   }
 }
 
 function saveEntries(newEntries, immediate = false) {
+  const now = Date.now();
   localStorage.setItem(DB_KEY, JSON.stringify(newEntries));
+  localStorage.setItem(DB_TIME_KEY, now.toString());
+
+  // Broadcast to other open tabs instantly
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({
+        type: 'LOCAL_UPDATE',
+        entries: newEntries,
+        updatedAt: now,
+        sender: DEVICE_ID
+      });
+    } catch(e) {}
+  }
   
   if (isApplyingRemoteChange) return;
 
@@ -57,15 +86,18 @@ function saveEntries(newEntries, immediate = false) {
 
   clearTimeout(syncDebounceTimer);
   if (immediate) {
-    pushToCloud(newEntries);
+    pushToCloud(newEntries, now);
   } else {
     syncDebounceTimer = setTimeout(() => {
-      pushToCloud(newEntries);
-    }, 300);
+      pushToCloud(newEntries, now);
+    }, 200);
   }
 }
 
-function pushToCloud(dataToPush) {
+function pushToCloud(dataToPush, timestamp) {
+  const ts = timestamp || Date.now();
+  lastCloudTimestamp = ts;
+
   if (!isFirebaseReady) {
     updateSyncStatusUI('offline', 'Offline');
     return;
@@ -73,19 +105,35 @@ function pushToCloud(dataToPush) {
 
   const payload = {
     entries: dataToPush,
-    updatedAt: Date.now(),
-    device: navigator.userAgent
+    updatedAt: ts,
+    deviceId: DEVICE_ID
   };
 
   const promises = [];
+  
+  // 1. Write to Firestore
   if (db) {
     promises.push(
       db.collection('schedule_app').doc('main_schedule').set(payload)
+        .then(() => ({ backend: 'firestore', ok: true }))
+        .catch(err => {
+          lastSyncError = err;
+          console.warn('Firestore write error:', err.code, err.message);
+          return { backend: 'firestore', ok: false, error: err };
+        })
     );
   }
+
+  // 2. Write to Realtime Database
   if (rtdb) {
     promises.push(
-      rtdb.ref('main_schedule').set(payload)
+      rtdb.ref('schedule_data/main').set(payload)
+        .then(() => ({ backend: 'rtdb', ok: true }))
+        .catch(err => {
+          lastSyncError = err;
+          console.warn('RTDB write error:', err.code, err.message);
+          return { backend: 'rtdb', ok: false, error: err };
+        })
     );
   }
 
@@ -94,83 +142,129 @@ function pushToCloud(dataToPush) {
     return;
   }
 
-  Promise.allSettled(promises).then((results) => {
-    const hasSuccess = results.some(r => r.status === 'fulfilled');
+  Promise.all(promises).then((results) => {
+    const hasSuccess = results.some(r => r.ok);
     if (hasSuccess) {
+      lastSyncError = null;
       updateSyncStatusUI('synced', 'Synced');
     } else {
-      console.warn('Cloud sync write failed, local cache maintained:', results);
-      updateSyncStatusUI('offline', 'Offline');
+      const isPermissionDenied = results.some(r => r.error && (r.error.code === 'permission-denied' || String(r.error.message).includes('permission_denied')));
+      if (isPermissionDenied) {
+        updateSyncStatusUI('error', 'Rules Locked');
+      } else {
+        updateSyncStatusUI('offline', 'Offline');
+      }
     }
   });
 }
 
-function handleIncomingRemoteData(remoteEntries, remoteUpdatedAt) {
+function handleIncomingRemoteData(remoteEntries, remoteUpdatedAt, senderDeviceId) {
   if (!Array.isArray(remoteEntries)) return;
+  if (senderDeviceId === DEVICE_ID && remoteUpdatedAt <= lastCloudTimestamp) return;
 
   const currentLocalStr = JSON.stringify(entries);
   const remoteStr = JSON.stringify(remoteEntries);
+  const localTs = getLocalTimestamp();
 
+  // If remote has data and is different
   if (currentLocalStr !== remoteStr) {
-    isApplyingRemoteChange = true;
-    entries = remoteEntries;
-    localStorage.setItem(DB_KEY, remoteStr);
-    checkAutoUpload();
+    // If remote is newer OR local was completely empty
+    if (remoteUpdatedAt >= localTs || entries.length === 0) {
+      isApplyingRemoteChange = true;
+      entries = remoteEntries;
+      localStorage.setItem(DB_KEY, remoteStr);
+      localStorage.setItem(DB_TIME_KEY, (remoteUpdatedAt || Date.now()).toString());
+      checkAutoUpload();
 
-    // Re-render current page
-    if (currentPage === 'home') renderDashboard();
-    else if (currentPage === 'calendar') renderCalendar();
-    else if (currentPage === 'settings') renderSettings();
-    else if (currentPage === 'detail' && editingId) renderDetail(editingId);
+      // Refresh current view
+      if (currentPage === 'home') renderDashboard();
+      else if (currentPage === 'calendar') renderCalendar();
+      else if (currentPage === 'settings') renderSettings();
+      else if (currentPage === 'detail' && editingId) renderDetail(editingId);
 
-    updateSyncStatusUI('synced', 'Synced');
-    showToast('Cloud updated ☁️');
-    sfx('copy');
-    isApplyingRemoteChange = false;
+      updateSyncStatusUI('synced', 'Synced');
+      showToast('Live updated from another device 🔄');
+      sfx('schedule');
+      isApplyingRemoteChange = false;
+    } else if (localTs > remoteUpdatedAt) {
+      // Local is newer: push our latest local changes to cloud
+      pushToCloud(entries, localTs);
+    }
   } else {
     updateSyncStatusUI('synced', 'Synced');
   }
 }
 
 function setupRTDBListener() {
-  if (rtdb) {
-    rtdb.ref('main_schedule').on('value', (snapshot) => {
+  if (!rtdb) return;
+  try {
+    rtdb.ref('schedule_data/main').on('value', (snapshot) => {
       const data = snapshot.val();
-      if (data && data.entries) {
-        handleIncomingRemoteData(data.entries, data.updatedAt);
-      } else {
-        pushToCloud(entries);
+      if (data && Array.isArray(data.entries)) {
+        lastSyncError = null;
+        handleIncomingRemoteData(data.entries, data.updatedAt, data.deviceId);
+      } else if (!data && entries.length > 0) {
+        pushToCloud(entries, getLocalTimestamp());
       }
     }, (error) => {
-      console.error('RTDB sync error:', error);
-      updateSyncStatusUI('offline', 'Offline');
+      console.warn('RTDB Listener notice:', error.code, error.message);
+      lastSyncError = error;
+      if (error.code === 'PERMISSION_DENIED' || String(error.message).includes('permission_denied')) {
+        updateSyncStatusUI('error', 'Rules Locked');
+      }
     });
+  } catch(e) {
+    console.warn('RTDB setup listener failed:', e);
   }
 }
 
 function setupRealtimeListeners() {
+  let firestoreConnected = false;
   if (db) {
-    db.collection('schedule_app').doc('main_schedule')
-      .onSnapshot((doc) => {
-        if (doc.exists) {
-          const data = doc.data();
-          handleIncomingRemoteData(data.entries, data.updatedAt);
-        } else {
-          // If first time cloud document doesn't exist yet, seed with local entries
-          pushToCloud(entries);
-        }
-      }, (error) => {
-        console.warn('Firestore onSnapshot error, falling back to RTDB:', error);
-        setupRTDBListener();
-      });
-  } else {
-    setupRTDBListener();
+    try {
+      db.collection('schedule_app').doc('main_schedule')
+        .onSnapshot((doc) => {
+          firestoreConnected = true;
+          lastSyncError = null;
+          if (doc.exists) {
+            const data = doc.data();
+            if (data && Array.isArray(data.entries)) {
+              handleIncomingRemoteData(data.entries, data.updatedAt, data.deviceId);
+            }
+          } else if (entries.length > 0) {
+            pushToCloud(entries, getLocalTimestamp());
+          }
+        }, (error) => {
+          console.warn('Firestore listener notice:', error.code, error.message);
+          lastSyncError = error;
+          if (error.code === 'permission-denied') {
+            updateSyncStatusUI('error', 'Rules Locked');
+          }
+        });
+    } catch(e) {
+      console.warn('Firestore onSnapshot exception:', e);
+    }
   }
+
+  // Also setup RTDB listener as dual real-time backup
+  setupRTDBListener();
 }
 
 function initFirebaseSync() {
+  // 1. Setup local BroadcastChannel for zero-latency multi-tab sync
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      broadcastChannel = new BroadcastChannel('mf_sync_channel');
+      broadcastChannel.onmessage = (e) => {
+        if (e.data && e.data.type === 'LOCAL_UPDATE' && e.data.sender !== DEVICE_ID) {
+          handleIncomingRemoteData(e.data.entries, e.data.updatedAt, e.data.sender);
+        }
+      };
+    }
+  } catch(e) {}
+
   if (typeof firebase === 'undefined') {
-    console.warn('Firebase SDK not loaded, running in offline mode');
+    console.warn('Firebase SDK not loaded, running in local mode');
     updateSyncStatusUI('offline', 'Offline');
     return;
   }
@@ -182,18 +276,26 @@ function initFirebaseSync() {
     
     updateSyncStatusUI('syncing', 'Connecting');
 
+    // Initialize Auth (Anonymous sign-in for seamless multi-device access)
+    try {
+      auth = firebase.auth();
+      auth.signInAnonymously().catch(err => {
+        console.warn('Anonymous Auth notice (optional):', err.message);
+      });
+    } catch(e) {}
+
     // Initialize Firestore
     try {
       db = firebase.firestore();
     } catch (e) {
-      console.warn('Firestore init note:', e);
+      console.warn('Firestore init notice:', e);
     }
 
     // Initialize Realtime Database
     try {
       rtdb = firebase.database();
     } catch (e) {
-      console.warn('RTDB init note:', e);
+      console.warn('RTDB init notice:', e);
     }
 
     isFirebaseReady = true;
@@ -201,8 +303,8 @@ function initFirebaseSync() {
 
     // Listen to browser network changes
     window.addEventListener('online', () => {
-      updateSyncStatusUI('syncing', 'Syncing');
-      pushToCloud(entries);
+      updateSyncStatusUI('syncing', 'Reconnecting');
+      pushToCloud(entries, getLocalTimestamp());
     });
     window.addEventListener('offline', () => {
       updateSyncStatusUI('offline', 'Offline');
@@ -216,9 +318,37 @@ function initFirebaseSync() {
 
 function forceSyncNow() {
   sfx('save');
-  showToast('Syncing with Cloud ☁️');
+  showToast('Connecting & Syncing with Cloud ☁️');
   updateSyncStatusUI('syncing', 'Syncing');
-  pushToCloud(entries);
+  pushToCloud(entries, Date.now());
+}
+
+function openSyncModal() {
+  const modal = document.getElementById('syncModal');
+  const details = document.getElementById('syncModalDetails');
+  const help = document.getElementById('syncRuleHelp');
+  if (!modal) return;
+
+  let msg = `<strong>Status:</strong> ${currentSyncState.toUpperCase()}<br>`;
+  msg += `<strong>Firebase Project:</strong> broll-81cec<br>`;
+  msg += `<strong>Device ID:</strong> ${DEVICE_ID}<br>`;
+  msg += `<strong>Local Items:</strong> ${entries.length} scheduled items<br>`;
+  
+  if (lastSyncError) {
+    msg += `<br><span style="color:var(--rose)"><strong>Last Error:</strong> ${escHtml(lastSyncError.message || lastSyncError.code || 'Permission Denied')}</span>`;
+    if (help) help.style.display = 'block';
+  } else {
+    msg += `<br><span style="color:var(--green)">✓ Realtime listeners connected.</span>`;
+    if (help) help.style.display = (currentSyncState === 'error') ? 'block' : 'none';
+  }
+
+  if (details) details.innerHTML = msg;
+  modal.classList.add('open');
+}
+
+function closeSyncModal() {
+  const modal = document.getElementById('syncModal');
+  if (modal) modal.classList.remove('open');
 }
 
 // ─── State ──────────────────────────────────
@@ -1343,11 +1473,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
   
-  // ── Cloud Sync Buttons ──
+  // ── Cloud Sync Buttons & Modal ──
   const syncBadge = document.getElementById('syncBadge');
-  if (syncBadge) syncBadge.addEventListener('click', forceSyncNow);
+  if (syncBadge) syncBadge.addEventListener('click', openSyncModal);
   const forceSyncBtn = document.getElementById('forceSyncBtn');
   if (forceSyncBtn) forceSyncBtn.addEventListener('click', forceSyncNow);
+  const closeSyncModalBtn = document.getElementById('closeSyncModalBtn');
+  if (closeSyncModalBtn) closeSyncModalBtn.addEventListener('click', closeSyncModal);
+  const modalForceSyncBtn = document.getElementById('modalForceSyncBtn');
+  if (modalForceSyncBtn) modalForceSyncBtn.addEventListener('click', () => {
+    forceSyncNow();
+    closeSyncModal();
+  });
+  const syncModal = document.getElementById('syncModal');
+  if (syncModal) syncModal.addEventListener('click', (e) => {
+    if (e.target === syncModal) closeSyncModal();
+  });
 
   // ── Initial ──
   checkAutoUpload();   // auto-mark past scheduled → uploaded
