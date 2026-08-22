@@ -54,10 +54,12 @@ const ST = {
   ratingBatches:     [],   // [ { id, label, date, raw, brolls, count } ]
   activeRatingBatch: 'new',
   myRatings:         {},   // { [brollNum]: { [setIdx]: { score, comment, date } } }
+  covered:           {},   // { [brollNum]: true } -> marked as covered with other clip (9+ in Real Overview)
   prefix:            '',
   suffix:            '',
   labelEnabled:      true, // Prepend "14S6" label to copied prompts
   mainRatingLocked:  true, // Lock main rating slider to prevent mistouch (default true)
+  filterTarget:      'main', // 'main' or 'real'
   filter:            'all',
   sortBy:            'num',
   activeBatch:       'new',
@@ -65,6 +67,8 @@ const ST = {
   libOpen:           false,
   csetOpen:          false,
 };
+
+
 
 
 /* ── Firebase Realtime Cloud Sync ────────────────────────────── */
@@ -178,7 +182,8 @@ function applyRemoteData(data) {
         usedSets: _migrateUsedSets(v.usedSets),
         setRatings: _migrateSetRatings(v.setRatings || {}),
         ratingBatches: v.ratingBatches || [],
-        myRatings: _migrateMyRatings(v.myRatings || {})
+        myRatings: _migrateMyRatings(v.myRatings || {}),
+        covered: _migrateCovered(v.covered || {})
       };
     }
 
@@ -217,6 +222,7 @@ function applyRemoteData(data) {
       ST.setRatings        = _migrateSetRatings(proj.setRatings);
       ST.ratingBatches     = proj.ratingBatches || [];
       ST.myRatings         = _migrateMyRatings(proj.myRatings);
+      ST.covered           = _migrateCovered(proj.covered || {});
       ST.brolls            = parseScript(proj.script || '');
 
       const ta = _el('script-textarea');
@@ -225,6 +231,7 @@ function applyRemoteData(data) {
       }
       if (ST.brolls.length) collapseInput();
     }
+
 
     // 6. Re-render UI
     renderProjectTabs();
@@ -334,7 +341,7 @@ let   ACTIVE_PID = null;
 const PROJ_KEY   = 'br_v6_proj';
 
 function _projData(name) {
-  return { name: name||'Script 1', script:'', scores:{}, prompts:{}, batches:[], usedSets:{}, setRatings:{}, ratingBatches:[], myRatings:{} };
+  return { name: name||'Script 1', script:'', scores:{}, prompts:{}, batches:[], usedSets:{}, setRatings:{}, ratingBatches:[], myRatings:{}, covered:{} };
 }
 
 function saveProjects() {
@@ -354,6 +361,7 @@ function saveProjects() {
       setRatings:    JSON.parse(JSON.stringify(ST.setRatings||{})),
       ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches||[])),
       myRatings:     JSON.parse(JSON.stringify(ST.myRatings||{})),
+      covered:       JSON.parse(JSON.stringify(ST.covered||{})),
     };
   }
   try { localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS })); } catch {}
@@ -361,7 +369,18 @@ function saveProjects() {
   pushToFirebase(); // Sync to Firebase Cloud
 }
 
-
+function _migrateCovered(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const res = {};
+  if (Array.isArray(raw)) {
+    raw.forEach((v, idx) => { if (v) res[idx] = true; });
+  } else {
+    for (const [k, v] of Object.entries(raw)) {
+      if (v) res[k] = true;
+    }
+  }
+  return res;
+}
 
 function _migrateScores(raw) {
   if (!raw) return {};
@@ -465,7 +484,8 @@ function loadProjects() {
           prompts: _migratePrompts(v.prompts),
           usedSets: _migrateUsedSets(v.usedSets),
           setRatings: _migrateSetRatings(v.setRatings),
-          myRatings: _migrateMyRatings(v.myRatings)
+          myRatings: _migrateMyRatings(v.myRatings),
+          covered: _migrateCovered(v.covered)
         };
       }
       ACTIVE_PID = (raw.active && PROJECTS[raw.active]) ? raw.active : Object.keys(PROJECTS)[0];
@@ -480,6 +500,7 @@ function loadProjects() {
       return;
     }
   } catch {}
+
 
   /* Migrate from old single-project keys */
   try {
@@ -518,13 +539,15 @@ function activateProject(pid) {
   ST.setRatings        = _migrateSetRatings(proj.setRatings);
   ST.ratingBatches     = proj.ratingBatches || [];
   ST.myRatings         = proj.myRatings     || {};
+  ST.covered           = _migrateCovered(proj.covered);
   ST.activeRatingBatch = 'new';
 
-  // prefix/suffix stay global — do NOT overwrite from project
   ST.brolls            = parseScript(proj.script || '');
-  ST.filter = 'all'; ST.sortBy = 'num'; ST.activeBatch = 'new';
+  ST.filterTarget = 'main'; ST.filter = 'all'; ST.sortBy = 'num'; ST.activeBatch = 'new';
+  _el('fb-target-main')?.classList.add('active');
+  _el('fb-target-real')?.classList.remove('active');
   const ta = _el('script-textarea'); if (ta) ta.value = proj.script||'';
-  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.filter==='all'));
+  renderFilterChips();
   document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort==='num'));
   if (ST.brolls.length) collapseInput(); else expandInput();
   H.stack=[]; H.pos=-1; refreshUR();
@@ -533,6 +556,7 @@ function activateProject(pid) {
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge(); syncCsetUI();
   updateSratingHint(); renderRatingTabs(); renderRatingPanel();
   renderMyDatabase();
+
   scrollToLastScoredBroll();
 }
 
@@ -774,6 +798,20 @@ function closeMyRatingModal() {
   _myRatingModal = null;
 }
 
+function toggleCoveredClip(num) {
+  if (!ST.covered) ST.covered = {};
+  const isNowCovered = !ST.covered[num];
+  if (isNowCovered) {
+    ST.covered[num] = true;
+  } else {
+    delete ST.covered[num];
+  }
+  saveProjects();
+  updateHmCell(num);
+  renderStats();
+  toast(isNowCovered ? `✔ B-roll #${num} marked as Covered (9+ in Overview)` : `↺ B-roll #${num} unmarked as Covered`);
+}
+
 function showMyRatingModal(triggerEl, num, setIdx) {
   closeMyRatingModal();
 
@@ -782,6 +820,7 @@ function showMyRatingModal(triggerEl, num, setIdx) {
   const broll = ST.brolls.find(b => b.num === num);
   const promptText = entry ? entry.text : '';
   const brollLine = broll ? broll.line : `B-roll #${num}`;
+  const isCovered = !!(ST.covered && ST.covered[num]);
 
   const modal = document.createElement('div');
   modal.className = 'myrating-modal';
@@ -789,7 +828,7 @@ function showMyRatingModal(triggerEl, num, setIdx) {
 
   // Position near trigger
   const rect = triggerEl.getBoundingClientRect();
-  const top = Math.min(rect.bottom + 8, window.innerHeight - 300);
+  const top = Math.min(rect.bottom + 8, window.innerHeight - 340);
   const left = Math.min(rect.left, window.innerWidth - 310);
   modal.style.cssText = `top:${top + window.scrollY}px;left:${Math.max(8, left)}px`;
 
@@ -810,6 +849,12 @@ function showMyRatingModal(triggerEl, num, setIdx) {
         value="${escHtml(existingVal)}">
     </div>
     <div class="myrating-hint">Format: <code>8.8 comment</code> &nbsp;·&nbsp; Comment is optional</div>
+    <div class="myrating-covered-row">
+      <button type="button" class="myrating-covered-btn ${isCovered ? 'active' : ''}" id="myrating-covered-btn">
+        <span class="mcb-check">${isCovered ? '✔' : '◻'}</span>
+        <span class="mcb-text">${isCovered ? 'Covered with other clip (Overview: 9+)' : 'Mark as Covered with other clip (Overview: 9+)'}</span>
+      </button>
+    </div>
     <div class="myrating-actions">
       <button class="hbtn primary" id="myrating-save">✔ Save</button>
       ${existing ? `<button class="hbtn danger" id="myrating-delete">🗑 Delete</button>` : ''}
@@ -831,6 +876,14 @@ function showMyRatingModal(triggerEl, num, setIdx) {
     toast(`✔ Rated #${num} Set ${setIdx+1}: ${parsed.score}`);
   };
 
+  _el('myrating-covered-btn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMyRatingModal();
+    toggleCoveredClip(num);
+  });
+
+
   _el('myrating-close')?.addEventListener('click', closeMyRatingModal);
   _el('myrating-cancel')?.addEventListener('click', closeMyRatingModal);
   _el('myrating-delete')?.addEventListener('click', () => {
@@ -843,6 +896,7 @@ function showMyRatingModal(triggerEl, num, setIdx) {
     e.stopPropagation();
     doSave();
   });
+
   input?.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -1976,145 +2030,252 @@ function updateCardPrompts(num) {
 
 function updateAllPromptChips() { ST.brolls.forEach(b => updateCardPrompts(b.num)); }
 
-/* ── Filter & Sort ──────────────────────────────────────────── */
-function passes(b) {
-  const s = ST.scores[b.num] ?? null, f = ST.filter;
-  if (f==='all')       return true;
-  if (f==='unscored')  return s===null;
-  if (f==='needs')     return s===null||s<9;
-  if (f.startsWith('above:')) return s!==null&&s>=parseFloat(f.slice(6));
-  if (f.startsWith('below:')) return s===null||s<parseFloat(f.slice(6));
-  if (f==='perfect')   return s!==null&&snap(s)===10;
-  return true;
+/* ── Real Rating Line Representation ──────────────────────── */
+function getLineRealRating(num) {
+  const isCovered = !!(ST.covered && ST.covered[num]);
+  const sets = ST.myRatings?.[num];
+  let highestScore = null;
+  let hasRetry = false;
+
+  if (sets && typeof sets === 'object') {
+    const validScores = Object.values(sets)
+      .filter(val => val && typeof val === 'object' && val.score !== undefined && !isNaN(parseFloat(val.score)))
+      .map(val => parseFloat(val.score));
+
+    if (validScores.length) {
+      if (validScores.includes(0)) hasRetry = true;
+      highestScore = Math.max(...validScores);
+    }
+  }
+
+  if (isCovered) {
+    return {
+      score: highestScore !== null ? Math.max(9, highestScore) : 9,
+      isCovered: true,
+      hasRetry: false,
+      isRated: true
+    };
+  }
+
+  if (highestScore !== null) {
+    return {
+      score: highestScore,
+      isCovered: false,
+      hasRetry: highestScore === 0,
+      isRated: true
+    };
+  }
+
+  return {
+    score: null,
+    isCovered: false,
+    hasRetry: false,
+    isRated: false
+  };
 }
+
+/* ── Filter & Sort (Main Rating vs Real Rating) ─────────────── */
+function passes(b) {
+  const target = ST.filterTarget || 'main';
+  const f = ST.filter;
+
+  if (target === 'main') {
+    const s = ST.scores[b.num] ?? null;
+    if (f === 'all') return true;
+    if (f === 'unscored' || f === 'unrated') return s === null;
+    if (f === 'needs') return s === null || s < 9;
+    if (f === 'retry') return s === 0;
+    if (f.startsWith('above:')) return s !== null && s >= parseFloat(f.slice(6));
+    if (f.startsWith('below:')) return s === null || s < parseFloat(f.slice(6));
+    if (f === 'perfect') return s !== null && snap(s) === 10;
+    return true;
+  } else {
+    // Real Rating filtering: represented by highest real score of the sets, or 9 if covered
+    const lr = getLineRealRating(b.num);
+    if (f === 'all') return true;
+    if (f === 'unrated' || f === 'unscored') return !lr.isRated;
+    if (f === 'retry') return lr.hasRetry;
+    if (f === 'needs') return !lr.isRated || lr.score < 9;
+    if (f === 'above:9' || f === '9plus') return lr.isRated && lr.score >= 9;
+    if (f === 'perfect') return lr.isRated && lr.score >= 10;
+    if (f === 'covered') return lr.isCovered;
+    if (f.startsWith('above:')) return lr.isRated && lr.score >= parseFloat(f.slice(6));
+    if (f.startsWith('below:')) return !lr.isRated || lr.score < parseFloat(f.slice(6));
+    return true;
+  }
+}
+
 function sortedList(arr) {
-  if (ST.sortBy==='num')  return [...arr].sort((a,b)=>a.num-b.num);
-  if (ST.sortBy==='asc')  return [...arr].sort((a,b)=>(ST.scores[a.num]??-1)-(ST.scores[b.num]??-1));
-  if (ST.sortBy==='desc') return [...arr].sort((a,b)=>(ST.scores[b.num]??-1)-(ST.scores[a.num]??-1));
+  const target = ST.filterTarget || 'main';
+  if (ST.sortBy === 'num') return [...arr].sort((a, b) => a.num - b.num);
+
+  if (target === 'main') {
+    if (ST.sortBy === 'asc') return [...arr].sort((a, b) => (ST.scores[a.num] ?? -1) - (ST.scores[b.num] ?? -1));
+    if (ST.sortBy === 'desc') return [...arr].sort((a, b) => (ST.scores[b.num] ?? -1) - (ST.scores[a.num] ?? -1));
+  } else {
+    const getScoreVal = num => {
+      const lr = getLineRealRating(num);
+      return lr.isRated ? lr.score : -1;
+    };
+    if (ST.sortBy === 'asc') return [...arr].sort((a, b) => getScoreVal(a.num) - getScoreVal(b.num));
+    if (ST.sortBy === 'desc') return [...arr].sort((a, b) => getScoreVal(b.num) - getScoreVal(a.num));
+  }
   return arr;
 }
 
+
 function getRealRatingOverviewData(num) {
+  const isCovered = !!(ST.covered && ST.covered[num]);
   const sets = ST.myRatings?.[num];
-  if (!sets || typeof sets !== 'object') return null;
-  const list = Object.entries(sets)
-    .filter(([idx, val]) => val && typeof val === 'object' && val.score !== undefined && !isNaN(parseFloat(val.score)))
-    .map(([idx, val]) => ({ idx: parseInt(idx), score: parseFloat(val.score), comment: val.comment || '', date: val.date }));
-  if (!list.length) return null;
+  let ratingData = null;
 
-  // Check if used set has rating
-  const used = ST.usedSets?.[num];
-  if (used !== undefined && sets[used] && sets[used].score !== undefined) {
-    return { score: parseFloat(sets[used].score), comment: sets[used].comment || '', setIdx: used };
+  if (sets && typeof sets === 'object') {
+    const list = Object.entries(sets)
+      .filter(([idx, val]) => val && typeof val === 'object' && val.score !== undefined && !isNaN(parseFloat(val.score)))
+      .map(([idx, val]) => ({ idx: parseInt(idx), score: parseFloat(val.score), comment: val.comment || '', date: val.date }));
+
+    if (list.length) {
+      const used = ST.usedSets?.[num];
+      if (used !== undefined && sets[used] && sets[used].score !== undefined) {
+        ratingData = { score: parseFloat(sets[used].score), comment: sets[used].comment || '', setIdx: used };
+      } else {
+        const retry = list.find(x => x.score === 0);
+        if (retry) {
+          ratingData = { score: 0, comment: retry.comment, setIdx: retry.idx };
+        } else {
+          list.sort((a, b) => b.score - a.score);
+          ratingData = { score: list[0].score, comment: list[0].comment, setIdx: list[0].idx };
+        }
+      }
+    }
   }
 
-  // If any set has score 0 (model retry), prioritize showing retry
-  const retry = list.find(x => x.score === 0);
-  if (retry) {
-    return { score: 0, comment: retry.comment, setIdx: retry.idx };
+  // If marked as covered, the real rating overview bar displays Green 9+
+  if (isCovered) {
+    return {
+      score: 9,
+      isCovered: true,
+      rawRating: ratingData,
+      comment: 'Covered / Used alternative clip (9+)',
+      setIdx: ratingData ? ratingData.setIdx : null
+    };
   }
 
-  // Otherwise, highest score
-  list.sort((a, b) => b.score - a.score);
-  return { score: list[0].score, comment: list[0].comment, setIdx: list[0].idx };
+  return ratingData;
 }
 
-
-/* ── Heatmap (Main Rating & Real Rating) ────────────────────── */
+/* ── Heatmap (Unified Linked 2-Tier: Top Main / Bottom Real) ── */
 function renderHeatmap() {
-  const mainGrid = _el('heatmap-grid');
-  const realGrid = _el('heatmap-real-grid');
-  if (!mainGrid) return;
-  mainGrid.innerHTML = '';
-  if (realGrid) realGrid.innerHTML = '';
+  const grid = _el('heatmap-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
 
   if (!ST.brolls.length) {
-    mainGrid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>';
-    if (realGrid) realGrid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>';
+    grid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>';
     return;
   }
 
   const N = ST.brolls.length;
-  const W = mainGrid.clientWidth || (window.innerWidth - 32);
+  const W = grid.clientWidth || (window.innerWidth - 32);
   const cw = Math.max(4, Math.min(44, Math.floor((W - (N - 1) * 2) / N)));
-  const showNum = cw >= 16;
-  const fs = cw >= 22 ? 9 : cw >= 16 ? 7 : 0;
+  const showNum = cw >= 15;
+  const fs = cw >= 22 ? 9.5 : cw >= 15 ? 7.5 : 0;
 
   ST.brolls.forEach(b => {
-    // 🎯 1. Main Rating Cell
-    const col = getC(ST.scores[b.num] ?? null);
-    const el = document.createElement('div');
-    el.className = 'hm-cell';
-    el.id = `hm-${b.num}`;
-    el.style.cssText = `width:${cw}px;background:${col.bg}`;
-    el.title = `#${b.num}${ST.scores[b.num] !== undefined ? ` · Main Rating: ${ST.scores[b.num]}/10` : ' · unscored'}\n${b.line.slice(0, 55)}`;
+    const mainScore = ST.scores[b.num] ?? null;
+    const mainCol = getC(mainScore);
+    const rData = getRealRatingOverviewData(b.num);
+    const rCol = rData ? (rData.isCovered ? getC(9) : getMyRatingColor(rData.score)) : getC(null);
+
+    const col = document.createElement('div');
+    col.className = 'hm-col';
+    col.id = `hm-col-${b.num}`;
+    col.style.width = `${cw}px`;
+
+    // Top tier (Main)
+    const topTier = document.createElement('div');
+    topTier.className = 'hm-col-tier top';
+    topTier.id = `hm-top-${b.num}`;
+    topTier.style.background = mainCol.bg;
+
+    // Bottom tier (Real)
+    const botTier = document.createElement('div');
+    botTier.className = 'hm-col-tier bottom';
+    botTier.id = `hm-bot-${b.num}`;
+    let botBg = rCol ? rCol.bg : '#151525';
+    botTier.style.background = botBg;
+    if (rData && rData.score === 0 && !rData.isCovered) {
+      botTier.style.boxShadow = 'inset 0 0 4px #9333ea';
+    }
+
+    col.appendChild(topTier);
+    col.appendChild(botTier);
+
+    // Number overlay
     if (showNum && fs > 0) {
-      const sp = document.createElement('span');
-      sp.className = 'hm-cell-num';
-      sp.style.fontSize = fs + 'px';
-      sp.textContent = b.num;
-      el.appendChild(sp);
+      const numSpan = document.createElement('span');
+      numSpan.className = 'hm-col-num';
+      numSpan.style.fontSize = fs + 'px';
+      numSpan.textContent = b.num;
+      col.appendChild(numSpan);
     }
-    el.addEventListener('click', () => _el(`card-${b.num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-    mainGrid.appendChild(el);
 
-    // ✏ 2. Real Rating Cell
-    if (realGrid) {
-      const rData = getRealRatingOverviewData(b.num);
-      const rCol = rData ? getMyRatingColor(rData.score) : getC(null);
-      const rel = document.createElement('div');
-      rel.className = 'hm-cell';
-      rel.id = `hm-real-${b.num}`;
-      let extraBorder = '';
-      if (rData && rData.score === 0) {
-        extraBorder = ';border:1px solid #9333ea;box-shadow:0 0 6px rgba(147,51,234,0.45)';
-      } else if (rCol?.border) {
-        extraBorder = `;border:1px solid ${rCol.border}`;
+    // Tooltip
+    const mainTitle = mainScore !== null ? `Main: ${mainScore}/10` : 'Main: unscored';
+    let realTitle = 'Real: unrated';
+    if (rData) {
+      if (rData.isCovered) {
+        realTitle = 'Real: 9+ (Covered with other clip)';
+      } else if (rData.score === 0) {
+        realTitle = 'Real: 0 (Model Retry / Glitch)';
+      } else {
+        realTitle = `Real: ${rData.score}/10 (Set ${rData.setIdx + 1}${rData.comment ? ': ' + rData.comment : ''})`;
       }
-      rel.style.cssText = `width:${cw}px;background:${rCol ? rCol.bg : '#16162a'}${extraBorder}`;
-
-      const realScoreTitle = rData
-        ? (rData.score === 0 ? '0 (Model Retry / Glitch)' : `${rData.score}/10 (Set ${rData.setIdx + 1}${rData.comment ? ': ' + rData.comment : ''})`)
-        : 'unrated';
-      rel.title = `#${b.num} · Real Rating: ${realScoreTitle}\n${b.line.slice(0, 55)}`;
-
-      if (showNum && fs > 0) {
-        const sp = document.createElement('span');
-        sp.className = 'hm-cell-num';
-        sp.style.fontSize = fs + 'px';
-        sp.textContent = b.num;
-        rel.appendChild(sp);
-      }
-      rel.addEventListener('click', () => _el(`card-${b.num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-      realGrid.appendChild(rel);
     }
+    col.title = `#${b.num} · ${mainTitle} · ${realTitle}\n"${b.line.slice(0, 70)}"`;
+
+    col.addEventListener('click', () => {
+      _el(`card-${b.num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    grid.appendChild(col);
   });
 }
 
 function updateHmCell(num) {
-  // Main rating cell
-  const el = _el(`hm-${num}`);
-  if (el) el.style.background = getC(ST.scores[num] ?? null).bg;
+  const col = _el(`hm-col-${num}`);
+  const topTier = _el(`hm-top-${num}`);
+  const botTier = _el(`hm-bot-${num}`);
+  if (!col) return;
 
-  // Real rating cell
-  const rel = _el(`hm-real-${num}`);
-  if (rel) {
-    const rData = getRealRatingOverviewData(num);
-    const rCol = rData ? getMyRatingColor(rData.score) : getC(null);
-    let extraBorder = '';
-    if (rData && rData.score === 0) {
-      extraBorder = ';border:1px solid #9333ea;box-shadow:0 0 6px rgba(147,51,234,0.45)';
-    } else if (rCol?.border) {
-      extraBorder = `;border:1px solid ${rCol.border}`;
+  const mainScore = ST.scores[num] ?? null;
+  const mainCol = getC(mainScore);
+  if (topTier) topTier.style.background = mainCol.bg;
+
+  const rData = getRealRatingOverviewData(num);
+  const rCol = rData ? (rData.isCovered ? getC(9) : getMyRatingColor(rData.score)) : getC(null);
+  if (botTier) {
+    botTier.style.background = rCol ? rCol.bg : '#151525';
+    if (rData && rData.score === 0 && !rData.isCovered) {
+      botTier.style.boxShadow = 'inset 0 0 4px #9333ea';
+    } else {
+      botTier.style.boxShadow = 'none';
     }
-    rel.style.background = rCol ? rCol.bg : '#16162a';
-    if (extraBorder) rel.style.cssText += extraBorder;
-    const realScoreTitle = rData
-      ? (rData.score === 0 ? '0 (Model Retry / Glitch)' : `${rData.score}/10 (Set ${rData.setIdx + 1}${rData.comment ? ': ' + rData.comment : ''})`)
-      : 'unrated';
-    const broll = ST.brolls.find(x => x.num === num);
-    rel.title = `#${num} · Real Rating: ${realScoreTitle}\n${broll ? broll.line.slice(0, 55) : ''}`;
   }
+
+  const broll = ST.brolls.find(x => x.num === num);
+  const mainTitle = mainScore !== null ? `Main: ${mainScore}/10` : 'Main: unscored';
+  let realTitle = 'Real: unrated';
+  if (rData) {
+    if (rData.isCovered) {
+      realTitle = 'Real: 9+ (Covered with other clip)';
+    } else if (rData.score === 0) {
+      realTitle = 'Real: 0 (Model Retry / Glitch)';
+    } else {
+      realTitle = `Real: ${rData.score}/10 (Set ${rData.setIdx + 1}${rData.comment ? ': ' + rData.comment : ''})`;
+    }
+  }
+  col.title = `#${num} · ${mainTitle} · ${realTitle}\n"${broll ? broll.line.slice(0, 70) : ''}"`;
 }
 
 /* ── Stats ──────────────────────────────────────────────────── */
@@ -2148,8 +2309,8 @@ function renderStats() {
     if (rData) {
       realScoredCount++;
       const s = parseFloat(rData.score);
-      if (s === 0) realRetriesCount++;
-      else if (s >= 9) realGreensCount++;
+      if (s === 0 && !rData.isCovered) realRetriesCount++;
+      else if (s >= 9 || rData.isCovered) realGreensCount++;
     }
   });
 
@@ -2164,16 +2325,17 @@ function renderStats() {
   setText('prog-real-g-pct', prg + '%');
   setText('prog-real-z-pct', prz + '%');
 
-  const realHint = _el('hm-real-hint');
-  if (realHint) {
-    realHint.textContent = total
-      ? `${realScoredCount}/${total} rated (${realGreensCount} ≥9, ${realRetriesCount} retry)`
-      : '0 rated';
+  const hint = _el('hm-hint');
+  if (hint) {
+    hint.textContent = total
+      ? `${scored}/${total} scored (Real: ${realGreensCount} ≥9/covered)`
+      : 'load a script to begin';
   }
 
   const badge = _el('it-badge');
   if (badge) badge.textContent = total ? `${total} clips` : 'empty';
 }
+
 function renderFilterCount() {
   const vis=ST.brolls.filter(passes).length, el=_el('fb-count');
   if(el)el.innerHTML=`<strong>${vis}</strong>/${ST.brolls.length}`;
@@ -2281,20 +2443,28 @@ function buildCard(b) {
   scoreWrap.appendChild(suBadge);
   right.appendChild(scoreWrap);
 
-  const clr=document.createElement('button'); clr.className='c-clear'; clr.textContent='✕'; clr.title='Clear score';
-  clr.setAttribute('aria-label',`Clear score for B-roll ${b.num}`);
-  clr.addEventListener('click',() => {
-    if (ST.mainRatingLocked) {
-      toast('🔒 Main rating is locked. Click 🔒 in header to unlock.');
-      return;
+  const copyLineBtn = document.createElement('button');
+  copyLineBtn.className = 'c-copy-line';
+  copyLineBtn.textContent = '📋';
+  copyLineBtn.title = `Copy line #${b.num}:\n"${b.line}"`;
+  copyLineBtn.setAttribute('aria-label', `Copy text for B-roll ${b.num}`);
+  copyLineBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const text = b.line;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => toast(`📋 Copied Line #${b.num}`))
+        .catch(() => fbCopy(text, () => toast(`📋 Copied Line #${b.num}`)));
+    } else {
+      fbCopy(text, () => toast(`📋 Copied Line #${b.num}`));
     }
-    clearScore(b.num);
   });
-  right.appendChild(clr);
+  right.appendChild(copyLineBtn);
 
   card.appendChild(right);
   return card;
 }
+
 
 
 /* ── Slider helpers ─────────────────────────────────────────── */
@@ -2370,14 +2540,70 @@ function loadScript(text,keepScores=true){
 function collapseInput(){_el('input-section')?.classList.add('collapsed');ST.inputOpen=false;const ch=document.querySelector('#input-section .it-chevron');if(ch)ch.textContent='▼';}
 function expandInput(){_el('input-section')?.classList.remove('collapsed');ST.inputOpen=true;const ch=document.querySelector('#input-section .it-chevron');if(ch)ch.textContent='▲';}
 
-/* ── Filter ─────────────────────────────────────────────────── */
-function setFilter(f){
-  ST.filter=f;
-  document.querySelectorAll('.chip').forEach(c=>{c.classList.toggle('active',c.dataset.filter===f);c.setAttribute('aria-pressed',c.dataset.filter===f);});
-  if(!f.startsWith('below:')){const e=_el('fb-below');if(e)e.value='';}
-  if(!f.startsWith('above:')){const e=_el('fb-above');if(e)e.value='';}
-  renderCards(); renderFilterCount();
+/* ── Filter Target & Chips ───────────────────────────────────── */
+function renderFilterChips() {
+  const wrap = _el('fb-chips');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  const target = ST.filterTarget || 'main';
+  const isReal = (target === 'real');
+
+  const chips = isReal ? [
+    { label: 'All', filter: 'all' },
+    { label: 'Unrated', filter: 'unrated' },
+    { label: 'Retry (0) ↺', filter: 'retry' },
+    { label: 'Needs (<9)', filter: 'needs' },
+    { label: '9+ / Covered ✅', filter: 'above:9' },
+    { label: '10 🏆', filter: 'perfect' },
+    { label: 'Covered ✔', filter: 'covered' },
+  ] : [
+    { label: 'All', filter: 'all' },
+    { label: 'Unscored', filter: 'unscored' },
+    { label: 'Needs Work (<9)', filter: 'needs' },
+    { label: '9+ ✅', filter: 'above:9' },
+    { label: '10 🏆', filter: 'perfect' },
+  ];
+
+  chips.forEach(c => {
+    const btn = document.createElement('button');
+    const isActive = ST.filter === c.filter;
+    btn.className = 'chip' + (isActive ? ' active' : '') + (isReal ? ' real-chip' : '');
+    btn.dataset.filter = c.filter;
+    btn.textContent = c.label;
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    btn.addEventListener('click', () => setFilter(c.filter));
+    wrap.appendChild(btn);
+  });
 }
+
+function setFilterTarget(target) {
+  ST.filterTarget = target;
+  ST.filter = 'all'; // reset to all when switching target
+  _el('fb-target-main')?.classList.toggle('active', target === 'main');
+  _el('fb-target-real')?.classList.toggle('active', target === 'real');
+  const belowInp = _el('fb-below'); if (belowInp) belowInp.value = '';
+  const aboveInp = _el('fb-above'); if (aboveInp) aboveInp.value = '';
+  renderFilterChips();
+  renderCards();
+  renderFilterCount();
+  toast(target === 'real' ? '✏ Filter target: Real Rating' : '🎯 Filter target: Main Rating');
+}
+
+function setFilter(f) {
+  ST.filter = f;
+  const isReal = (ST.filterTarget === 'real');
+  document.querySelectorAll('#fb-chips .chip').forEach(c => {
+    const isAct = (c.dataset.filter === f);
+    c.classList.toggle('active', isAct);
+    c.setAttribute('aria-pressed', isAct ? 'true' : 'false');
+  });
+  if (!f.startsWith('below:')) { const e = _el('fb-below'); if (e) e.value = ''; }
+  if (!f.startsWith('above:')) { const e = _el('fb-above'); if (e) e.value = ''; }
+  renderCards();
+  renderFilterCount();
+}
+
 
 /* ── Export / Import ────────────────────────────────────────── */
 function exportData(){
@@ -2392,6 +2618,7 @@ function exportData(){
     setRatings: JSON.parse(JSON.stringify(ST.setRatings || {})),
     ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches || [])),
     myRatings: JSON.parse(JSON.stringify(ST.myRatings || {})),
+    covered: JSON.parse(JSON.stringify(ST.covered || {})),
     prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled,
   };
   const json = JSON.stringify(d, null, 2);
@@ -2422,7 +2649,8 @@ function importJSON(file){
       ST.usedSets      = d.usedSets      || {};
       ST.setRatings    = _migrateSetRatings(d.setRatings || {});
       ST.ratingBatches = d.ratingBatches || [];
-      ST.myRatings     = d.myRatings     || {};
+      ST.myRatings     = _migrateMyRatings(d.myRatings || {});
+      ST.covered       = _migrateCovered(d.covered || {});
       if (d.prefix !== undefined) ST.prefix = d.prefix;
       if (d.suffix !== undefined) ST.suffix = d.suffix;
       if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
@@ -2438,6 +2666,7 @@ function importJSON(file){
   };
   r.readAsText(file);
 }
+
 
 function syncCsetUI(){
   const pre=_el('cset-prefix'), suf=_el('cset-suffix'), chk=_el('cset-label-toggle');
@@ -2501,7 +2730,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   ST.setRatings    = _migrateSetRatings(proj.setRatings);
   ST.ratingBatches = proj.ratingBatches || [];
   ST.myRatings     = proj.myRatings     || {};
+  ST.covered       = _migrateCovered(proj.covered || {});
   ST.brolls        = parseScript(proj.script || '');
+
   loadGlobalCset();   // Load prefix/suffix from global key
 
   try {
@@ -2517,8 +2748,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   if (ST.brolls.length) collapseInput();
 
   renderProjectTabs();
+  renderFilterChips();
   renderHeatmap(); renderStats(); renderCards(!!ST.brolls.length);
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge();
+
   syncCsetUI(); updateSratingHint(); renderRatingTabs(); renderRatingPanel(); refreshUR();
   renderMyDatabase();
   updateRatingLockUI();
@@ -2635,12 +2868,42 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   });
 
-  /* Filter */
-  document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>setFilter(c.dataset.filter)));
-  _el('fb-below').addEventListener('input',e=>{const v=e.target.value.trim();if(!v){setFilter('all');return;}const n=parseFloat(v);if(!isNaN(n)){ST.filter=`below:${n}`;document.querySelectorAll('.chip').forEach(c=>{c.classList.remove('active');c.setAttribute('aria-pressed','false');});renderCards();renderFilterCount();}});
-  _el('fb-above').addEventListener('input',e=>{const v=e.target.value.trim();if(!v){setFilter('all');return;}const n=parseFloat(v);if(!isNaN(n)){ST.filter=`above:${n}`;document.querySelectorAll('.chip').forEach(c=>{c.classList.remove('active');c.setAttribute('aria-pressed','false');});renderCards();renderFilterCount();}});
+  /* Filter Target & Inputs */
+  _el('fb-target-main')?.addEventListener('click', () => setFilterTarget('main'));
+  _el('fb-target-real')?.addEventListener('click', () => setFilterTarget('real'));
+
+  _el('fb-below')?.addEventListener('input', e => {
+    const v = e.target.value.trim();
+    if (!v) { setFilter('all'); return; }
+    const n = parseFloat(v);
+    if (!isNaN(n)) {
+      ST.filter = `below:${n}`;
+      document.querySelectorAll('#fb-chips .chip').forEach(c => {
+        c.classList.remove('active');
+        c.setAttribute('aria-pressed', 'false');
+      });
+      renderCards();
+      renderFilterCount();
+    }
+  });
+
+  _el('fb-above')?.addEventListener('input', e => {
+    const v = e.target.value.trim();
+    if (!v) { setFilter('all'); return; }
+    const n = parseFloat(v);
+    if (!isNaN(n)) {
+      ST.filter = `above:${n}`;
+      document.querySelectorAll('#fb-chips .chip').forEach(c => {
+        c.classList.remove('active');
+        c.setAttribute('aria-pressed', 'false');
+      });
+      renderCards();
+      renderFilterCount();
+    }
+  });
 
   /* Sort */
+
   document.querySelectorAll('.sort-btn').forEach(btn=>btn.addEventListener('click',()=>{ST.sortBy=btn.dataset.sort;document.querySelectorAll('.sort-btn').forEach(b=>b.classList.toggle('active',b.dataset.sort===ST.sortBy));renderCards();}));
 
   /* Library */

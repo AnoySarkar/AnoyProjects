@@ -17,8 +17,10 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="style.css?v=20260822_3" />
+  <link rel="stylesheet" href="style.css?v=20260822_5" />
 </head>
+
+
 
 <body>
 <div id="app">
@@ -65,40 +67,41 @@
       </div>
     </header>
 
-    <!-- Heatmap (Overview Panel) -->
+    <!-- Unified Linked Overview Panel (Top: Main, Bottom: Real) -->
     <div id="heatmap-panel">
-      <!-- 🎯 Main Rating Overview -->
-      <div class="hm-section" id="hm-main-section">
-        <div class="hm-header">
-          <span class="hm-label">🎯 Main Rating Overview</span>
-          <span class="hm-sub" id="hm-hint">load a script to begin</span>
-        </div>
-        <div id="heatmap-grid" class="hm-grid" role="list"></div>
-        <div class="hm-progress">
+      <div class="hm-header">
+        <span class="hm-label">📊 Overview Bar</span>
+        <span class="hm-legend">
+          <span class="hm-leg-item"><span class="hm-leg-dot top"></span> Top: Main</span>
+          <span class="hm-leg-item"><span class="hm-leg-dot bot"></span> Bottom: Real</span>
+        </span>
+        <span class="hm-sub" id="hm-hint">load a script to begin</span>
+      </div>
+
+      <!-- Linked 2-Tier Bar Grid -->
+      <div id="heatmap-grid" class="hm-linked-grid" role="list"></div>
+
+      <!-- Stats Rows -->
+      <div class="hm-dual-progress">
+        <div class="hm-progress hm-prog-main">
+          <span class="hm-prog-tag">Main</span>
           <span class="hm-prog-label">Scored</span>
           <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-s" style="background:linear-gradient(90deg,#6c6dfa,#a594ff);width:0%"></div></div>
           <span class="hm-prog-pct" id="prog-s-pct">0%</span>
-          <span class="hm-prog-label" style="margin-left:8px">≥9</span>
+          <span class="hm-prog-label" style="margin-left:6px">≥9</span>
           <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-g" style="background:linear-gradient(90deg,#2a7a2a,#00922e);width:0%"></div></div>
           <span class="hm-prog-pct" id="prog-g-pct">0%</span>
         </div>
-      </div>
 
-      <!-- ✏ Real Rating Overview -->
-      <div class="hm-section" id="hm-real-section" style="margin-top:9px;padding-top:7px;border-top:1px solid var(--border);">
-        <div class="hm-header">
-          <span class="hm-label">✏ Real Rating Overview</span>
-          <span class="hm-sub" id="hm-real-hint">0 rated</span>
-        </div>
-        <div id="heatmap-real-grid" class="hm-grid" role="list"></div>
-        <div class="hm-progress">
+        <div class="hm-progress hm-prog-real">
+          <span class="hm-prog-tag">Real</span>
           <span class="hm-prog-label">Rated</span>
           <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-s" style="background:linear-gradient(90deg,#6c6dfa,#a594ff);width:0%"></div></div>
           <span class="hm-prog-pct" id="prog-real-s-pct">0%</span>
-          <span class="hm-prog-label" style="margin-left:8px">≥9</span>
+          <span class="hm-prog-label" style="margin-left:6px">≥9 / Covered</span>
           <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-g" style="background:linear-gradient(90deg,#2a7a2a,#00922e);width:0%"></div></div>
           <span class="hm-prog-pct" id="prog-real-g-pct">0%</span>
-          <span class="hm-prog-label" style="margin-left:8px">Retry(0)</span>
+          <span class="hm-prog-label" style="margin-left:6px">Retry(0)</span>
           <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-z" style="background:linear-gradient(90deg,#7e22ce,#c084fc);width:0%"></div></div>
           <span class="hm-prog-pct" id="prog-real-z-pct">0%</span>
         </div>
@@ -106,13 +109,21 @@
     </div>
 
 
-    <!-- Filter Bar -->
+
+    <!-- Filter Bar with Main vs Real Target Toggle -->
     <div id="filter-bar" class="hidden" role="search">
-      <button class="chip active" data-filter="all"      id="chip-all">All</button>
-      <button class="chip"        data-filter="unscored" id="chip-un">Unscored</button>
-      <button class="chip"        data-filter="needs"    id="chip-needs">Needs Work</button>
-      <button class="chip"        data-filter="above:9"  id="chip-9">9+ ✅</button>
-      <button class="chip"        data-filter="perfect"  id="chip-10">10 🏆</button>
+      <div class="fb-target-grp" title="Toggle filtering between Main Rating and Real Rating">
+        <button class="fb-target-btn active" id="fb-target-main" data-target="main">🎯 Main</button>
+        <button class="fb-target-btn" id="fb-target-real" data-target="real">✏ Real</button>
+      </div>
+      <div class="fb-sep"></div>
+      <div id="fb-chips" class="fb-chips-wrap">
+        <button class="chip active" data-filter="all"      id="chip-all">All</button>
+        <button class="chip"        data-filter="unscored" id="chip-un">Unscored</button>
+        <button class="chip"        data-filter="needs"    id="chip-needs">Needs Work</button>
+        <button class="chip"        data-filter="above:9"  id="chip-9">9+ ✅</button>
+        <button class="chip"        data-filter="perfect"  id="chip-10">10 🏆</button>
+      </div>
       <div class="fb-sep"></div>
       <div class="fb-input-wrap" title="Filter below score">
         <span>below</span>
@@ -131,6 +142,7 @@
     </div>
   </div>
   <!-- /sticky-top -->
+
 
   <!-- ══ MAIN CONTENT ════════════════════════════════════════ -->
   <main id="main-content">
@@ -348,8 +360,10 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-<script src="app.js?v=20260822_3"></script>
+<script src="app.js?v=20260822_5"></script>
 </body>
 </html>
+
+
 
 
