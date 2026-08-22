@@ -317,7 +317,7 @@ let   ACTIVE_PID = null;
 const PROJ_KEY   = 'br_v6_proj';
 
 function _projData(name) {
-  return { name: name||'Script 1', script:'', scores:{}, prompts:{}, batches:[], usedSets:{}, setRatings:{}, ratingBatches:[] };
+  return { name: name||'Script 1', script:'', scores:{}, prompts:{}, batches:[], usedSets:{}, setRatings:{}, ratingBatches:[], myRatings:{} };
 }
 
 function saveProjects() {
@@ -390,7 +390,8 @@ function loadProjects() {
         PROJECTS[k] = {
           ...v,
           prompts: _migratePrompts(v.prompts),
-          setRatings: _migrateSetRatings(v.setRatings)
+          setRatings: _migrateSetRatings(v.setRatings),
+          myRatings: v.myRatings || {}
         };
       }
       ACTIVE_PID = (raw.active && PROJECTS[raw.active]) ? raw.active : Object.keys(PROJECTS)[0];
@@ -414,7 +415,7 @@ function loadProjects() {
     const us  = JSON.parse(localStorage.getItem('br_us5')||'{}');
     const cs  = JSON.parse(localStorage.getItem('br_cs5')||'{}');
     const pid = uid();
-    PROJECTS[pid] = { name:'Script 1', script:sc, scores:s, prompts:pr, batches:ba, usedSets:us, setRatings:{}, ratingBatches:[] };
+    PROJECTS[pid] = { name:'Script 1', script:sc, scores:s, prompts:pr, batches:ba, usedSets:us, setRatings:{}, ratingBatches:[], myRatings:{} };
     ACTIVE_PID = pid;
     // Migrate prefix/suffix to global
     if (cs.prefix || cs.suffix) {
@@ -441,6 +442,7 @@ function activateProject(pid) {
   ST.usedSets          = proj.usedSets      || {};
   ST.setRatings        = _migrateSetRatings(proj.setRatings);
   ST.ratingBatches     = proj.ratingBatches || [];
+  ST.myRatings         = proj.myRatings     || {};
   ST.activeRatingBatch = 'new';
 
   // prefix/suffix stay global — do NOT overwrite from project
@@ -455,6 +457,7 @@ function activateProject(pid) {
   renderHeatmap(); renderStats(); renderCards(true); updateAllPromptChips();
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge(); syncCsetUI();
   updateSratingHint(); renderRatingTabs(); renderRatingPanel();
+  renderMyDatabase();
   scrollToLastScoredBroll();
 }
 
@@ -2337,10 +2340,12 @@ function importJSON(file){
       if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
       if (d.script) loadScript(d.script, true);
       save();
+      renderHeatmap(); renderStats();
       renderLibraryView(); renderBatchTabs(); updateLibBadge(); syncCsetUI();
       renderRatingTabs(); renderRatingPanel(); updateSratingHint(); updateAllPromptChips();
       renderMyDatabase();
       toast('📤 Imported');
+
     } catch(err) { console.error('Import error:', err); toast('❌ Invalid file'); }
   };
   r.readAsText(file);
