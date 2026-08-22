@@ -53,8 +53,10 @@ const ST = {
   setRatings:        {},   // { [brollNum]: { [setIdx]: { score, why } } }
   ratingBatches:     [],   // [ { id, label, date, raw, brolls, count } ]
   activeRatingBatch: 'new',
+  myRatings:         {},   // { [brollNum]: { [setIdx]: { score, comment, date } } }
   prefix:            '',
   suffix:            '',
+  labelEnabled:      true, // Prepend "14S6" label to copied prompts
   filter:            'all',
   sortBy:            'num',
   activeBatch:       'new',
@@ -158,7 +160,8 @@ function applyRemoteData(data) {
         batches: v.batches || [],
         usedSets: v.usedSets || {},
         setRatings: _migrateSetRatings(v.setRatings || {}),
-        ratingBatches: v.ratingBatches || []
+        ratingBatches: v.ratingBatches || [],
+        myRatings: v.myRatings || {}
       };
     }
 
@@ -169,10 +172,13 @@ function applyRemoteData(data) {
       ACTIVE_PID = Object.keys(PROJECTS)[0] || null;
     }
 
-    // 3. Sync global prefix/suffix
+    // 3. Sync global prefix/suffix/labelEnabled
     if (data.globalCset) {
       ST.prefix = data.globalCset.prefix || '';
       ST.suffix = data.globalCset.suffix || '';
+      if (data.globalCset.labelEnabled !== undefined) {
+        ST.labelEnabled = data.globalCset.labelEnabled;
+      }
       saveGlobalCset();
       syncCsetUI();
     }
@@ -191,6 +197,7 @@ function applyRemoteData(data) {
       ST.usedSets          = proj.usedSets      || {};
       ST.setRatings        = _migrateSetRatings(proj.setRatings);
       ST.ratingBatches     = proj.ratingBatches || [];
+      ST.myRatings         = proj.myRatings     || {};
       ST.brolls            = parseScript(proj.script || '');
 
 
@@ -214,6 +221,7 @@ function applyRemoteData(data) {
     renderRatingTabs();
     renderRatingPanel();
     updateSratingHint();
+    renderMyDatabase();
     updateSyncUI('synced', 'Cloud');
     toast('☁️ Synced from Cloud');
   } catch (err) {
@@ -284,16 +292,21 @@ function initFirebaseSync() {
 /* ── Global Prefix / Suffix (shared across all scripts) ─────── */
 const GLOBAL_CSET_KEY = 'br_global_cset';
 function saveGlobalCset() {
-  try { localStorage.setItem(GLOBAL_CSET_KEY, JSON.stringify({ prefix: ST.prefix, suffix: ST.suffix })); } catch {}
+  try { localStorage.setItem(GLOBAL_CSET_KEY, JSON.stringify({ prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled })); } catch {}
   pushToFirebase();
 }
 
 function loadGlobalCset() {
   try {
     const d = JSON.parse(localStorage.getItem(GLOBAL_CSET_KEY) || 'null');
-    if (d) { ST.prefix = d.prefix || ''; ST.suffix = d.suffix || ''; return; }
+    if (d) {
+      ST.prefix = d.prefix || '';
+      ST.suffix = d.suffix || '';
+      ST.labelEnabled = (d.labelEnabled !== false); // default true
+      return;
+    }
   } catch {}
-  ST.prefix = ''; ST.suffix = '';
+  ST.prefix = ''; ST.suffix = ''; ST.labelEnabled = true;
 }
 
 /* ── Projects / Multi-Script ────────────────────────────────── */
@@ -321,6 +334,7 @@ function saveProjects() {
       usedSets:      JSON.parse(JSON.stringify(ST.usedSets)),
       setRatings:    JSON.parse(JSON.stringify(ST.setRatings||{})),
       ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches||[])),
+      myRatings:     JSON.parse(JSON.stringify(ST.myRatings||{})),
       // prefix/suffix are global — NOT saved per-project
     };
   }
@@ -579,6 +593,232 @@ function getSetRatingSummary(num, setIdx) {
     isMajorityTen,
     color: rColor
   };
+}
+
+/* ── My Personal Ratings (Training Database) ─────────────────── */
+function parseMyRatingInput(str) {
+  if (!str || !str.trim()) return null;
+  const m = str.trim().match(/^([+\-]?[\d.]+)\s*[:\-–]\s*(.*)/);
+  if (!m) return null;
+  const score = parseFloat(m[1]);
+  if (isNaN(score)) return null;
+  return { score, comment: m[2].trim() };
+}
+
+function getMyRating(num, setIdx) {
+  return ST.myRatings?.[num]?.[setIdx] ?? null;
+}
+
+function saveMyRating(num, setIdx, score, comment) {
+  if (!ST.myRatings[num]) ST.myRatings[num] = {};
+  ST.myRatings[num][setIdx] = { score, comment, date: Date.now() };
+  save();
+  updateCardPrompts(num);
+  renderMyDatabase();
+  updateMyDbBadge();
+}
+
+function deleteMyRating(num, setIdx) {
+  if (ST.myRatings[num]) {
+    delete ST.myRatings[num][setIdx];
+    if (!Object.keys(ST.myRatings[num]).length) delete ST.myRatings[num];
+  }
+  save();
+  updateCardPrompts(num);
+  renderMyDatabase();
+  updateMyDbBadge();
+}
+
+function getMyRatingColor(score) {
+  // Allows scores >10 (like 11 for benchmark)
+  const s = parseFloat(score);
+  if (isNaN(s)) return { border:'#555', bg:'rgba(80,80,80,0.15)', text:'#aaa' };
+  if (s > 10)   return { border:'#c026d3', bg:'rgba(192,38,211,0.18)', text:'#e879f9' }; // > 10 = bright magenta
+  if (s >= 10)  return { border:'#9333ea', bg:'rgba(147,51,234,0.15)', text:'#c084fc' };
+  if (s >= 9.5) return { border:'#2563eb', bg:'rgba(37,99,235,0.15)',  text:'#60a5fa' };
+  if (s >= 9)   return { border:'#16a34a', bg:'rgba(22,163,74,0.15)',  text:'#4ade80' };
+  if (s >= 7)   return { border:'#ca8a04', bg:'rgba(202,138,4,0.12)',  text:'#fbbf24' };
+  return { border:'#555', bg:'rgba(80,80,80,0.12)', text:'#888' };
+}
+
+function updateMyDbBadge() {
+  const el = _el('mydb-badge');
+  if (!el) return;
+  let total = 0;
+  for (const sets of Object.values(ST.myRatings||{})) {
+    total += Object.keys(sets).length;
+  }
+  el.textContent = total;
+  el.classList.toggle('active', total > 0);
+}
+
+/* ── My Rating Modal ─────────────────────────────────────────── */
+let _myRatingModal = null;
+
+function closeMyRatingModal() {
+  if (_myRatingModal) { _myRatingModal.remove(); _myRatingModal = null; }
+}
+
+function showMyRatingModal(triggerEl, num, setIdx) {
+  closeMyRatingModal();
+
+  const existing = getMyRating(num, setIdx);
+  const entry = (ST.prompts[num]||[])[setIdx];
+  const broll = ST.brolls.find(b => b.num === num);
+  const promptText = entry ? entry.text : '';
+  const brollLine = broll ? broll.line : `B-roll #${num}`;
+
+  const modal = document.createElement('div');
+  modal.className = 'myrating-modal';
+  _myRatingModal = modal;
+
+  // Position near trigger
+  const rect = triggerEl.getBoundingClientRect();
+  const top = Math.min(rect.bottom + 8, window.innerHeight - 300);
+  const left = Math.min(rect.left, window.innerWidth - 310);
+  modal.style.cssText = `top:${top + window.scrollY}px;left:${Math.max(8, left)}px`;
+
+  modal.innerHTML = `
+    <div class="myrating-modal-hdr">
+      <span class="myrating-modal-title">✏ My Rating — #${num} Set ${setIdx+1}</span>
+      <button class="myrating-close" id="myrating-close">✕</button>
+    </div>
+    <div class="myrating-context">
+      <div class="myrating-broll-line">📽 ${escHtml(brollLine)}</div>
+      <div class="myrating-prompt-text">${escHtml(promptText.slice(0,200))}${promptText.length>200?'…':''}</div>
+    </div>
+    <div class="myrating-input-row">
+      <input class="myrating-input" id="myrating-input" type="text"
+        placeholder="9.7 : perfect cinematic"
+        value="${existing ? existing.score + ' : ' + (existing.comment||'') : ''}">
+    </div>
+    <div class="myrating-hint">Format: <code>score : comment</code> &nbsp;·&nbsp; Score can exceed 10</div>
+    <div class="myrating-actions">
+      <button class="hbtn primary" id="myrating-save">✔ Save</button>
+      ${existing ? `<button class="hbtn danger" id="myrating-delete">🗑 Delete</button>` : ''}
+      <button class="hbtn" id="myrating-cancel">✕ Cancel</button>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const input = _el('myrating-input');
+  setTimeout(() => { input?.focus(); input?.select(); }, 50);
+
+  _el('myrating-close')?.addEventListener('click', closeMyRatingModal);
+  _el('myrating-cancel')?.addEventListener('click', closeMyRatingModal);
+  _el('myrating-delete')?.addEventListener('click', () => {
+    deleteMyRating(num, setIdx);
+    closeMyRatingModal();
+    toast(`🗑 Deleted rating for #${num} Set ${setIdx+1}`);
+  });
+  _el('myrating-save')?.addEventListener('click', () => {
+    const val = input.value.trim();
+    const parsed = parseMyRatingInput(val);
+    if (!parsed) { toast('⚠️ Format: score : comment  e.g.  9.7 : great shot'); return; }
+    saveMyRating(num, setIdx, parsed.score, parsed.comment);
+    closeMyRatingModal();
+    toast(`✔ Rated #${num} Set ${setIdx+1}: ${parsed.score}`);
+  });
+  input?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); _el('myrating-save')?.click(); }
+    if (e.key === 'Escape') closeMyRatingModal();
+  });
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('mousedown', function outsideClick(ev) {
+      if (!modal.contains(ev.target)) {
+        closeMyRatingModal();
+        document.removeEventListener('mousedown', outsideClick);
+      }
+    });
+  }, 100);
+}
+
+/* ── My Database render ──────────────────────────────────────── */
+let _myDbFilter = { above: null, below: null, keyword: '' };
+
+function renderMyDatabase() {
+  const view = _el('mydb-view');
+  if (!view) return;
+  updateMyDbBadge();
+
+  // Collect all entries
+  const entries = [];
+  for (const [numStr, sets] of Object.entries(ST.myRatings||{})) {
+    const num = parseFloat(numStr);
+    for (const [idxStr, rating] of Object.entries(sets)) {
+      const setIdx = parseInt(idxStr);
+      const entry = (ST.prompts[num]||[])[setIdx];
+      const broll = ST.brolls.find(b => b.num === num);
+      entries.push({ num, setIdx, rating, entry, broll });
+    }
+  }
+
+  // Apply filters
+  const { above, below, keyword } = _myDbFilter;
+  const filtered = entries.filter(({ rating }) => {
+    const s = parseFloat(rating.score);
+    if (above !== null && s < above) return false;
+    if (below !== null && s > below) return false;
+    if (keyword) {
+      const kw = keyword.toLowerCase();
+      const inComment = (rating.comment||'').toLowerCase().includes(kw);
+      const inPrompt = ((ST.prompts[rating.num]||[])[rating.setIdx]?.text||'').toLowerCase().includes(kw);
+      if (!inComment && !inPrompt) return false;
+    }
+    return true;
+  });
+
+  // Sort by score desc
+  filtered.sort((a, b) => parseFloat(b.rating.score) - parseFloat(a.rating.score));
+
+  if (!filtered.length) {
+    view.innerHTML = `<div class="mydb-empty">${entries.length ? '🔍 No entries match your filter.' : '📭 No personal ratings yet. Click ✏ on any prompt chip to rate it.'}</div>`;
+    return;
+  }
+
+  view.innerHTML = '';
+  filtered.forEach(({ num, setIdx, rating, entry, broll }) => {
+    const rColor = getMyRatingColor(rating.score);
+    const promptText = entry?.text || '—';
+    const brollLine = broll?.line || `B-roll #${num}`;
+
+    const row = document.createElement('div');
+    row.className = 'mydb-entry';
+
+    row.innerHTML = `
+      <div class="mydb-entry-hdr">
+        <span class="mydb-score-badge" style="color:${rColor.text};border-color:${rColor.border};background:${rColor.bg}">${rating.score}</span>
+        <span class="mydb-label">#${num} · Set ${setIdx+1}</span>
+        <span class="mydb-comment">${escHtml(rating.comment||'')}</span>
+        <button class="mydb-copy-btn" title="Copy with metadata">📋</button>
+        <button class="mydb-edit-btn" title="Edit rating">✏</button>
+        <button class="mydb-del-btn" title="Delete rating">🗑</button>
+      </div>
+      <div class="mydb-broll-line">📽 ${escHtml(brollLine)}</div>
+      <div class="mydb-prompt">${escHtml(promptText)}</div>
+    `;
+
+    row.querySelector('.mydb-copy-btn').addEventListener('click', () => {
+      const meta = `[#${num} Set ${setIdx+1} | My Rating: ${rating.score}${rating.comment ? ' — ' + rating.comment : ''}]\nB-roll: ${brollLine}\n\n${promptText}`;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(meta).then(() => toast(`📋 Copied #${num} Set ${setIdx+1} with metadata`)).catch(() => fbCopy(meta, () => toast(`📋 Copied`)));
+      } else { fbCopy(meta, () => toast(`📋 Copied`)); }
+    });
+
+    row.querySelector('.mydb-edit-btn').addEventListener('click', e => {
+      showMyRatingModal(e.target, num, setIdx);
+    });
+
+    row.querySelector('.mydb-del-btn').addEventListener('click', () => {
+      deleteMyRating(num, setIdx);
+      toast(`🗑 Deleted rating for #${num} Set ${setIdx+1}`);
+    });
+
+    view.appendChild(row);
+  });
 }
 
 function parseSetRatings(text) {
@@ -1022,24 +1262,51 @@ function loadStored() {
 }
 
 /* ── Copy text with prefix/suffix ──────────────────────────── */
-function getCopyText(rawText) {
+function getCopyText(rawText, num, setIdx) {
   const pre = ST.prefix.trim();
   const suf = ST.suffix.trim();
+  // Label: e.g. "14S6" — only if enabled
+  const label = (ST.labelEnabled && num !== undefined && setIdx !== undefined)
+    ? `${num}S${setIdx + 1}`
+    : null;
+
+  let prefixBlock = pre;
+  if (label) {
+    if (prefixBlock) {
+      // Added before prefix text on the same line (no extra gap)
+      const preLines = prefixBlock.split('\n');
+      preLines[0] = label + ' ' + preLines[0];
+      prefixBlock = preLines.join('\n');
+    } else {
+      // If no prefix, label acts as its own prefix line (clean gap before prompt)
+      prefixBlock = label;
+    }
+  }
+
   let result = rawText;
-  if (pre) result = pre + '\n\n' + result;
+  if (prefixBlock) result = prefixBlock + '\n\n' + result;
   if (suf) result = result + '\n\n' + suf;
   return result;
 }
+
 
 function updateCsetHint() {
   const pre = ST.prefix.trim(), suf = ST.suffix.trim();
   const hint = _el('cset-hint');
   if (!hint) return;
-  if (pre && suf)   { hint.textContent = 'prefix + suffix'; hint.className = 'cset-hint active'; }
-  else if (pre)     { hint.textContent = 'prefix on';       hint.className = 'cset-hint active'; }
-  else if (suf)     { hint.textContent = 'suffix on';       hint.className = 'cset-hint active'; }
-  else              { hint.textContent = 'off';             hint.className = 'cset-hint'; }
+  const parts = [];
+  if (pre) parts.push('prefix');
+  if (suf) parts.push('suffix');
+  if (ST.labelEnabled) parts.push('tag');
+  if (parts.length) {
+    hint.textContent = parts.join(' + ');
+    hint.className = 'cset-hint active';
+  } else {
+    hint.textContent = 'off';
+    hint.className = 'cset-hint';
+  }
 }
+
 
 /* ── Script Parsing ─────────────────────────────────────────── */
 function parseScript(text) {
@@ -1170,7 +1437,7 @@ function deletePromptEntry(num, idx) {
 /* ── Copy prompt ────────────────────────────────────────────── */
 function copyPrompt(num, idx, triggerEl, markCopied = true) {
   const entry = (ST.prompts[num]||[])[idx]; if (!entry) return;
-  const text = getCopyText(entry.text);
+  const text = getCopyText(entry.text, num, idx);
   const doFlash = () => {
     if (markCopied) {
       entry.copied = true;
@@ -1512,8 +1779,37 @@ function buildPromptChip(num, i, entry) {
     }
   });
 
-  return chip;
+  // Wrap chip + My Rating button together
+  const wrapper = document.createElement('div');
+  wrapper.className = 'p-chip-wrap';
+
+  wrapper.appendChild(chip);
+
+  // My Rating ✏ button
+  const myR = getMyRating(num, i);
+  const myBtn = document.createElement('button');
+  myBtn.className = 'myrating-chip-btn' + (myR ? ' has-rating' : '');
+  myBtn.id = `myrb-${num}-${i}`;
+  if (myR) {
+    const mc = getMyRatingColor(myR.score);
+    myBtn.textContent = myR.score;
+    myBtn.style.color = mc.text;
+    myBtn.style.borderColor = mc.border;
+    myBtn.style.background = mc.bg;
+    myBtn.title = `My Rating: ${myR.score}${myR.comment ? ' — ' + myR.comment : ''}\nClick to edit`;
+  } else {
+    myBtn.textContent = '✏';
+    myBtn.title = 'Add my personal rating';
+  }
+  myBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    showMyRatingModal(myBtn, num, i);
+  });
+
+  wrapper.appendChild(myBtn);
+  return wrapper;
 }
+
 
 
 
@@ -1767,7 +2063,8 @@ function exportData(){
     usedSets: JSON.parse(JSON.stringify(ST.usedSets)),
     setRatings: JSON.parse(JSON.stringify(ST.setRatings || {})),
     ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches || [])),
-    prefix: ST.prefix, suffix: ST.suffix,
+    myRatings: JSON.parse(JSON.stringify(ST.myRatings || {})),
+    prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled,
   };
   const json = JSON.stringify(d, null, 2);
   const filename = `broll-${new Date().toISOString().slice(0,10)}.json`;
@@ -1797,12 +2094,15 @@ function importJSON(file){
       ST.usedSets      = d.usedSets      || {};
       ST.setRatings    = _migrateSetRatings(d.setRatings || {});
       ST.ratingBatches = d.ratingBatches || [];
+      ST.myRatings     = d.myRatings     || {};
       if (d.prefix !== undefined) ST.prefix = d.prefix;
       if (d.suffix !== undefined) ST.suffix = d.suffix;
+      if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
       if (d.script) loadScript(d.script, true);
       save();
       renderLibraryView(); renderBatchTabs(); updateLibBadge(); syncCsetUI();
       renderRatingTabs(); renderRatingPanel(); updateSratingHint(); updateAllPromptChips();
+      renderMyDatabase();
       toast('📤 Imported');
     } catch(err) { console.error('Import error:', err); toast('❌ Invalid file'); }
   };
@@ -1810,8 +2110,10 @@ function importJSON(file){
 }
 
 function syncCsetUI(){
-  const pre=_el('cset-prefix'), suf=_el('cset-suffix');
-  if(pre)pre.value=ST.prefix; if(suf)suf.value=ST.suffix; updateCsetHint();
+  const pre=_el('cset-prefix'), suf=_el('cset-suffix'), chk=_el('cset-label-toggle');
+  if(pre)pre.value=ST.prefix; if(suf)suf.value=ST.suffix;
+  if(chk)chk.checked=ST.labelEnabled !== false;
+  updateCsetHint();
 }
 
 /* ── Toast & Modal ──────────────────────────────────────────── */
@@ -1839,6 +2141,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   ST.usedSets      = proj.usedSets      || {};
   ST.setRatings    = _migrateSetRatings(proj.setRatings);
   ST.ratingBatches = proj.ratingBatches || [];
+  ST.myRatings     = proj.myRatings     || {};
   ST.brolls        = parseScript(proj.script || '');
   loadGlobalCset();   // Load prefix/suffix from global key
 
@@ -1848,12 +2151,14 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   _el('library-section')?.classList.add('collapsed');
   _el('cset-section')?.classList.add('collapsed');
+  _el('mydb-section')?.classList.add('collapsed');
   if (ST.brolls.length) collapseInput();
 
   renderProjectTabs();
   renderHeatmap(); renderStats(); renderCards(!!ST.brolls.length);
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge();
   syncCsetUI(); updateSratingHint(); renderRatingTabs(); renderRatingPanel(); refreshUR();
+  renderMyDatabase();
   scrollToLastScoredBroll();
   initFirebaseSync();
 
@@ -1909,8 +2214,15 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
   _el('cset-prefix').addEventListener('input',e=>{ST.prefix=e.target.value;saveGlobalCset();updateCsetHint();});
   _el('cset-suffix').addEventListener('input',e=>{ST.suffix=e.target.value;saveGlobalCset();updateCsetHint();});
+  _el('cset-label-toggle')?.addEventListener('change', e => {
+    ST.labelEnabled = e.target.checked;
+    saveGlobalCset();
+    updateCsetHint();
+    toast(ST.labelEnabled ? '🏷️ B-roll & Set tag enabled' : '🏷️ B-roll & Set tag disabled');
+  });
   _el('cset-clear-pre').addEventListener('click',()=>{ST.prefix='';_el('cset-prefix').value='';saveGlobalCset();updateCsetHint();toast('Prefix cleared');});
   _el('cset-clear-suf').addEventListener('click',()=>{ST.suffix='';_el('cset-suffix').value='';saveGlobalCset();updateCsetHint();toast('Suffix cleared');});
+
 
   /* Set Ratings section */
   _el('srating-toggle').addEventListener('click',()=>{
@@ -2014,6 +2326,39 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Show bottom button initially if page is scrollable
   if (document.body.scrollHeight > window.innerHeight + 300) jb?.classList.add('visible');
 
+
+  /* My Rating Database */
+  _el('mydb-toggle')?.addEventListener('click', () => {
+    const sec = _el('mydb-section'); if (!sec) return;
+    sec.classList.toggle('collapsed');
+    document.querySelector('#mydb-toggle .it-chevron').textContent = sec.classList.contains('collapsed') ? '▼' : '▲';
+  });
+  _el('mydb-filter-above')?.addEventListener('input', e => {
+    const v = e.target.value.trim();
+    _myDbFilter.above = v ? parseFloat(v) : null;
+    renderMyDatabase();
+  });
+  _el('mydb-filter-below')?.addEventListener('input', e => {
+    const v = e.target.value.trim();
+    _myDbFilter.below = v ? parseFloat(v) : null;
+    renderMyDatabase();
+  });
+  _el('mydb-filter-keyword')?.addEventListener('input', e => {
+    _myDbFilter.keyword = e.target.value.trim();
+    renderMyDatabase();
+  });
+  _el('mydb-filter-clear')?.addEventListener('click', () => {
+    _myDbFilter = { above: null, below: null, keyword: '' };
+    const fa = _el('mydb-filter-above'); if (fa) fa.value = '';
+    const fb = _el('mydb-filter-below'); if (fb) fb.value = '';
+    const fk = _el('mydb-filter-keyword'); if (fk) fk.value = '';
+    renderMyDatabase();
+  });
+  _el('btn-clear-myratings')?.addEventListener('click', () => showModal(
+    'Clear ALL personal ratings?',
+    'All your personal ratings and comments will be removed.',
+    () => { ST.myRatings = {}; save(); updateAllPromptChips(); renderMyDatabase(); toast('🗑️ Personal ratings cleared'); }
+  ));
 
   /* Service Worker for PWA / TWA */
   if ('serviceWorker' in navigator) {

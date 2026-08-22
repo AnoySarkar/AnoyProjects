@@ -147,6 +147,13 @@
         <span class="it-chevron">▼</span>
       </div>
       <div id="cset-body">
+        <div class="cset-opts" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:8px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-1);">
+            <input type="checkbox" id="cset-label-toggle" checked style="accent-color:var(--accent);width:15px;height:15px;cursor:pointer;">
+            <span>Add B-roll & Set tag (e.g. <code>14S6</code>) on copy</span>
+          </label>
+          <span style="font-size:9.5px;color:var(--text-3);">Added before prefix text on same line</span>
+        </div>
         <div class="cset-flow">
           <div class="cset-side">
             <div class="cset-side-hdr">
@@ -209,6 +216,33 @@
           </div>
           <div id="srating-panel-detail" class="hidden" role="tabpanel"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ══ MY RATING DATABASE ════════════════════════════════ -->
+    <section id="mydb-section" class="collapsed">
+      <div id="mydb-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <span>🧠 My Rating Database</span>
+        <span class="mydb-badge-pill" id="mydb-badge">0</span>
+        <span style="flex:1"></span>
+        <span class="it-chevron">▼</span>
+      </div>
+      <div id="mydb-body">
+        <div class="mydb-filter-bar">
+          <div class="mydb-filter-group">
+            <label class="mydb-filter-label">Above</label>
+            <input class="mydb-filter-input" id="mydb-filter-above" type="number" step="0.1" placeholder="e.g. 9" />
+          </div>
+          <div class="mydb-filter-group">
+            <label class="mydb-filter-label">Below</label>
+            <input class="mydb-filter-input" id="mydb-filter-below" type="number" step="0.1" placeholder="e.g. 10" />
+          </div>
+          <input class="mydb-filter-keyword-input" id="mydb-filter-keyword" type="text" placeholder="🔍 Search comment or prompt…" />
+          <button class="hbtn" id="mydb-filter-clear">Clear</button>
+          <button class="hbtn danger" id="btn-clear-myratings" style="margin-left:auto">🗑 Clear All</button>
+        </div>
+        <div id="mydb-view"></div>
       </div>
     </section>
 
