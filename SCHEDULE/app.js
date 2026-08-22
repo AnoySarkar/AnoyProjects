@@ -65,7 +65,8 @@ function updateSyncStatusUI(status, label) {
 
 function saveEntries(newEntries, immediate = false) {
   const now = Date.now();
-  localStorage.setItem(DB_KEY, JSON.stringify(newEntries));
+  const cleanEntries = JSON.parse(JSON.stringify(newEntries || []));
+  localStorage.setItem(DB_KEY, JSON.stringify(cleanEntries));
   localStorage.setItem(DB_TIME_KEY, now.toString());
 
   // Broadcast to other open tabs instantly
@@ -73,7 +74,7 @@ function saveEntries(newEntries, immediate = false) {
     try {
       broadcastChannel.postMessage({
         type: 'LOCAL_UPDATE',
-        entries: newEntries,
+        entries: cleanEntries,
         updatedAt: now,
         sender: DEVICE_ID
       });
@@ -86,11 +87,11 @@ function saveEntries(newEntries, immediate = false) {
 
   clearTimeout(syncDebounceTimer);
   if (immediate) {
-    pushToCloud(newEntries, now);
+    pushToCloud(cleanEntries, now);
   } else {
     syncDebounceTimer = setTimeout(() => {
-      pushToCloud(newEntries, now);
-    }, 200);
+      pushToCloud(cleanEntries, now);
+    }, 150);
   }
 }
 
@@ -103,8 +104,9 @@ function pushToCloud(dataToPush, timestamp) {
     return;
   }
 
+  const cleanEntries = JSON.parse(JSON.stringify(dataToPush || []));
   const payload = {
-    entries: dataToPush,
+    entries: cleanEntries,
     updatedAt: ts,
     deviceId: DEVICE_ID
   };
@@ -160,36 +162,30 @@ function pushToCloud(dataToPush, timestamp) {
 
 function handleIncomingRemoteData(remoteEntries, remoteUpdatedAt, senderDeviceId) {
   if (!Array.isArray(remoteEntries)) return;
-  if (senderDeviceId === DEVICE_ID && remoteUpdatedAt <= lastCloudTimestamp) return;
+  // If we originated this update, skip re-applying
+  if (senderDeviceId === DEVICE_ID && remoteUpdatedAt && remoteUpdatedAt <= lastCloudTimestamp) return;
 
   const currentLocalStr = JSON.stringify(entries);
   const remoteStr = JSON.stringify(remoteEntries);
-  const localTs = getLocalTimestamp();
 
-  // If remote has data and is different
+  // If remote data differs from current memory
   if (currentLocalStr !== remoteStr) {
-    // If remote is newer OR local was completely empty
-    if (remoteUpdatedAt >= localTs || entries.length === 0) {
-      isApplyingRemoteChange = true;
-      entries = remoteEntries;
-      localStorage.setItem(DB_KEY, remoteStr);
-      localStorage.setItem(DB_TIME_KEY, (remoteUpdatedAt || Date.now()).toString());
-      checkAutoUpload();
+    isApplyingRemoteChange = true;
+    entries = remoteEntries;
+    localStorage.setItem(DB_KEY, remoteStr);
+    localStorage.setItem(DB_TIME_KEY, (remoteUpdatedAt || Date.now()).toString());
+    checkAutoUpload();
 
-      // Refresh current view
-      if (currentPage === 'home') renderDashboard();
-      else if (currentPage === 'calendar') renderCalendar();
-      else if (currentPage === 'settings') renderSettings();
-      else if (currentPage === 'detail' && editingId) renderDetail(editingId);
+    // Re-render active view
+    if (currentPage === 'home') renderDashboard();
+    else if (currentPage === 'calendar') renderCalendar();
+    else if (currentPage === 'settings') renderSettings();
+    else if (currentPage === 'detail' && editingId) renderDetail(editingId);
 
-      updateSyncStatusUI('synced', 'Synced');
-      showToast('Live updated from another device 🔄');
-      sfx('schedule');
-      isApplyingRemoteChange = false;
-    } else if (localTs > remoteUpdatedAt) {
-      // Local is newer: push our latest local changes to cloud
-      pushToCloud(entries, localTs);
-    }
+    updateSyncStatusUI('synced', 'Synced');
+    showToast('Live updated from another device 🔄');
+    sfx('schedule');
+    isApplyingRemoteChange = false;
   } else {
     updateSyncStatusUI('synced', 'Synced');
   }
@@ -219,12 +215,10 @@ function setupRTDBListener() {
 }
 
 function setupRealtimeListeners() {
-  let firestoreConnected = false;
   if (db) {
     try {
       db.collection('schedule_app').doc('main_schedule')
         .onSnapshot((doc) => {
-          firestoreConnected = true;
           lastSyncError = null;
           if (doc.exists) {
             const data = doc.data();
@@ -246,7 +240,7 @@ function setupRealtimeListeners() {
     }
   }
 
-  // Also setup RTDB listener as dual real-time backup
+  // Setup Realtime Database listener as well
   setupRTDBListener();
 }
 
@@ -332,13 +326,13 @@ function openSyncModal() {
   let msg = `<strong>Status:</strong> ${currentSyncState.toUpperCase()}<br>`;
   msg += `<strong>Firebase Project:</strong> broll-81cec<br>`;
   msg += `<strong>Device ID:</strong> ${DEVICE_ID}<br>`;
-  msg += `<strong>Local Items:</strong> ${entries.length} scheduled items<br>`;
+  msg += `<strong>Items in Database:</strong> ${entries.length} items<br>`;
   
   if (lastSyncError) {
-    msg += `<br><span style="color:var(--rose)"><strong>Last Error:</strong> ${escHtml(lastSyncError.message || lastSyncError.code || 'Permission Denied')}</span>`;
+    msg += `<br><span style="color:var(--rose)"><strong>Error:</strong> ${escHtml(lastSyncError.message || lastSyncError.code || 'Permission Denied')}</span>`;
     if (help) help.style.display = 'block';
   } else {
-    msg += `<br><span style="color:var(--green)">✓ Realtime listeners connected.</span>`;
+    msg += `<br><span style="color:var(--green)">✓ Realtime bi-directional listeners active.</span>`;
     if (help) help.style.display = (currentSyncState === 'error') ? 'block' : 'none';
   }
 
