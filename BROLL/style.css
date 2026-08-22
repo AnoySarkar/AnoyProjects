@@ -134,7 +134,7 @@ input,textarea { font-family:inherit }
 .hbtn.disabled:hover { background:transparent; border-color:var(--border); color:var(--text-3) }
 .ur-sep { width:1px; height:16px; background:var(--border); flex-shrink:0; margin:0 2px }
 
-.lock-pill {
+button.lock-pill {
   display: inline-flex !important;
   align-items: center;
   gap: 4px;
@@ -146,21 +146,28 @@ input,textarea { font-family:inherit }
   transition: all 0.15s;
   font-size: 10px;
   font-weight: 700;
+  font-family: var(--font);
   border: 1px solid var(--border);
   user-select: none;
+  background: var(--bg-3);
+  color: var(--text-2);
 }
-.lock-pill.locked {
+button.lock-pill:hover {
+  filter: brightness(1.2);
+}
+button.lock-pill.locked {
   border-color: rgba(239,68,68,0.4);
-  background: rgba(239,68,68,0.12);
+  background: rgba(239,68,68,0.15);
   color: #fca5a5;
 }
-.lock-pill.unlocked {
+button.lock-pill.unlocked {
   border-color: rgba(34,197,94,0.4);
-  background: rgba(34,197,94,0.12);
+  background: rgba(34,197,94,0.15);
   color: #86efac;
 }
 .lock-icon { font-size: 10px; line-height: 1 }
 .lock-text { font-size: 9.5px; font-weight: 700; line-height: 1 }
+
 
 .slider-wrap.is-locked {
   opacity: 0.82;
