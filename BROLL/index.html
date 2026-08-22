@@ -40,13 +40,17 @@
         <span class="sync-text" id="sync-text">Cloud</span>
       </div>
 
+      <div class="hpill lock-pill locked" id="rating-lock-btn" title="Main rating lock (click to toggle)" style="cursor:pointer">
+        <span class="lock-icon" id="lock-icon">🔒</span>
+        <span class="lock-text" id="lock-text">Locked</span>
+      </div>
+
       <div class="hdr-stats">
         <div class="hpill"><span class="hpill-v" id="st-total">0</span><span class="hpill-l">clips</span></div>
         <div class="hpill c-accent"><span class="hpill-v" id="st-scored">0/0</span><span class="hpill-l">scored</span></div>
         <div class="hpill c-green"><span class="hpill-v" id="st-green">0</span><span class="hpill-l">≥9</span></div>
         <div class="hpill"><span class="hpill-v" id="st-avg">—</span><span class="hpill-l">avg</span></div>
       </div>
-
 
       <div class="hdr-actions">
         <button class="hbtn undo-btn disabled" id="btn-undo" disabled title="Undo (Ctrl+Z)">↩</button>
@@ -59,22 +63,46 @@
       </div>
     </header>
 
-    <!-- Heatmap -->
+    <!-- Heatmap (Overview Panel) -->
     <div id="heatmap-panel">
-      <div class="hm-header">
-        <span class="hm-label">Overview</span>
-        <span class="hm-sub" id="hm-hint">load a script to begin</span>
+      <!-- 🎯 Main Rating Overview -->
+      <div class="hm-section" id="hm-main-section">
+        <div class="hm-header">
+          <span class="hm-label">🎯 Main Rating Overview</span>
+          <span class="hm-sub" id="hm-hint">load a script to begin</span>
+        </div>
+        <div id="heatmap-grid" class="hm-grid" role="list"></div>
+        <div class="hm-progress">
+          <span class="hm-prog-label">Scored</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-s" style="background:linear-gradient(90deg,#6c6dfa,#a594ff);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-s-pct">0%</span>
+          <span class="hm-prog-label" style="margin-left:8px">≥9</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-g" style="background:linear-gradient(90deg,#2a7a2a,#00922e);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-g-pct">0%</span>
+        </div>
       </div>
-      <div id="heatmap-grid" role="list"></div>
-      <div class="hm-progress">
-        <span class="hm-prog-label">Scored</span>
-        <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-s" style="background:linear-gradient(90deg,#6c6dfa,#a594ff);width:0%"></div></div>
-        <span class="hm-prog-pct" id="prog-s-pct">0%</span>
-        <span class="hm-prog-label" style="margin-left:8px">≥9</span>
-        <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-g" style="background:linear-gradient(90deg,#2a7a2a,#00922e);width:0%"></div></div>
-        <span class="hm-prog-pct" id="prog-g-pct">0%</span>
+
+      <!-- ✏ Real Rating Overview -->
+      <div class="hm-section" id="hm-real-section" style="margin-top:9px;padding-top:7px;border-top:1px solid var(--border);">
+        <div class="hm-header">
+          <span class="hm-label">✏ Real Rating Overview</span>
+          <span class="hm-sub" id="hm-real-hint">0 rated</span>
+        </div>
+        <div id="heatmap-real-grid" class="hm-grid" role="list"></div>
+        <div class="hm-progress">
+          <span class="hm-prog-label">Rated</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-s" style="background:linear-gradient(90deg,#6c6dfa,#a594ff);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-real-s-pct">0%</span>
+          <span class="hm-prog-label" style="margin-left:8px">≥9</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-g" style="background:linear-gradient(90deg,#2a7a2a,#00922e);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-real-g-pct">0%</span>
+          <span class="hm-prog-label" style="margin-left:8px">Retry(0)</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-z" style="background:linear-gradient(90deg,#7e22ce,#c084fc);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-real-z-pct">0%</span>
+        </div>
       </div>
     </div>
+
 
     <!-- Filter Bar -->
     <div id="filter-bar" class="hidden" role="search">

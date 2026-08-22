@@ -57,6 +57,7 @@ const ST = {
   prefix:            '',
   suffix:            '',
   labelEnabled:      true, // Prepend "14S6" label to copied prompts
+  mainRatingLocked:  true, // Lock main rating slider to prevent mistouch (default true)
   filter:            'all',
   sortBy:            'num',
   activeBatch:       'new',
@@ -64,6 +65,7 @@ const ST = {
   libOpen:           false,
   csetOpen:          false,
 };
+
 
 /* ── Firebase Realtime Cloud Sync ────────────────────────────── */
 const FIREBASE_CONFIG = {
@@ -551,15 +553,47 @@ function renderProjectTabs() {
   bar.appendChild(clrBtn);
 }
 
-/* ── Rating Colors for Prompt Sets ─────────────────────────── */
+/* ── Rating Colors for AI Prompt Sets ─────────────────────────── */
 function getRatingColor(score) {
-  if (score === null || score === undefined) return null;
+  if (score === null || score === undefined || score === '') return null;
   const s = parseFloat(score);
   if (isNaN(s)) return null;
-  if (s >= 10)  return { border:'#9333ea', bg:'rgba(147,51,234,0.15)', text:'#c084fc' }; // 10 is purple
-  if (s >= 9.5) return { border:'#2563eb', bg:'rgba(37,99,235,0.15)',  text:'#60a5fa' }; // 9.5 is blue
-  if (s >= 9)   return { border:'#16a34a', bg:'rgba(22,163,74,0.15)',  text:'#4ade80' }; // 9 is green
+  if (s >= 10)  return { border: '#9333ea', bg: 'rgba(147,51,234,0.15)', text: '#c084fc' }; // 10 is purple
+  if (s >= 9.5) return { border: '#2563eb', bg: 'rgba(37,99,235,0.15)',  text: '#60a5fa' }; // 9.5 is blue
+  if (s >= 9.0) return { border: '#16a34a', bg: 'rgba(22,163,74,0.15)',  text: '#4ade80' }; // 9 is green
   return null; // below 9 = no color
+}
+
+/* ── Real Rating Colors (Same as Main Rating bar palette + 0 Purple) ── */
+function getMyRatingColor(score) {
+  if (score === null || score === undefined || score === '') return null;
+  const s = parseFloat(score);
+  if (isNaN(s)) return null;
+
+  // Real Rating 0: Purple (retry / model glitch)
+  if (s === 0) {
+    return {
+      bg: '#3b0764',
+      border: '#9333ea',
+      glow: 'rgba(147,51,234,0.55)',
+      text: '#c084fc',
+      isRetry0: true
+    };
+  }
+
+  const col = getC(s);
+  let textColor = '#eaeaf5';
+  if (s >= 9) textColor = '#4ade80';
+  else if (s >= 7) textColor = '#facc15';
+  else if (s >= 4.5) textColor = '#fb923c';
+  else if (s > 0) textColor = '#f87171';
+
+  return {
+    bg: col.bg,
+    border: col.border,
+    glow: col.glow,
+    text: textColor
+  };
 }
 
 /* ── Set Ratings: parse, apply, delete, tabs & panels ────────── */
@@ -598,11 +632,15 @@ function getSetRatingSummary(num, setIdx) {
 /* ── My Personal Ratings (Training Database) ─────────────────── */
 function parseMyRatingInput(str) {
   if (!str || !str.trim()) return null;
-  const m = str.trim().match(/^([+\-]?[\d.]+)\s*[:\-–]\s*(.*)/);
+  const trimmed = str.trim();
+  // Match: leading score number, optional separator (: or -), followed by optional comment
+  const m = trimmed.match(/^([+\-]?\d+(?:\.\d+)?)(?:\s*[:\-–]?\s*(.*))?$/s);
   if (!m) return null;
   const score = parseFloat(m[1]);
   if (isNaN(score)) return null;
-  return { score, comment: m[2].trim() };
+  let comment = (m[2] || '').trim();
+  comment = comment.replace(/^[:\-–]\s*/, '').trim();
+  return { score, comment };
 }
 
 function getMyRating(num, setIdx) {
@@ -614,6 +652,8 @@ function saveMyRating(num, setIdx, score, comment) {
   ST.myRatings[num][setIdx] = { score, comment, date: Date.now() };
   save();
   updateCardPrompts(num);
+  updateHmCell(num);
+  renderStats();
   renderMyDatabase();
   updateMyDbBadge();
 }
@@ -625,21 +665,13 @@ function deleteMyRating(num, setIdx) {
   }
   save();
   updateCardPrompts(num);
+  updateHmCell(num);
+  renderStats();
   renderMyDatabase();
   updateMyDbBadge();
 }
 
-function getMyRatingColor(score) {
-  // Allows scores >10 (like 11 for benchmark)
-  const s = parseFloat(score);
-  if (isNaN(s)) return { border:'#555', bg:'rgba(80,80,80,0.15)', text:'#aaa' };
-  if (s > 10)   return { border:'#c026d3', bg:'rgba(192,38,211,0.18)', text:'#e879f9' }; // > 10 = bright magenta
-  if (s >= 10)  return { border:'#9333ea', bg:'rgba(147,51,234,0.15)', text:'#c084fc' };
-  if (s >= 9.5) return { border:'#2563eb', bg:'rgba(37,99,235,0.15)',  text:'#60a5fa' };
-  if (s >= 9)   return { border:'#16a34a', bg:'rgba(22,163,74,0.15)',  text:'#4ade80' };
-  if (s >= 7)   return { border:'#ca8a04', bg:'rgba(202,138,4,0.12)',  text:'#fbbf24' };
-  return { border:'#555', bg:'rgba(80,80,80,0.12)', text:'#888' };
-}
+
 
 function updateMyDbBadge() {
   const el = _el('mydb-badge');
@@ -656,7 +688,8 @@ function updateMyDbBadge() {
 let _myRatingModal = null;
 
 function closeMyRatingModal() {
-  if (_myRatingModal) { _myRatingModal.remove(); _myRatingModal = null; }
+  document.querySelectorAll('.myrating-modal').forEach(m => m.remove());
+  _myRatingModal = null;
 }
 
 function showMyRatingModal(triggerEl, num, setIdx) {
@@ -678,6 +711,8 @@ function showMyRatingModal(triggerEl, num, setIdx) {
   const left = Math.min(rect.left, window.innerWidth - 310);
   modal.style.cssText = `top:${top + window.scrollY}px;left:${Math.max(8, left)}px`;
 
+  const existingVal = existing ? (existing.score + (existing.comment ? ' ' + existing.comment : '')) : '';
+
   modal.innerHTML = `
     <div class="myrating-modal-hdr">
       <span class="myrating-modal-title">✏ My Rating — #${num} Set ${setIdx+1}</span>
@@ -689,10 +724,10 @@ function showMyRatingModal(triggerEl, num, setIdx) {
     </div>
     <div class="myrating-input-row">
       <input class="myrating-input" id="myrating-input" type="text"
-        placeholder="9.7 : perfect cinematic"
-        value="${existing ? existing.score + ' : ' + (existing.comment||'') : ''}">
+        placeholder="8.8 perfect cinematic"
+        value="${escHtml(existingVal)}">
     </div>
-    <div class="myrating-hint">Format: <code>score : comment</code> &nbsp;·&nbsp; Score can exceed 10</div>
+    <div class="myrating-hint">Format: <code>8.8 comment</code> &nbsp;·&nbsp; Comment is optional</div>
     <div class="myrating-actions">
       <button class="hbtn primary" id="myrating-save">✔ Save</button>
       ${existing ? `<button class="hbtn danger" id="myrating-delete">🗑 Delete</button>` : ''}
@@ -705,36 +740,54 @@ function showMyRatingModal(triggerEl, num, setIdx) {
   const input = _el('myrating-input');
   setTimeout(() => { input?.focus(); input?.select(); }, 50);
 
+  const doSave = () => {
+    const val = input ? input.value.trim() : '';
+    const parsed = parseMyRatingInput(val);
+    if (!parsed) { toast('⚠️ Enter a score (e.g. 8.8 or 8.8 great shot)'); return; }
+    closeMyRatingModal();
+    saveMyRating(num, setIdx, parsed.score, parsed.comment);
+    toast(`✔ Rated #${num} Set ${setIdx+1}: ${parsed.score}`);
+  };
+
   _el('myrating-close')?.addEventListener('click', closeMyRatingModal);
   _el('myrating-cancel')?.addEventListener('click', closeMyRatingModal);
   _el('myrating-delete')?.addEventListener('click', () => {
-    deleteMyRating(num, setIdx);
     closeMyRatingModal();
+    deleteMyRating(num, setIdx);
     toast(`🗑 Deleted rating for #${num} Set ${setIdx+1}`);
   });
-  _el('myrating-save')?.addEventListener('click', () => {
-    const val = input.value.trim();
-    const parsed = parseMyRatingInput(val);
-    if (!parsed) { toast('⚠️ Format: score : comment  e.g.  9.7 : great shot'); return; }
-    saveMyRating(num, setIdx, parsed.score, parsed.comment);
-    closeMyRatingModal();
-    toast(`✔ Rated #${num} Set ${setIdx+1}: ${parsed.score}`);
+  _el('myrating-save')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    doSave();
   });
   input?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); _el('myrating-save')?.click(); }
-    if (e.key === 'Escape') closeMyRatingModal();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      doSave();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMyRatingModal();
+    }
   });
 
   // Close on outside click
   setTimeout(() => {
-    document.addEventListener('mousedown', function outsideClick(ev) {
+    const outsideClick = (ev) => {
       if (!modal.contains(ev.target)) {
         closeMyRatingModal();
         document.removeEventListener('mousedown', outsideClick);
+        document.removeEventListener('touchstart', outsideClick);
       }
-    });
+    };
+    document.addEventListener('mousedown', outsideClick);
+    document.addEventListener('touchstart', outsideClick, { passive: true });
   }, 100);
 }
+
 
 /* ── My Database render ──────────────────────────────────────── */
 let _myDbFilter = { above: null, below: null, keyword: '' };
@@ -1779,27 +1832,31 @@ function buildPromptChip(num, i, entry) {
     }
   });
 
-  // Wrap chip + My Rating button together
+  // Wrap chip + Real Rating button together
   const wrapper = document.createElement('div');
   wrapper.className = 'p-chip-wrap';
 
   wrapper.appendChild(chip);
 
-  // My Rating ✏ button
+  // Real Rating (My Rating) ✏ button
   const myR = getMyRating(num, i);
   const myBtn = document.createElement('button');
   myBtn.className = 'myrating-chip-btn' + (myR ? ' has-rating' : '');
   myBtn.id = `myrb-${num}-${i}`;
   if (myR) {
     const mc = getMyRatingColor(myR.score);
-    myBtn.textContent = myR.score;
-    myBtn.style.color = mc.text;
-    myBtn.style.borderColor = mc.border;
-    myBtn.style.background = mc.bg;
-    myBtn.title = `My Rating: ${myR.score}${myR.comment ? ' — ' + myR.comment : ''}\nClick to edit`;
+    myBtn.textContent = myR.score === 0 ? '0 ↺' : myR.score;
+    myBtn.style.color = mc ? mc.text : '#fff';
+    myBtn.style.borderColor = mc ? mc.border : '#666';
+    myBtn.style.background = mc ? mc.bg : 'var(--bg-3)';
+    if (mc?.glow && mc.glow !== 'transparent') {
+      myBtn.style.boxShadow = `0 0 8px ${mc.glow}`;
+    }
+    const tipTitle = myR.score === 0 ? 'Real Rating: 0 · Good prompt, model retry' : `Real Rating: ${myR.score}`;
+    myBtn.title = `${tipTitle}${myR.comment ? ' — ' + myR.comment : ''}\nClick to edit`;
   } else {
     myBtn.textContent = '✏';
-    myBtn.title = 'Add my personal rating';
+    myBtn.title = 'Add Real Rating (My Rating)';
   }
   myBtn.addEventListener('click', e => {
     e.stopPropagation();
@@ -1809,6 +1866,7 @@ function buildPromptChip(num, i, entry) {
   wrapper.appendChild(myBtn);
   return wrapper;
 }
+
 
 
 
@@ -1849,37 +1907,181 @@ function sortedList(arr) {
   return arr;
 }
 
-/* ── Heatmap ────────────────────────────────────────────────── */
+function getRealRatingOverviewData(num) {
+  const sets = ST.myRatings[num] || {};
+  const list = Object.entries(sets).map(([idx, val]) => ({ idx: parseInt(idx), ...val }));
+  if (!list.length) return null;
+
+  // Check if used set has rating
+  const used = ST.usedSets[num];
+  if (used !== undefined && sets[used] !== undefined) {
+    return { score: sets[used].score, comment: sets[used].comment, setIdx: used };
+  }
+
+  // If any set has score 0 (model retry), prioritize showing retry
+  const retry = list.find(x => parseFloat(x.score) === 0);
+  if (retry) {
+    return { score: 0, comment: retry.comment, setIdx: retry.idx };
+  }
+
+  // Otherwise, highest score
+  list.sort((a, b) => (parseFloat(b.score) || 0) - (parseFloat(a.score) || 0));
+  return { score: list[0].score, comment: list[0].comment, setIdx: list[0].idx };
+}
+
+/* ── Heatmap (Main Rating & Real Rating) ────────────────────── */
 function renderHeatmap() {
-  const grid = _el('heatmap-grid'); if (!grid) return;
-  grid.innerHTML = '';
-  if (!ST.brolls.length) { grid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>'; return; }
-  const N=ST.brolls.length, W=grid.clientWidth||(window.innerWidth-32);
-  const cw=Math.max(4,Math.min(44,Math.floor((W-(N-1)*2)/N)));
-  const showNum=cw>=16, fs=cw>=22?9:cw>=16?7:0;
+  const mainGrid = _el('heatmap-grid');
+  const realGrid = _el('heatmap-real-grid');
+  if (!mainGrid) return;
+  mainGrid.innerHTML = '';
+  if (realGrid) realGrid.innerHTML = '';
+
+  if (!ST.brolls.length) {
+    mainGrid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>';
+    if (realGrid) realGrid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>';
+    return;
+  }
+
+  const N = ST.brolls.length;
+  const W = mainGrid.clientWidth || (window.innerWidth - 32);
+  const cw = Math.max(4, Math.min(44, Math.floor((W - (N - 1) * 2) / N)));
+  const showNum = cw >= 16;
+  const fs = cw >= 22 ? 9 : cw >= 16 ? 7 : 0;
+
   ST.brolls.forEach(b => {
-    const col=getC(ST.scores[b.num]??null), el=document.createElement('div');
-    el.className='hm-cell'; el.id=`hm-${b.num}`;
-    el.style.cssText=`width:${cw}px;background:${col.bg}`;
-    el.title=`#${b.num}${ST.scores[b.num]!==undefined?` · ${ST.scores[b.num]}/10`:' · unscored'}\n${b.line.slice(0,55)}`;
-    if(showNum&&fs>0){const sp=document.createElement('span');sp.className='hm-cell-num';sp.style.fontSize=fs+'px';sp.textContent=b.num;el.appendChild(sp);}
-    el.addEventListener('click',()=>_el(`card-${b.num}`)?.scrollIntoView({behavior:'smooth',block:'center'}));
-    grid.appendChild(el);
+    // 🎯 1. Main Rating Cell
+    const col = getC(ST.scores[b.num] ?? null);
+    const el = document.createElement('div');
+    el.className = 'hm-cell';
+    el.id = `hm-${b.num}`;
+    el.style.cssText = `width:${cw}px;background:${col.bg}`;
+    el.title = `#${b.num}${ST.scores[b.num] !== undefined ? ` · Main Rating: ${ST.scores[b.num]}/10` : ' · unscored'}\n${b.line.slice(0, 55)}`;
+    if (showNum && fs > 0) {
+      const sp = document.createElement('span');
+      sp.className = 'hm-cell-num';
+      sp.style.fontSize = fs + 'px';
+      sp.textContent = b.num;
+      el.appendChild(sp);
+    }
+    el.addEventListener('click', () => _el(`card-${b.num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    mainGrid.appendChild(el);
+
+    // ✏ 2. Real Rating Cell
+    if (realGrid) {
+      const rData = getRealRatingOverviewData(b.num);
+      const rCol = rData ? getMyRatingColor(rData.score) : getC(null);
+      const rel = document.createElement('div');
+      rel.className = 'hm-cell';
+      rel.id = `hm-real-${b.num}`;
+      let extraBorder = '';
+      if (rData && rData.score === 0) {
+        extraBorder = ';border:1px solid #9333ea;box-shadow:0 0 6px rgba(147,51,234,0.45)';
+      } else if (rCol?.border) {
+        extraBorder = `;border:1px solid ${rCol.border}`;
+      }
+      rel.style.cssText = `width:${cw}px;background:${rCol ? rCol.bg : '#16162a'}${extraBorder}`;
+
+      const realScoreTitle = rData
+        ? (rData.score === 0 ? '0 (Model Retry / Glitch)' : `${rData.score}/10 (Set ${rData.setIdx + 1}${rData.comment ? ': ' + rData.comment : ''})`)
+        : 'unrated';
+      rel.title = `#${b.num} · Real Rating: ${realScoreTitle}\n${b.line.slice(0, 55)}`;
+
+      if (showNum && fs > 0) {
+        const sp = document.createElement('span');
+        sp.className = 'hm-cell-num';
+        sp.style.fontSize = fs + 'px';
+        sp.textContent = b.num;
+        rel.appendChild(sp);
+      }
+      rel.addEventListener('click', () => _el(`card-${b.num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      realGrid.appendChild(rel);
+    }
   });
 }
-function updateHmCell(num) { const el=_el(`hm-${num}`);if(el)el.style.background=getC(ST.scores[num]??null).bg; }
+
+function updateHmCell(num) {
+  // Main rating cell
+  const el = _el(`hm-${num}`);
+  if (el) el.style.background = getC(ST.scores[num] ?? null).bg;
+
+  // Real rating cell
+  const rel = _el(`hm-real-${num}`);
+  if (rel) {
+    const rData = getRealRatingOverviewData(num);
+    const rCol = rData ? getMyRatingColor(rData.score) : getC(null);
+    let extraBorder = '';
+    if (rData && rData.score === 0) {
+      extraBorder = ';border:1px solid #9333ea;box-shadow:0 0 6px rgba(147,51,234,0.45)';
+    } else if (rCol?.border) {
+      extraBorder = `;border:1px solid ${rCol.border}`;
+    }
+    rel.style.background = rCol ? rCol.bg : '#16162a';
+    if (extraBorder) rel.style.cssText += extraBorder;
+    const realScoreTitle = rData
+      ? (rData.score === 0 ? '0 (Model Retry / Glitch)' : `${rData.score}/10 (Set ${rData.setIdx + 1}${rData.comment ? ': ' + rData.comment : ''})`)
+      : 'unrated';
+    const broll = ST.brolls.find(x => x.num === num);
+    rel.title = `#${num} · Real Rating: ${realScoreTitle}\n${broll ? broll.line.slice(0, 55) : ''}`;
+  }
+}
 
 /* ── Stats ──────────────────────────────────────────────────── */
 function renderStats() {
-  const total=ST.brolls.length, scored=ST.brolls.filter(b=>ST.scores[b.num]!==undefined&&ST.scores[b.num]!==null).length;
-  const greens=ST.brolls.filter(b=>(ST.scores[b.num]??-1)>=9).length;
-  const vals=ST.brolls.map(b=>ST.scores[b.num]).filter(s=>s!==null&&s!==undefined);
-  const avg=vals.length?(vals.reduce((a,v)=>a+v,0)/vals.length).toFixed(1):null;
-  setText('st-total',total); setText('st-scored',`${scored}/${total}`); setText('st-green',greens); setText('st-avg',avg||'—');
-  const ps=total?Math.round(scored/total*100):0, pg=total?Math.round(greens/total*100):0;
-  setStyle('prog-s','width',ps+'%'); setStyle('prog-g','width',pg+'%');
-  setText('prog-s-pct',ps+'%'); setText('prog-g-pct',pg+'%');
-  const badge=_el('it-badge'); if(badge)badge.textContent=total?`${total} clips`:'empty';
+  const total = ST.brolls.length;
+
+  // 🎯 Main Rating Stats
+  const scored = ST.brolls.filter(b => ST.scores[b.num] !== undefined && ST.scores[b.num] !== null).length;
+  const greens = ST.brolls.filter(b => (ST.scores[b.num] ?? -1) >= 9).length;
+  const vals = ST.brolls.map(b => ST.scores[b.num]).filter(s => s !== null && s !== undefined);
+  const avg = vals.length ? (vals.reduce((a, v) => a + v, 0) / vals.length).toFixed(1) : null;
+  setText('st-total', total);
+  setText('st-scored', `${scored}/${total}`);
+  setText('st-green', greens);
+  setText('st-avg', avg || '—');
+
+  const ps = total ? Math.round((scored / total) * 100) : 0;
+  const pg = total ? Math.round((greens / total) * 100) : 0;
+  setStyle('prog-s', 'width', ps + '%');
+  setStyle('prog-g', 'width', pg + '%');
+  setText('prog-s-pct', ps + '%');
+  setText('prog-g-pct', pg + '%');
+
+  // ✏ Real Rating Stats
+  let realScoredCount = 0;
+  let realGreensCount = 0;
+  let realRetriesCount = 0;
+
+  ST.brolls.forEach(b => {
+    const rData = getRealRatingOverviewData(b.num);
+    if (rData) {
+      realScoredCount++;
+      const s = parseFloat(rData.score);
+      if (s === 0) realRetriesCount++;
+      else if (s >= 9) realGreensCount++;
+    }
+  });
+
+  const prs = total ? Math.round((realScoredCount / total) * 100) : 0;
+  const prg = total ? Math.round((realGreensCount / total) * 100) : 0;
+  const prz = total ? Math.round((realRetriesCount / total) * 100) : 0;
+
+  setStyle('prog-real-s', 'width', prs + '%');
+  setStyle('prog-real-g', 'width', prg + '%');
+  setStyle('prog-real-z', 'width', prz + '%');
+  setText('prog-real-s-pct', prs + '%');
+  setText('prog-real-g-pct', prg + '%');
+  setText('prog-real-z-pct', prz + '%');
+
+  const realHint = _el('hm-real-hint');
+  if (realHint) {
+    realHint.textContent = total
+      ? `${realScoredCount}/${total} rated (${realGreensCount} ≥9, ${realRetriesCount} retry)`
+      : '0 rated';
+  }
+
+  const badge = _el('it-badge');
+  if (badge) badge.textContent = total ? `${total} clips` : 'empty';
 }
 function renderFilterCount() {
   const vis=ST.brolls.filter(passes).length, el=_el('fb-count');
@@ -1919,16 +2121,44 @@ function buildCard(b) {
   /* Slider */
   const slRow=document.createElement('div'); slRow.className='c-slider-row';
   const l0=document.createElement('span'); l0.className='s-label'; l0.textContent='0'; slRow.appendChild(l0);
-  const slWrap=document.createElement('div'); slWrap.className='slider-wrap';
+  const slWrap=document.createElement('div'); slWrap.className='slider-wrap' + (ST.mainRatingLocked ? ' is-locked' : '');
   const inp=document.createElement('input');
   inp.type='range'; inp.min='0'; inp.max='10'; inp.step='0.5'; inp.value=score!==null?score:'0';
   inp.className='score-slider'; inp.id=`sl-${b.num}`;
+  inp.disabled = !!ST.mainRatingLocked;
   inp.setAttribute('list','score-steps'); inp.setAttribute('aria-label',`B-roll ${b.num} score`);
   applySliderStyle(inp, score);
   let lastSnap=snap(score);
-  inp.addEventListener('input',()=>{const v=parseFloat(inp.value),s=snap(v);applySliderStyle(inp,v);updateScoreVal(b.num,v);if(s!==lastSnap){lastSnap=s;inp.classList.remove('snap-pop');void inp.offsetWidth;inp.classList.add('snap-pop');setTimeout(()=>inp&&inp.classList.remove('snap-pop'),160);}});
-  inp.addEventListener('change',()=>setScore(b.num,parseFloat(inp.value)));
-  inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();setScore(b.num,parseFloat(inp.value));const idx=ST.brolls.findIndex(x=>x.num===b.num);if(idx<ST.brolls.length-1){const ns=_el(`sl-${ST.brolls[idx+1].num}`);if(ns){ns.focus();ns.scrollIntoView({behavior:'smooth',block:'center'});}}}});
+  inp.addEventListener('input',()=>{
+    if (ST.mainRatingLocked) return;
+    const v=parseFloat(inp.value),s=snap(v);applySliderStyle(inp,v);updateScoreVal(b.num,v);if(s!==lastSnap){lastSnap=s;inp.classList.remove('snap-pop');void inp.offsetWidth;inp.classList.add('snap-pop');setTimeout(()=>inp&&inp.classList.remove('snap-pop'),160);}
+  });
+  inp.addEventListener('change',()=>{
+    if (ST.mainRatingLocked) {
+      toast('🔒 Main rating is locked. Click 🔒 in header to unlock.');
+      return;
+    }
+    setScore(b.num,parseFloat(inp.value));
+  });
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      if (ST.mainRatingLocked) {
+        toast('🔒 Main rating is locked. Click 🔒 in header to unlock.');
+        return;
+      }
+      setScore(b.num,parseFloat(inp.value));
+      const idx=ST.brolls.findIndex(x=>x.num===b.num);
+      if(idx<ST.brolls.length-1){const ns=_el(`sl-${ST.brolls[idx+1].num}`);if(ns){ns.focus();ns.scrollIntoView({behavior:'smooth',block:'center'});}}
+    }
+  });
+
+  slWrap.addEventListener('click', () => {
+    if (ST.mainRatingLocked) {
+      toast('🔒 Main rating is locked. Click 🔒 in header to unlock.');
+    }
+  });
+
   slWrap.appendChild(inp);
   const ticks=document.createElement('div'); ticks.className='slider-ticks';
   STEPS.forEach(s=>{const t=document.createElement('div');t.className='s-tick'+(Number.isInteger(s)?' major':'');ticks.appendChild(t);});
@@ -1962,12 +2192,19 @@ function buildCard(b) {
 
   const clr=document.createElement('button'); clr.className='c-clear'; clr.textContent='✕'; clr.title='Clear score';
   clr.setAttribute('aria-label',`Clear score for B-roll ${b.num}`);
-  clr.addEventListener('click',()=>clearScore(b.num));
+  clr.addEventListener('click',() => {
+    if (ST.mainRatingLocked) {
+      toast('🔒 Main rating is locked. Click 🔒 in header to unlock.');
+      return;
+    }
+    clearScore(b.num);
+  });
   right.appendChild(clr);
 
   card.appendChild(right);
   return card;
 }
+
 
 /* ── Slider helpers ─────────────────────────────────────────── */
 function applySliderStyle(inp,score){const col=getC(score);const pct=score!==null?(parseFloat(score)/10*100).toFixed(1)+'%':'0%';inp.style.setProperty('--fp',pct);inp.style.setProperty('--fc',score!==null?col.bg:'#1c1c28');inp.style.setProperty('--tg',col.glow!=='transparent'?col.glow:'rgba(255,255,255,0.06)');}
@@ -2131,6 +2368,35 @@ function setText(id,v){const e=_el(id);if(e)e.textContent=v;}
 function setStyle(id,p,v){const e=_el(id);if(e)e.style[p]=v;}
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
+/* ── Main Rating Lock (Mistouch Protection) ───────────────── */
+function updateRatingLockUI() {
+  const btn = _el('rating-lock-btn');
+  const ic = _el('lock-icon');
+  const tx = _el('lock-text');
+  const isLocked = !!ST.mainRatingLocked;
+  if (btn) {
+    btn.classList.toggle('locked', isLocked);
+    btn.classList.toggle('unlocked', !isLocked);
+    btn.title = isLocked ? 'Main rating is LOCKED to prevent mistouch (click to unlock)' : 'Main rating is UNLOCKED (click to lock)';
+  }
+  if (ic) ic.textContent = isLocked ? '🔒' : '🔓';
+  if (tx) tx.textContent = isLocked ? 'Locked' : 'Unlocked';
+
+  document.querySelectorAll('.score-slider').forEach(inp => {
+    inp.disabled = isLocked;
+  });
+  document.querySelectorAll('.slider-wrap').forEach(sw => {
+    sw.classList.toggle('is-locked', isLocked);
+  });
+}
+
+function toggleMainRatingLock() {
+  ST.mainRatingLocked = !ST.mainRatingLocked;
+  try { localStorage.setItem('br_main_rating_locked', ST.mainRatingLocked ? 'true' : 'false'); } catch {}
+  updateRatingLockUI();
+  toast(ST.mainRatingLocked ? '🔒 Main rating locked to prevent accidental changes' : '🔓 Main rating unlocked for editing');
+}
+
 /* ── Init ───────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded',()=>{
   loadProjects();
@@ -2145,7 +2411,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   ST.brolls        = parseScript(proj.script || '');
   loadGlobalCset();   // Load prefix/suffix from global key
 
-
+  try {
+    const savedLock = localStorage.getItem('br_main_rating_locked');
+    ST.mainRatingLocked = (savedLock !== 'false'); // default true
+  } catch {}
 
   const ta = _el('script-textarea'); if (ta) ta.value = proj.script || '';
 
@@ -2159,6 +2428,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge();
   syncCsetUI(); updateSratingHint(); renderRatingTabs(); renderRatingPanel(); refreshUR();
   renderMyDatabase();
+  updateRatingLockUI();
+  _el('rating-lock-btn')?.addEventListener('click', toggleMainRatingLock);
   scrollToLastScoredBroll();
   initFirebaseSync();
 

@@ -134,13 +134,48 @@ input,textarea { font-family:inherit }
 .hbtn.disabled:hover { background:transparent; border-color:var(--border); color:var(--text-3) }
 .ur-sep { width:1px; height:16px; background:var(--border); flex-shrink:0; margin:0 2px }
 
+.lock-pill {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  flex-shrink: 0;
+  cursor: pointer;
+  z-index: 2;
+  transition: all 0.15s;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  user-select: none;
+}
+.lock-pill.locked {
+  border-color: rgba(239,68,68,0.4);
+  background: rgba(239,68,68,0.12);
+  color: #fca5a5;
+}
+.lock-pill.unlocked {
+  border-color: rgba(34,197,94,0.4);
+  background: rgba(34,197,94,0.12);
+  color: #86efac;
+}
+.lock-icon { font-size: 10px; line-height: 1 }
+.lock-text { font-size: 9.5px; font-weight: 700; line-height: 1 }
+
+.slider-wrap.is-locked {
+  opacity: 0.82;
+}
+.slider-wrap.is-locked .score-slider {
+  cursor: not-allowed;
+}
+
 /* ── Heatmap Panel ───────────────────────────────────────────── */
 #heatmap-panel { padding:5px 14px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:4px }
 .hm-header { display:flex; align-items:center; gap:7px }
 .hm-label  { font-size:8px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:var(--text-3); flex-shrink:0 }
 .hm-sub    { font-size:9px; color:var(--text-3); font-family:var(--mono) }
-#heatmap-grid { display:flex; gap:2px; width:100%; height:22px }
-.hm-cell { flex:1 1 0; height:22px; min-width:3px; border-radius:3px; cursor:pointer; transition:transform 0.1s,filter 0.1s; display:flex; align-items:center; justify-content:center; overflow:hidden }
+.hm-grid   { display:flex; gap:2px; width:100%; height:20px }
+.hm-cell { flex:1 1 0; height:20px; min-width:3px; border-radius:3px; cursor:pointer; transition:transform 0.1s,filter 0.1s; display:flex; align-items:center; justify-content:center; overflow:hidden }
 .hm-cell:hover { transform:scaleY(1.5); filter:brightness(1.4); z-index:2 }
 .hm-cell-num { font-family:var(--mono); font-weight:700; color:rgba(255,255,255,0.85); pointer-events:none }
 .hm-progress { display:flex; gap:6px; align-items:center }
@@ -148,6 +183,7 @@ input,textarea { font-family:inherit }
 .hm-prog-track { flex:1; height:2px; background:var(--bg-3); border-radius:99px; overflow:hidden }
 .hm-prog-fill  { height:100%; border-radius:99px; transition:width 0.5s cubic-bezier(0.34,1.56,0.64,1) }
 .hm-prog-pct   { font-size:8px; font-family:var(--mono); font-weight:700; color:var(--text-3); min-width:24px; text-align:right }
+
 
 /* ── Filter Bar ──────────────────────────────────────────────── */
 #filter-bar { height:34px; display:flex; align-items:center; gap:4px; padding:0 14px; overflow-x:auto; scrollbar-width:none }
@@ -455,6 +491,8 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
   .logo-name { display:none }
   .sync-pill { padding:2px 6px; font-size:9px }
   .sync-text { font-size:9.5px }
+  .lock-pill { padding:2px 5px; font-size:9px }
+  .lock-text { font-size:9px }
   .hdr-actions .hbtn span { display:none }
   .hdr-actions .hbtn { padding:4px 6px; height:28px }
   .hdr-stats { overflow-x:auto; scrollbar-width:none }
