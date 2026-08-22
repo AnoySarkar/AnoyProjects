@@ -4,6 +4,24 @@
 
 'use strict';
 
+// ─── Firebase Cloud Sync Configuration ──────
+const firebaseConfig = {
+  apiKey: "AIzaSyBcceWtrTQYBlzyp7i8yucFYW2btrhFO3M",
+  authDomain: "broll-81cec.firebaseapp.com",
+  projectId: "broll-81cec",
+  storageBucket: "broll-81cec.firebasestorage.app",
+  messagingSenderId: "916145882472",
+  appId: "1:916145882472:web:a70bf79fcced22432302dd",
+  measurementId: "G-FKN50B0ZHZ"
+};
+
+let db = null;
+let rtdb = null;
+let isFirebaseReady = false;
+let isApplyingRemoteChange = false;
+let syncDebounceTimer = null;
+let currentSyncState = 'syncing'; // 'synced' | 'syncing' | 'offline'
+
 // ─── Storage ────────────────────────────────
 const DB_KEY = 'mf_entries';
 
@@ -12,8 +30,195 @@ function loadEntries() {
   catch { return []; }
 }
 
-function saveEntries(entries) {
-  localStorage.setItem(DB_KEY, JSON.stringify(entries));
+function updateSyncStatusUI(status, label) {
+  currentSyncState = status;
+  const badge = document.getElementById('syncBadge');
+  const text = document.getElementById('syncStatusText');
+  const sub = document.getElementById('cloudSyncSub');
+  if (badge) {
+    badge.className = `sync-badge status-${status}`;
+  }
+  if (text) {
+    text.textContent = label || (status === 'synced' ? 'Synced' : status === 'syncing' ? 'Syncing' : 'Offline');
+  }
+  if (sub) {
+    if (status === 'synced') sub.textContent = 'Connected & Live Synced (broll-81cec)';
+    else if (status === 'syncing') sub.textContent = 'Syncing with Firebase...';
+    else sub.textContent = 'Offline (cached locally)';
+  }
+}
+
+function saveEntries(newEntries, immediate = false) {
+  localStorage.setItem(DB_KEY, JSON.stringify(newEntries));
+  
+  if (isApplyingRemoteChange) return;
+
+  updateSyncStatusUI('syncing', 'Syncing');
+
+  clearTimeout(syncDebounceTimer);
+  if (immediate) {
+    pushToCloud(newEntries);
+  } else {
+    syncDebounceTimer = setTimeout(() => {
+      pushToCloud(newEntries);
+    }, 300);
+  }
+}
+
+function pushToCloud(dataToPush) {
+  if (!isFirebaseReady) {
+    updateSyncStatusUI('offline', 'Offline');
+    return;
+  }
+
+  const payload = {
+    entries: dataToPush,
+    updatedAt: Date.now(),
+    device: navigator.userAgent
+  };
+
+  const promises = [];
+  if (db) {
+    promises.push(
+      db.collection('schedule_app').doc('main_schedule').set(payload)
+    );
+  }
+  if (rtdb) {
+    promises.push(
+      rtdb.ref('main_schedule').set(payload)
+    );
+  }
+
+  if (promises.length === 0) {
+    updateSyncStatusUI('offline', 'Offline');
+    return;
+  }
+
+  Promise.allSettled(promises).then((results) => {
+    const hasSuccess = results.some(r => r.status === 'fulfilled');
+    if (hasSuccess) {
+      updateSyncStatusUI('synced', 'Synced');
+    } else {
+      console.warn('Cloud sync write failed, local cache maintained:', results);
+      updateSyncStatusUI('offline', 'Offline');
+    }
+  });
+}
+
+function handleIncomingRemoteData(remoteEntries, remoteUpdatedAt) {
+  if (!Array.isArray(remoteEntries)) return;
+
+  const currentLocalStr = JSON.stringify(entries);
+  const remoteStr = JSON.stringify(remoteEntries);
+
+  if (currentLocalStr !== remoteStr) {
+    isApplyingRemoteChange = true;
+    entries = remoteEntries;
+    localStorage.setItem(DB_KEY, remoteStr);
+    checkAutoUpload();
+
+    // Re-render current page
+    if (currentPage === 'home') renderDashboard();
+    else if (currentPage === 'calendar') renderCalendar();
+    else if (currentPage === 'settings') renderSettings();
+    else if (currentPage === 'detail' && editingId) renderDetail(editingId);
+
+    updateSyncStatusUI('synced', 'Synced');
+    showToast('Cloud updated ☁️');
+    sfx('copy');
+    isApplyingRemoteChange = false;
+  } else {
+    updateSyncStatusUI('synced', 'Synced');
+  }
+}
+
+function setupRTDBListener() {
+  if (rtdb) {
+    rtdb.ref('main_schedule').on('value', (snapshot) => {
+      const data = snapshot.val();
+      if (data && data.entries) {
+        handleIncomingRemoteData(data.entries, data.updatedAt);
+      } else {
+        pushToCloud(entries);
+      }
+    }, (error) => {
+      console.error('RTDB sync error:', error);
+      updateSyncStatusUI('offline', 'Offline');
+    });
+  }
+}
+
+function setupRealtimeListeners() {
+  if (db) {
+    db.collection('schedule_app').doc('main_schedule')
+      .onSnapshot((doc) => {
+        if (doc.exists) {
+          const data = doc.data();
+          handleIncomingRemoteData(data.entries, data.updatedAt);
+        } else {
+          // If first time cloud document doesn't exist yet, seed with local entries
+          pushToCloud(entries);
+        }
+      }, (error) => {
+        console.warn('Firestore onSnapshot error, falling back to RTDB:', error);
+        setupRTDBListener();
+      });
+  } else {
+    setupRTDBListener();
+  }
+}
+
+function initFirebaseSync() {
+  if (typeof firebase === 'undefined') {
+    console.warn('Firebase SDK not loaded, running in offline mode');
+    updateSyncStatusUI('offline', 'Offline');
+    return;
+  }
+
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    
+    updateSyncStatusUI('syncing', 'Connecting');
+
+    // Initialize Firestore
+    try {
+      db = firebase.firestore();
+    } catch (e) {
+      console.warn('Firestore init note:', e);
+    }
+
+    // Initialize Realtime Database
+    try {
+      rtdb = firebase.database();
+    } catch (e) {
+      console.warn('RTDB init note:', e);
+    }
+
+    isFirebaseReady = true;
+    setupRealtimeListeners();
+
+    // Listen to browser network changes
+    window.addEventListener('online', () => {
+      updateSyncStatusUI('syncing', 'Syncing');
+      pushToCloud(entries);
+    });
+    window.addEventListener('offline', () => {
+      updateSyncStatusUI('offline', 'Offline');
+    });
+
+  } catch (err) {
+    console.error('Firebase setup error:', err);
+    updateSyncStatusUI('offline', 'Offline');
+  }
+}
+
+function forceSyncNow() {
+  sfx('save');
+  showToast('Syncing with Cloud ☁️');
+  updateSyncStatusUI('syncing', 'Syncing');
+  pushToCloud(entries);
 }
 
 // ─── State ──────────────────────────────────
@@ -1137,11 +1342,18 @@ document.addEventListener('DOMContentLoaded', () => {
     e.target.value = '';
   });
   document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
+  
+  // ── Cloud Sync Buttons ──
+  const syncBadge = document.getElementById('syncBadge');
+  if (syncBadge) syncBadge.addEventListener('click', forceSyncNow);
+  const forceSyncBtn = document.getElementById('forceSyncBtn');
+  if (forceSyncBtn) forceSyncBtn.addEventListener('click', forceSyncNow);
 
   // ── Initial ──
   checkAutoUpload();   // auto-mark past scheduled → uploaded
   pushHistory();       // seed undo history
   renderDashboard();
+  initFirebaseSync();  // connect and real-time sync with Firebase
 
   // ── PWA Service Worker ──
   if ('serviceWorker' in navigator) {

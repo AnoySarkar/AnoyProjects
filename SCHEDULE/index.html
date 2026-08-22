@@ -23,6 +23,10 @@
       <div class="logo-text">Mind<span>Frame</span></div>
     </div>
     <div class="header-actions">
+      <div class="sync-badge status-syncing" id="syncBadge" title="Click to sync with Cloud">
+        <span class="sync-dot"></span>
+        <span id="syncStatusText">Syncing</span>
+      </div>
       <button class="icon-btn" id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
       </button>
@@ -198,6 +202,14 @@
         </div>
         <div class="stat-val" id="statUpcoming">0</div>
       </div>
+      <div class="settings-section-label">Cloud Sync</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">Firebase Global Sync</div>
+          <div class="settings-row-sub" id="cloudSyncSub">Connecting to broll-81cec...</div>
+        </div>
+        <span class="settings-row-action" id="forceSyncBtn">Sync Now</span>
+      </div>
       <div class="settings-section-label">Data</div>
       <div class="settings-row">
         <div>
@@ -224,7 +236,7 @@
       </div>
       <div style="height:10px"></div>
       <div style="text-align:center; font-size:11px; color:var(--text-2); padding: 10px 0">
-        MindFrame Scheduler · v1.0 · All data stored locally
+        MindFrame Scheduler · Firebase Realtime Cloud Sync · broll-81cec
       </div>
     </div>
   </div>
@@ -287,6 +299,10 @@
   </div>
 </div>
 
+<!-- Firebase SDKs (Compat for CDN zero-build static hosting) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
