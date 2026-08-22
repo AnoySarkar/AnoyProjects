@@ -11,7 +11,7 @@
     <meta name="description" content="Compact Gemini video-window and Flow credit tracker.">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css?v=21">
+    <link rel="stylesheet" href="styles.css?v=22">
   </head>
   <body>
     <main class="app-shell">
@@ -21,6 +21,10 @@
           <h1>Gemini Flow</h1>
         </div>
         <div class="header-actions" aria-label="App actions">
+          <div class="sync-badge" id="syncBadge" title="Firebase Real-time Sync">
+            <span class="sync-dot"></span>
+            <span class="sync-text" id="syncText">Connecting...</span>
+          </div>
           <button class="icon-button" id="soundButton" type="button" title="Toggle sound">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg>
             <span>SFX</span>
@@ -156,6 +160,8 @@
       </form>
     </dialog>
 
-    <script src="app.js?v=21"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <script src="app.js?v=23"></script>
   </body>
 </html>

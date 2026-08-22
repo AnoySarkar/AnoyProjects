@@ -5,12 +5,30 @@ const DEFAULT_NAMES = ["ANOY", "AVI", "MOU", "MIND", "LION", "TRI"];
 const DEFAULT_TIMES = ["14:18", "14:33", "17:09", "15:50", "13:29", "16:38"];
 const DEFAULT_FLOW_RESET_DAYS = [2, 21, 24, 12, 22, 1];
 
+const firebaseConfig = {
+  apiKey: "AIzaSyDQEnpysgnuL9-8iQllH1rfvvqPzxTIu58",
+  authDomain: "geminiflow-d919f.firebaseapp.com",
+  databaseURL: "https://geminiflow-d919f-default-rtdb.firebaseio.com",
+  projectId: "geminiflow-d919f",
+  storageBucket: "geminiflow-d919f.firebasestorage.app",
+  messagingSenderId: "996910064355",
+  appId: "1:996910064355:web:fd19f208daf529886bdbd6",
+  measurementId: "G-SVDX067YDW"
+};
+
+let dbRef = null;
+let isRemoteUpdate = false;
+let syncDebounceTimer = null;
+let lastSyncedJson = "";
+
 let state = loadState();
 let daySchedule = [];
 let monthSchedule = [];
 let audioContext = null;
 
 const el = {
+  syncBadge: document.querySelector("#syncBadge"),
+  syncText: document.querySelector("#syncText"),
   soundButton: document.querySelector("#soundButton"),
   settingsButton: document.querySelector("#settingsButton"),
   downloadButton: document.querySelector("#downloadButton"),
@@ -74,6 +92,7 @@ function init() {
   updateSoundButton();
   registerServiceWorker();
   rebuild({ scroll: true });
+  initFirebase();
   setInterval(() => rebuild({ quiet: true }), 30000);
 }
 
@@ -1434,6 +1453,105 @@ function uniqueAccountId(name, accounts) {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!isRemoteUpdate) {
+    pushStateToCloud();
+  }
+}
+
+// ============================================================
+// FIREBASE REALTIME CLOUD SYNC
+// ============================================================
+
+function initFirebase() {
+  if (typeof firebase === "undefined") {
+    updateSyncBadge("offline", "Offline");
+    return;
+  }
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.database();
+    dbRef = db.ref("trackerState");
+    listenToCloudUpdates();
+  } catch (err) {
+    console.error("Firebase init error:", err);
+    updateSyncBadge("error", "Sync Error");
+  }
+}
+
+function listenToCloudUpdates() {
+  if (!dbRef) return;
+  updateSyncBadge("syncing", "Connecting...");
+
+  // Monitor connection state
+  firebase.database().ref(".info/connected").on("value", (snap) => {
+    if (snap.val() === true) {
+      updateSyncBadge("synced", "Synced");
+    } else {
+      updateSyncBadge("offline", "Offline");
+    }
+  });
+
+  // Listen for live updates from phone or laptop
+  dbRef.on("value", (snapshot) => {
+    const remoteData = snapshot.val();
+    if (remoteData) {
+      const incomingJson = JSON.stringify(remoteData);
+      if (incomingJson === lastSyncedJson) {
+        return;
+      }
+      lastSyncedJson = incomingJson;
+      isRemoteUpdate = true;
+      try {
+        const preserveDate = state.selectedDate;
+        const preserveMode = state.activeMode;
+        state = normalizeState(remoteData);
+        if (preserveDate) state.selectedDate = preserveDate;
+        if (preserveMode) state.activeMode = preserveMode;
+
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        rebuild({ quiet: true, fromCloud: true });
+        updateSyncBadge("synced", "Synced");
+      } finally {
+        isRemoteUpdate = false;
+      }
+    } else {
+      pushStateToCloud();
+    }
+  }, (err) => {
+    console.warn("Realtime Database sync error:", err);
+    updateSyncBadge("error", "Sync Error");
+  });
+}
+
+function pushStateToCloud() {
+  if (!dbRef || isRemoteUpdate) return;
+  updateSyncBadge("syncing", "Saving...");
+  clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = setTimeout(() => {
+    try {
+      const payload = JSON.parse(JSON.stringify(state));
+      lastSyncedJson = JSON.stringify(payload);
+      dbRef.set(payload)
+        .then(() => {
+          updateSyncBadge("synced", "Synced");
+        })
+        .catch((err) => {
+          console.error("Cloud push failed:", err);
+          updateSyncBadge("error", "Sync Error");
+        });
+    } catch (e) {
+      console.error(e);
+      updateSyncBadge("error", "Sync Error");
+    }
+  }, 250);
+}
+
+function updateSyncBadge(status, label) {
+  if (!el.syncBadge || !el.syncText) return;
+  el.syncBadge.className = `sync-badge ${status}`;
+  el.syncText.textContent = label;
 }
 
 function loadJson(key, fallback) {

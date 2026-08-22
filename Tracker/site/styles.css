@@ -108,6 +108,72 @@ h3 {
   gap: 7px;
 }
 
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 13px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  user-select: none;
+  transition: all 200ms ease;
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--yellow);
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.sync-badge.synced {
+  color: #c9f5dc;
+  border-color: rgba(54, 217, 138, 0.25);
+  background: rgba(54, 217, 138, 0.06);
+}
+
+.sync-badge.synced .sync-dot {
+  background: var(--green);
+  box-shadow: 0 0 7px rgba(54, 217, 138, 0.7);
+}
+
+.sync-badge.syncing {
+  color: #cdf5fa;
+  border-color: rgba(54, 213, 232, 0.25);
+  background: rgba(54, 213, 232, 0.06);
+}
+
+.sync-badge.syncing .sync-dot {
+  background: var(--cyan);
+  box-shadow: 0 0 7px rgba(54, 213, 232, 0.7);
+  animation: syncPulse 1s infinite alternate;
+}
+
+.sync-badge.error,
+.sync-badge.offline {
+  color: #ffd2cf;
+  border-color: rgba(255, 95, 87, 0.25);
+  background: rgba(255, 95, 87, 0.06);
+}
+
+.sync-badge.error .sync-dot,
+.sync-badge.offline .sync-dot {
+  background: var(--red);
+  box-shadow: 0 0 7px rgba(255, 95, 87, 0.7);
+}
+
+@keyframes syncPulse {
+  from { opacity: 0.3; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1.15); }
+}
+
 .icon-button,
 .small-button,
 .square-button,
