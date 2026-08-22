@@ -84,6 +84,15 @@ let _fbDb = null;
 let _fbRef = null;
 let _fbSyncTimer = null;
 let _isApplyingRemote = false;
+let _remoteTimer = null;
+
+function setApplyingRemote(val) {
+  _isApplyingRemote = !!val;
+  if (_remoteTimer) clearTimeout(_remoteTimer);
+  if (val) {
+    _remoteTimer = setTimeout(() => { _isApplyingRemote = false; }, 800);
+  }
+}
 
 function updateSyncUI(status, text) {
   const dot = _el('sync-dot');
@@ -113,31 +122,36 @@ function pushToFirebase(immediate = false) {
   updateSyncUI('syncing', 'Syncing…');
 
   const doPush = () => {
-    const ta = _el('script-textarea');
-    const savedScript = ta && ta.value !== undefined && ta.value !== null
-      ? ta.value
-      : (PROJECTS[ACTIVE_PID]?.script || '');
+    try {
+      const ta = _el('script-textarea');
+      const savedScript = ta && ta.value !== undefined && ta.value !== null
+        ? ta.value
+        : (PROJECTS[ACTIVE_PID]?.script || '');
 
-    if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
-      PROJECTS[ACTIVE_PID].script = savedScript;
+      if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+        PROJECTS[ACTIVE_PID].script = savedScript;
+      }
+
+      const payload = {
+        active: ACTIVE_PID,
+        projects: JSON.parse(JSON.stringify(PROJECTS)),
+        globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
+        lastUpdatedBy: CLIENT_ID,
+        updatedAt: Date.now()
+      };
+
+      _fbRef.set(payload)
+        .then(() => {
+          updateSyncUI('synced', 'Cloud');
+        })
+        .catch(err => {
+          console.error('Firebase save error:', err);
+          updateSyncUI('offline', 'Sync Error');
+        });
+    } catch (err) {
+      console.error('Firebase push preparation error:', err);
+      updateSyncUI('offline', 'Sync Error');
     }
-
-    const payload = {
-      active: ACTIVE_PID,
-      projects: JSON.parse(JSON.stringify(PROJECTS)),
-      globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
-      lastUpdatedBy: CLIENT_ID,
-      updatedAt: Date.now()
-    };
-
-    _fbRef.set(payload)
-      .then(() => {
-        updateSyncUI('synced', 'Cloud');
-      })
-      .catch(err => {
-        console.error('Firebase save error:', err);
-        updateSyncUI('offline', 'Sync Error');
-      });
   };
 
   if (immediate) {
@@ -149,8 +163,9 @@ function pushToFirebase(immediate = false) {
 
 function applyRemoteData(data) {
   if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
-  _isApplyingRemote = true;
+  setApplyingRemote(true);
   try {
+
     // 1. Sync projects dictionary
     for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
     for (const [k, v] of Object.entries(data.projects)) {
@@ -230,9 +245,10 @@ function applyRemoteData(data) {
   } catch (err) {
     console.error('Error applying remote data:', err);
   } finally {
-    setTimeout(() => { _isApplyingRemote = false; }, 200);
+    setApplyingRemote(false);
   }
 }
+
 
 
 
