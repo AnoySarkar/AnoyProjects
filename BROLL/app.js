@@ -157,13 +157,13 @@ function applyRemoteData(data) {
       PROJECTS[k] = {
         name: v.name || 'Script',
         script: v.script || '',
-        scores: v.scores || {},
+        scores: _migrateScores(v.scores),
         prompts: _migratePrompts(v.prompts || {}),
         batches: v.batches || [],
-        usedSets: v.usedSets || {},
+        usedSets: _migrateUsedSets(v.usedSets),
         setRatings: _migrateSetRatings(v.setRatings || {}),
         ratingBatches: v.ratingBatches || [],
-        myRatings: v.myRatings || {}
+        myRatings: _migrateMyRatings(v.myRatings || {})
       };
     }
 
@@ -195,13 +195,13 @@ function applyRemoteData(data) {
     // 5. Update active project working state
     if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
       const proj = PROJECTS[ACTIVE_PID];
-      ST.scores            = proj.scores        || {};
+      ST.scores            = _migrateScores(proj.scores);
       ST.prompts           = _migratePrompts(proj.prompts);
       ST.batches           = proj.batches       || [];
-      ST.usedSets          = proj.usedSets      || {};
+      ST.usedSets          = _migrateUsedSets(proj.usedSets);
       ST.setRatings        = _migrateSetRatings(proj.setRatings);
       ST.ratingBatches     = proj.ratingBatches || [];
-      ST.myRatings         = proj.myRatings     || {};
+      ST.myRatings         = _migrateMyRatings(proj.myRatings);
       ST.brolls            = parseScript(proj.script || '');
 
       const ta = _el('script-textarea');
@@ -233,6 +233,7 @@ function applyRemoteData(data) {
     setTimeout(() => { _isApplyingRemote = false; }, 200);
   }
 }
+
 
 
 function initFirebaseSync() {
@@ -296,8 +297,7 @@ function initFirebaseSync() {
 /* ── Global Prefix / Suffix (shared across all scripts) ─────── */
 const GLOBAL_CSET_KEY = 'br_global_cset';
 function saveGlobalCset() {
-  try { localStorage.setItem(GLOBAL_CSET_KEY, JSON.stringify({ prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled })); } catch {}
-  pushToFirebase();
+  try { localStorage.setItem(GLOBAL_CSET_KEY, JSON.stringify({ prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled !== false })); } catch {}
 }
 
 function loadGlobalCset() {
@@ -310,11 +310,10 @@ function loadGlobalCset() {
       return;
     }
   } catch {}
-  ST.prefix = ''; ST.suffix = ''; ST.labelEnabled = true;
 }
 
-/* ── Projects / Multi-Script ────────────────────────────────── */
-const PROJECTS = {};
+/* ── Multi-Project (Multi-Script) Store ─────────────────────── */
+const PROJECTS   = {};
 let   ACTIVE_PID = null;
 const PROJ_KEY   = 'br_v6_proj';
 
@@ -339,7 +338,6 @@ function saveProjects() {
       setRatings:    JSON.parse(JSON.stringify(ST.setRatings||{})),
       ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches||[])),
       myRatings:     JSON.parse(JSON.stringify(ST.myRatings||{})),
-      // prefix/suffix are global — NOT saved per-project
     };
   }
   try { localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS })); } catch {}
@@ -348,6 +346,62 @@ function saveProjects() {
 }
 
 
+
+function _migrateScores(raw) {
+  if (!raw) return {};
+  const migrated = {};
+  if (Array.isArray(raw)) {
+    raw.forEach((v, idx) => {
+      if (v !== null && v !== undefined && v !== '' && !isNaN(parseFloat(v))) {
+        migrated[idx] = parseFloat(v);
+      }
+    });
+  } else if (typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) {
+      if (v !== null && v !== undefined && v !== '' && !isNaN(parseFloat(v))) {
+        migrated[k] = parseFloat(v);
+      }
+    }
+  }
+  return migrated;
+}
+
+function _migrateUsedSets(raw) {
+  if (!raw) return {};
+  const migrated = {};
+  if (Array.isArray(raw)) {
+    raw.forEach((v, idx) => {
+      if (v !== null && v !== undefined && v !== '' && !isNaN(parseInt(v))) {
+        migrated[idx] = parseInt(v);
+      }
+    });
+  } else if (typeof raw === 'object') {
+    for (const [k, v] of Object.entries(raw)) {
+      if (v !== null && v !== undefined && v !== '' && !isNaN(parseInt(v))) {
+        migrated[k] = parseInt(v);
+      }
+    }
+  }
+  return migrated;
+}
+
+function _migrateMyRatings(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const migrated = {};
+  for (const [brollNum, sets] of Object.entries(raw)) {
+    if (!sets || typeof sets !== 'object') continue;
+    for (const [setIdx, r] of Object.entries(sets)) {
+      if (!r || typeof r !== 'object' || r.score === undefined || isNaN(parseFloat(r.score))) continue;
+      if (!migrated[brollNum]) migrated[brollNum] = {};
+      migrated[brollNum][setIdx] = {
+        score: parseFloat(r.score),
+        comment: r.comment || '',
+        date: r.date || Date.now()
+      };
+    }
+  }
+  return migrated;
+}
 
 function _migratePrompts(rawPr) {
   const p = {};
@@ -391,9 +445,11 @@ function loadProjects() {
       for (const [k,v] of Object.entries(raw.projects)) {
         PROJECTS[k] = {
           ...v,
+          scores: _migrateScores(v.scores),
           prompts: _migratePrompts(v.prompts),
+          usedSets: _migrateUsedSets(v.usedSets),
           setRatings: _migrateSetRatings(v.setRatings),
-          myRatings: v.myRatings || {}
+          myRatings: _migrateMyRatings(v.myRatings)
         };
       }
       ACTIVE_PID = (raw.active && PROJECTS[raw.active]) ? raw.active : Object.keys(PROJECTS)[0];
@@ -408,6 +464,7 @@ function loadProjects() {
       return;
     }
   } catch {}
+
   /* Migrate from old single-project keys */
   try {
     const sc  = localStorage.getItem('br_sc5')||localStorage.getItem('br_sc4')||'';
@@ -682,12 +739,16 @@ function updateMyDbBadge() {
   const el = _el('mydb-badge');
   if (!el) return;
   let total = 0;
-  for (const sets of Object.values(ST.myRatings||{})) {
-    total += Object.keys(sets).length;
+  for (const sets of Object.values(ST.myRatings || {})) {
+    if (!sets || typeof sets !== 'object') continue;
+    for (const item of Object.values(sets)) {
+      if (item && typeof item === 'object' && item.score !== undefined) total++;
+    }
   }
   el.textContent = total;
   el.classList.toggle('active', total > 0);
 }
+
 
 /* ── My Rating Modal ─────────────────────────────────────────── */
 let _myRatingModal = null;
@@ -804,15 +865,20 @@ function renderMyDatabase() {
 
   // Collect all entries
   const entries = [];
-  for (const [numStr, sets] of Object.entries(ST.myRatings||{})) {
+  for (const [numStr, sets] of Object.entries(ST.myRatings || {})) {
+    if (!sets || typeof sets !== 'object') continue;
     const num = parseFloat(numStr);
+    if (isNaN(num)) continue;
     for (const [idxStr, rating] of Object.entries(sets)) {
+      if (!rating || typeof rating !== 'object' || rating.score === undefined) continue;
       const setIdx = parseInt(idxStr);
-      const entry = (ST.prompts[num]||[])[setIdx];
+      if (isNaN(setIdx)) continue;
+      const entry = (ST.prompts[num] || [])[setIdx];
       const broll = ST.brolls.find(b => b.num === num);
       entries.push({ num, setIdx, rating, entry, broll });
     }
   }
+
 
   // Apply filters
   const { above, below, keyword } = _myDbFilter;
@@ -1913,26 +1979,30 @@ function sortedList(arr) {
 }
 
 function getRealRatingOverviewData(num) {
-  const sets = ST.myRatings[num] || {};
-  const list = Object.entries(sets).map(([idx, val]) => ({ idx: parseInt(idx), ...val }));
+  const sets = ST.myRatings?.[num];
+  if (!sets || typeof sets !== 'object') return null;
+  const list = Object.entries(sets)
+    .filter(([idx, val]) => val && typeof val === 'object' && val.score !== undefined && !isNaN(parseFloat(val.score)))
+    .map(([idx, val]) => ({ idx: parseInt(idx), score: parseFloat(val.score), comment: val.comment || '', date: val.date }));
   if (!list.length) return null;
 
   // Check if used set has rating
-  const used = ST.usedSets[num];
-  if (used !== undefined && sets[used] !== undefined) {
-    return { score: sets[used].score, comment: sets[used].comment, setIdx: used };
+  const used = ST.usedSets?.[num];
+  if (used !== undefined && sets[used] && sets[used].score !== undefined) {
+    return { score: parseFloat(sets[used].score), comment: sets[used].comment || '', setIdx: used };
   }
 
   // If any set has score 0 (model retry), prioritize showing retry
-  const retry = list.find(x => parseFloat(x.score) === 0);
+  const retry = list.find(x => x.score === 0);
   if (retry) {
     return { score: 0, comment: retry.comment, setIdx: retry.idx };
   }
 
   // Otherwise, highest score
-  list.sort((a, b) => (parseFloat(b.score) || 0) - (parseFloat(a.score) || 0));
+  list.sort((a, b) => b.score - a.score);
   return { score: list[0].score, comment: list[0].comment, setIdx: list[0].idx };
 }
+
 
 /* ── Heatmap (Main Rating & Real Rating) ────────────────────── */
 function renderHeatmap() {
