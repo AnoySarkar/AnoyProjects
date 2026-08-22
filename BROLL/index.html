@@ -17,8 +17,12 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="style.css?v=20260822_5" />
+  <link rel="stylesheet" href="style.css?v=20260822_9" />
 </head>
+
+
+
+
 
 
 
@@ -226,12 +230,67 @@
       </div>
     </section>
 
+    <!-- ══ LINE COPY / EXPORT ════════════════════════════════ -->
+    <section id="line-copy-section" class="collapsed">
+      <div id="line-copy-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <span>📋 Filter & Copy Lines</span>
+        <span class="line-copy-hint" id="line-copy-hint">0 lines</span>
+        <span style="flex:1"></span>
+        <span class="it-chevron">▼</span>
+      </div>
+      <div id="line-copy-body">
+        <div class="lc-controls-row">
+          <div class="lc-ctrl-grp">
+            <span class="lc-ctrl-label">Target:</span>
+            <div class="fb-target-grp" id="lc-target-grp">
+              <button class="fb-target-btn active" id="lc-target-main" data-target="main">🎯 Main</button>
+              <button class="fb-target-btn" id="lc-target-real" data-target="real">✏ Real</button>
+            </div>
+          </div>
+          <div class="lc-ctrl-grp">
+            <span class="lc-ctrl-label">Min:</span>
+            <input class="lc-input" id="lc-min-score" type="number" step="0.5" min="0" max="10" placeholder="0" value="0" />
+          </div>
+          <div class="lc-ctrl-grp">
+            <span class="lc-ctrl-label">Max:</span>
+            <input class="lc-input" id="lc-max-score" type="number" step="0.5" min="0" max="10" placeholder="8.9" value="8.9" />
+          </div>
+          <div class="lc-ctrl-grp">
+            <label class="lc-checkbox-label">
+              <input type="checkbox" id="lc-include-unscored" checked /> Unscored/Unrated
+            </label>
+          </div>
+          <div class="lc-ctrl-grp">
+            <label class="lc-checkbox-label">
+              <input type="checkbox" id="lc-include-num" checked /> Number prefix (1 ...)
+            </label>
+          </div>
+          <div class="lc-ctrl-grp">
+            <label class="lc-checkbox-label">
+              <input type="checkbox" id="lc-line-gap" checked /> Line gap
+            </label>
+          </div>
+          <button class="hbtn primary" id="btn-copy-filtered-lines">📋 Copy Lines</button>
+        </div>
+
+        <div class="lc-preview-wrap">
+          <div class="lc-preview-hdr">
+            <span id="lc-count-badge">0 lines matching filter</span>
+            <span class="lc-preview-hint">Live formatted preview</span>
+          </div>
+          <textarea id="lc-preview-textarea" readonly rows="7" placeholder="Filtered lines will appear here..."></textarea>
+        </div>
+      </div>
+    </section>
+
     <!-- ══ SET RATINGS ════════════════════════════════════════ -->
     <section id="srating-section" class="collapsed">
       <div id="srating-toggle" role="button" tabindex="0"
            onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
         <span>⭐ Set Ratings</span>
         <span class="srating-hint" id="srating-hint">0 ratings</span>
+
         <span style="flex:1"></span>
         <span class="it-chevron">▼</span>
       </div>
@@ -360,9 +419,12 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-<script src="app.js?v=20260822_5"></script>
+<script src="app.js?v=20260822_9"></script>
 </body>
 </html>
+
+
+
 
 
 

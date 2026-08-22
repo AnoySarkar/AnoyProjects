@@ -344,7 +344,7 @@ function _projData(name) {
   return { name: name||'Script 1', script:'', scores:{}, prompts:{}, batches:[], usedSets:{}, setRatings:{}, ratingBatches:[], myRatings:{}, covered:{} };
 }
 
-function saveProjects() {
+function saveProjects(immediate = false) {
   if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
     // Read script from DOM; fall back to what's already saved (never lose it)
     const ta = _el('script-textarea');
@@ -366,8 +366,11 @@ function saveProjects() {
   }
   try { localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS })); } catch {}
   saveGlobalCset();
-  pushToFirebase(); // Sync to Firebase Cloud
+  pushToFirebase(immediate); // Sync to Firebase Cloud
 }
+
+function save(immediate = false) { saveProjects(immediate); }
+
 
 function _migrateCovered(raw) {
   if (!raw || typeof raw !== 'object') return {};
@@ -556,9 +559,10 @@ function activateProject(pid) {
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge(); syncCsetUI();
   updateSratingHint(); renderRatingTabs(); renderRatingPanel();
   renderMyDatabase();
-
+  updateLineCopyPreview();
   scrollToLastScoredBroll();
 }
+
 
 function createProject() {
   saveProjects();
@@ -734,14 +738,16 @@ function getSetRatingSummary(num, setIdx) {
 /* ── My Personal Ratings (Training Database) ─────────────────── */
 function parseMyRatingInput(str) {
   if (!str || !str.trim()) return null;
-  const trimmed = str.trim();
-  // Match: leading score number, optional separator (: or -), followed by optional comment
-  const m = trimmed.match(/^([+\-]?\d+(?:\.\d+)?)(?:\s*[:\-–]?\s*(.*))?$/s);
-  if (!m) return null;
+  let trimmed = str.trim();
+  // Support comma as decimal separator (e.g. 8,5 -> 8.5)
+  trimmed = trimmed.replace(/^(\d+),(\d+)/, '$1.$2');
+  // Match score: leading number/decimal (e.g. 8.8, 10, 0, .5) followed by optional comment
+  const m = trimmed.match(/^([+\-]?\d*\.?\d+)(?:\s*[:\-–,]?\s*(.*))?$/s);
+  if (!m || !m[1]) return null;
   const score = parseFloat(m[1]);
   if (isNaN(score)) return null;
   let comment = (m[2] || '').trim();
-  comment = comment.replace(/^[:\-–]\s*/, '').trim();
+  comment = comment.replace(/^[:\-–,]\s*/, '').trim();
   return { score, comment };
 }
 
@@ -750,25 +756,28 @@ function getMyRating(num, setIdx) {
 }
 
 function saveMyRating(num, setIdx, score, comment) {
+  if (!ST.myRatings) ST.myRatings = {};
   if (!ST.myRatings[num]) ST.myRatings[num] = {};
-  ST.myRatings[num][setIdx] = { score, comment, date: Date.now() };
-  save();
+  ST.myRatings[num][setIdx] = { score: parseFloat(score), comment: comment || '', date: Date.now() };
+  save(true);
   updateCardPrompts(num);
   updateHmCell(num);
   renderStats();
+  renderFilterCount();
   renderMyDatabase();
   updateMyDbBadge();
 }
 
 function deleteMyRating(num, setIdx) {
-  if (ST.myRatings[num]) {
+  if (ST.myRatings && ST.myRatings[num]) {
     delete ST.myRatings[num][setIdx];
     if (!Object.keys(ST.myRatings[num]).length) delete ST.myRatings[num];
   }
-  save();
+  save(true);
   updateCardPrompts(num);
   updateHmCell(num);
   renderStats();
+  renderFilterCount();
   renderMyDatabase();
   updateMyDbBadge();
 }
@@ -806,11 +815,15 @@ function toggleCoveredClip(num) {
   } else {
     delete ST.covered[num];
   }
-  saveProjects();
+  save(true);
+  updateCardPrompts(num);
   updateHmCell(num);
   renderStats();
-  toast(isNowCovered ? `✔ B-roll #${num} marked as Covered (9+ in Overview)` : `↺ B-roll #${num} unmarked as Covered`);
+  renderFilterCount();
+  updateLineCopyPreview();
+  toast(isNowCovered ? `✔ B-roll #${num} marked as Done (9+ in Overview)` : `↺ B-roll #${num} unmarked as Done`);
 }
+
 
 function showMyRatingModal(triggerEl, num, setIdx) {
   closeMyRatingModal();
@@ -852,7 +865,7 @@ function showMyRatingModal(triggerEl, num, setIdx) {
     <div class="myrating-covered-row">
       <button type="button" class="myrating-covered-btn ${isCovered ? 'active' : ''}" id="myrating-covered-btn">
         <span class="mcb-check">${isCovered ? '✔' : '◻'}</span>
-        <span class="mcb-text">${isCovered ? 'Covered with other clip (Overview: 9+)' : 'Mark as Covered with other clip (Overview: 9+)'}</span>
+        <span class="mcb-text">${isCovered ? 'Done (Overview: 9+)' : 'Mark as Done (Overview: 9+)'}</span>
       </button>
     </div>
     <div class="myrating-actions">
@@ -861,6 +874,7 @@ function showMyRatingModal(triggerEl, num, setIdx) {
       <button class="hbtn" id="myrating-cancel">✕ Cancel</button>
     </div>
   `;
+
 
   document.body.appendChild(modal);
 
@@ -1864,29 +1878,41 @@ function buildLibChip(num, i, entry) {
   return chip;
 }
 
-/* ── Update prompt chips on card ────────────────────────────── */
+
+/* ── Build single prompt chip (Card & Library) ──────────────── */
 function buildPromptChip(num, i, entry) {
+  const chip = document.createElement('button');
+  const isCopied = !!entry.copied;
+  const isUsed = ST.usedSets[num] === i;
+
   const summary = getSetRatingSummary(num, i);
   const rColor = summary ? summary.color : null;
 
-  const chip = document.createElement('button');
-  chip.className = 'p-chip' + (entry.copied ? ' copied' : '');
+  // Base classes
+  chip.className = 'p-chip' + (isCopied ? ' copied' : '') + (isUsed ? ' is-used' : '');
   chip.id = `pc-${num}-${i}`;
 
+  // If set rating exists, apply the rating's border and background tint
   if (rColor) {
     chip.style.borderColor = rColor.border;
-    chip.style.background = rColor.bg;
+    chip.style.backgroundColor = rColor.bg;
   }
 
-  const top = document.createElement('span'); top.className = 'p-chip-top';
-  const n = document.createElement('span'); n.className = 'p-chip-num'; n.textContent = i+1; top.appendChild(n);
-  if (entry.copied) { const ck = document.createElement('span'); ck.className = 'p-chip-ck'; ck.textContent = '✓'; top.appendChild(ck); }
-  chip.appendChild(top);
+  // Label span
+  const sp = document.createElement('span');
+  sp.className = 'p-chip-label';
+  sp.textContent = `Set ${i+1}`;
+  chip.appendChild(sp);
 
+  // AI Rating badge if exists
   if (summary) {
-    const rb = document.createElement('span'); rb.className = 'p-chip-rating';
-    rb.textContent = summary.avgScore;
-    if (summary.count > 1) {
+    const rb = document.createElement('span');
+    rb.className = 'p-chip-srating';
+    if (summary.isMajorityTen) {
+      rb.textContent = '10★';
+      rb.title = `Majority 10/10 (${summary.tenCount}/${summary.count} AI ratings)`;
+    } else {
+      rb.textContent = `${summary.avgScore}`;
       rb.title = `Average: ${summary.avgScore} (${summary.count} AI ratings)`;
     }
     rb.style.color = rColor ? rColor.text : 'var(--text-3)';
@@ -1896,29 +1922,23 @@ function buildPromptChip(num, i, entry) {
   const titleLines = [
     `Set ${i+1} for #${num}` + (summary ? ` · Avg: ${summary.avgScore}` + (summary.count > 1 ? ` (${summary.count} ratings)` : '') : ''),
     '',
-    '• Left-click: ' + (entry.copied ? 'Untick (no copy)' : 'Copy prompt & tick'),
-    '• Right-click: View all ratings & reasons',
-    '• Mobile: Hold 2s to untick / copy'
+    '• Click: Copy prompt to clipboard (always keeps checkmark)',
+    '• Shift+Click or Hold 1.5s: Toggle checkmark on/off',
+    '• Right-click: View all AI ratings & reasons'
   ];
   chip.title = titleLines.join('\n');
 
-  const handleChipClick = () => {
-    if (entry.copied) {
-      // If already ticked: UNTICK ONLY (do NOT copy)
-      entry.copied = false;
-      save();
-      refreshCopyState(num, i);
-      toast(`✕ Unticked Set ${i+1} for #${num}`);
-    } else {
-      // If unticked: COPY & TICK
-      copyPrompt(num, i, chip, true);
-    }
-  };
-
-  // Left-click: If ticked -> untick only (no copy); If unticked -> copy & tick
+  // Left-click / Tap: ALWAYS COPY and ensure ticked!
   chip.addEventListener('click', e => {
     e.stopPropagation();
-    handleChipClick();
+    if (e.shiftKey) {
+      entry.copied = !entry.copied;
+      save(true);
+      refreshCopyState(num, i);
+      toast(entry.copied ? `✔ Ticked Set ${i+1} for #${num}` : `✕ Unticked Set ${i+1} for #${num}`);
+    } else {
+      copyPrompt(num, i, chip, true);
+    }
   });
 
   // Right-click: View all ratings & reasons popup
@@ -1927,7 +1947,7 @@ function buildPromptChip(num, i, entry) {
     showWhyPopup(e, num, i);
   });
 
-  // Mobile 2-second hold feature
+  // Mobile 1.5-second hold feature (toggle untick)
   let holdTimer = null;
   let touchStartX = 0, touchStartY = 0;
   let didHoldTrigger = false;
@@ -1940,8 +1960,11 @@ function buildPromptChip(num, i, entry) {
       holdTimer = setTimeout(() => {
         didHoldTrigger = true;
         if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
-        handleChipClick();
-      }, 2000);
+        entry.copied = !entry.copied;
+        save(true);
+        refreshCopyState(num, i);
+        toast(entry.copied ? `✔ Ticked Set ${i+1} for #${num}` : `✕ Unticked Set ${i+1} for #${num}`);
+      }, 1500);
     }
   }, { passive: true });
 
@@ -1972,6 +1995,7 @@ function buildPromptChip(num, i, entry) {
       holdTimer = null;
     }
   });
+
 
   // Wrap chip + Real Rating button together
   const wrapper = document.createElement('div');
@@ -2025,8 +2049,29 @@ function updateCardPrompts(num) {
   const prow = document.createElement('div'); prow.className = 'c-prompts'; prow.id = `cp-${num}`;
   const lbl = document.createElement('span'); lbl.className = 'p-label'; lbl.textContent = '🎬'; prow.appendChild(lbl);
   prompts.forEach((entry, i) => prow.appendChild(buildPromptChip(num, i, entry)));
+
+  // Add single DONE button right beside the last set box
+  const isCovered = !!(ST.covered && ST.covered[num]);
+  const doneBtn = document.createElement('button');
+  doneBtn.type = 'button';
+  doneBtn.className = 'p-chip done-btn' + (isCovered ? ' active' : '');
+  doneBtn.id = `done-btn-${num}`;
+  doneBtn.innerHTML = `<span class="done-check">${isCovered ? '✔' : '◻'}</span><span class="done-text">Done</span>`;
+  doneBtn.title = isCovered
+    ? `B-roll #${num} is marked as Done (9+ in Overview)\nClick to unmark`
+    : `Mark B-roll #${num} as Done with other clip (9+ in Overview)`;
+
+  doneBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCoveredClip(num);
+  });
+  prow.appendChild(doneBtn);
+
   mid.appendChild(prow);
 }
+
+
+
 
 function updateAllPromptChips() { ST.brolls.forEach(b => updateCardPrompts(b.num)); }
 
@@ -2535,8 +2580,10 @@ function loadScript(text,keepScores=true){
   collapseInput(); save();
   renderProjectTabs();
   renderHeatmap(); renderStats(); renderCards(true); updateAllPromptChips();
+  updateLineCopyPreview();
   toast(`✅ Loaded ${brolls.length} B-roll clips`);
 }
+
 function collapseInput(){_el('input-section')?.classList.add('collapsed');ST.inputOpen=false;const ch=document.querySelector('#input-section .it-chevron');if(ch)ch.textContent='▼';}
 function expandInput(){_el('input-section')?.classList.remove('collapsed');ST.inputOpen=true;const ch=document.querySelector('#input-section .it-chevron');if(ch)ch.textContent='▲';}
 
@@ -2604,8 +2651,102 @@ function setFilter(f) {
   renderFilterCount();
 }
 
+/* ── Line Copy & Filter Tool ────────────────────────────────── */
+let LC_TARGET = 'main';
+
+function getFilteredLines() {
+  const minVal = _el('lc-min-score')?.value?.trim();
+  const maxVal = _el('lc-max-score')?.value?.trim();
+  const min = (minVal !== undefined && minVal !== '') ? parseFloat(minVal) : 0;
+  const max = (maxVal !== undefined && maxVal !== '') ? parseFloat(maxVal) : 8.9;
+  const includeUnscored = _el('lc-include-unscored') ? _el('lc-include-unscored').checked : true;
+  const target = LC_TARGET;
+
+  const matches = [];
+
+  for (const b of (ST.brolls || [])) {
+    if (!b || !b.line) continue;
+    let score = null;
+    let isRated = false;
+
+    if (target === 'main') {
+      const s = ST.scores[b.num] ?? null;
+      if (s !== null) {
+        score = s;
+        isRated = true;
+      }
+    } else {
+      const lr = getLineRealRating(b.num);
+      if (lr.isRated) {
+        score = lr.score;
+        isRated = true;
+      }
+    }
+
+    if (!isRated) {
+      if (includeUnscored) {
+        matches.push(b);
+      }
+    } else {
+      if (score >= min && score <= max) {
+        matches.push(b);
+      }
+    }
+  }
+
+  return matches;
+}
+
+function updateLineCopyPreview() {
+  const ta = _el('lc-preview-textarea');
+  const countBadge = _el('lc-count-badge');
+  const hint = _el('line-copy-hint');
+  if (!ta) return;
+
+  const matches = getFilteredLines();
+  const includeNum = _el('lc-include-num') ? _el('lc-include-num').checked : true;
+  const lineGap = _el('lc-line-gap') ? _el('lc-line-gap').checked : true;
+
+  const formattedLines = matches.map(b => {
+    const prefix = includeNum ? `${b.num} ` : '';
+    return `${prefix}${b.line}`;
+  });
+
+  const sep = lineGap ? '\n\n' : '\n';
+  const text = formattedLines.join(sep);
+  ta.value = text;
+
+  const countText = `${matches.length} line${matches.length === 1 ? '' : 's'} matching filter`;
+  if (countBadge) countBadge.textContent = countText;
+  if (hint) hint.textContent = `${matches.length} lines`;
+}
+
+function setLineCopyTarget(target) {
+  LC_TARGET = target;
+  _el('lc-target-main')?.classList.toggle('active', target === 'main');
+  _el('lc-target-real')?.classList.toggle('active', target === 'real');
+  updateLineCopyPreview();
+  toast(target === 'real' ? '✏ Line Copy: Real Rating' : '🎯 Line Copy: Main Rating');
+}
+
+function copyFilteredLines() {
+  const ta = _el('lc-preview-textarea');
+  if (!ta || !ta.value.trim()) {
+    toast('⚠️ No lines match the filter');
+    return;
+  }
+  const text = ta.value.trim();
+  const matches = getFilteredLines();
+  const doConfirm = () => toast(`📋 Copied ${matches.length} filtered lines to clipboard!`);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(doConfirm).catch(() => fbCopy(text, doConfirm));
+  } else {
+    fbCopy(text, doConfirm);
+  }
+}
 
 /* ── Export / Import ────────────────────────────────────────── */
+
 function exportData(){
   const ta = _el('script-textarea');
   const scriptVal = ta ? ta.value : (PROJECTS[ACTIVE_PID]?.script || '');
@@ -2754,7 +2895,9 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   syncCsetUI(); updateSratingHint(); renderRatingTabs(); renderRatingPanel(); refreshUR();
   renderMyDatabase();
+  updateLineCopyPreview();
   updateRatingLockUI();
+
   _el('rating-lock-btn')?.addEventListener('click', toggleMainRatingLock);
   scrollToLastScoredBroll();
   initFirebaseSync();
@@ -2821,7 +2964,27 @@ document.addEventListener('DOMContentLoaded',()=>{
   _el('cset-clear-suf').addEventListener('click',()=>{ST.suffix='';_el('cset-suffix').value='';saveGlobalCset();updateCsetHint();toast('Suffix cleared');});
 
 
+  /* Line Copy & Filter section */
+  _el('line-copy-toggle')?.addEventListener('click', () => {
+    const sec = _el('line-copy-section'); if (!sec) return;
+    sec.classList.toggle('collapsed');
+    const isCollapsed = sec.classList.contains('collapsed');
+    const ch = document.querySelector('#line-copy-toggle .it-chevron');
+    if (ch) ch.textContent = isCollapsed ? '▼' : '▲';
+    if (!isCollapsed) updateLineCopyPreview();
+  });
+  _el('lc-target-main')?.addEventListener('click', () => setLineCopyTarget('main'));
+  _el('lc-target-real')?.addEventListener('click', () => setLineCopyTarget('real'));
+  _el('lc-min-score')?.addEventListener('input', updateLineCopyPreview);
+  _el('lc-max-score')?.addEventListener('input', updateLineCopyPreview);
+  _el('lc-include-unscored')?.addEventListener('change', updateLineCopyPreview);
+  _el('lc-include-num')?.addEventListener('change', updateLineCopyPreview);
+  _el('lc-line-gap')?.addEventListener('change', updateLineCopyPreview);
+  _el('btn-copy-filtered-lines')?.addEventListener('click', copyFilteredLines);
+
+
   /* Set Ratings section */
+
   _el('srating-toggle').addEventListener('click',()=>{
     const sec=_el('srating-section');if(!sec)return;
     sec.classList.toggle('collapsed');
