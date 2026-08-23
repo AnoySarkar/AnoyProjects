@@ -9,27 +9,30 @@
 const C = {
   null: { bg:'#16162a', border:'rgba(255,255,255,0.05)', glow:'transparent' },
   0:    { bg:'#16162a', border:'rgba(255,255,255,0.05)', glow:'transparent' },
-  0.5:  { bg:'#420003', border:'#620006',                glow:'rgba(98,0,6,0.40)' },
-  1:    { bg:'#5c0000', border:'#7e0000',                glow:'rgba(126,0,0,0.45)' },
-  1.5:  { bg:'#680808', border:'#8a0a0a',                glow:'rgba(138,10,10,0.43)' },
-  2:    { bg:'#721010', border:'#961414',                glow:'rgba(150,20,20,0.42)' },
-  2.5:  { bg:'#7c1c1c', border:'#a22222',                glow:'rgba(162,34,34,0.40)' },
-  3:    { bg:'#862626', border:'#ae2e2e',                glow:'rgba(174,46,46,0.38)' },
-  3.5:  { bg:'#923030', border:'#ba3838',                glow:'rgba(186,56,56,0.36)' },
-  4:    { bg:'#9e3c3c', border:'#c64a4a',                glow:'rgba(198,74,74,0.34)' },
-  4.5:  { bg:'#a84228', border:'#cc5030',                glow:'rgba(204,80,48,0.34)' },
-  5:    { bg:'#b84c1a', border:'#dc6020',                glow:'rgba(220,96,32,0.34)' },
-  5.5:  { bg:'#bf5c14', border:'#de7018',                glow:'rgba(222,112,24,0.34)' },
-  6:    { bg:'#b47600', border:'#d88e00',                glow:'rgba(216,142,0,0.36)' },
-  6.5:  { bg:'#a68800', border:'#c8a400',                glow:'rgba(200,164,0,0.34)' },
-  7:    { bg:'#888800', border:'#b4b200',                glow:'rgba(180,178,0,0.36)' },
-  7.5:  { bg:'#4e8800', border:'#6aac00',                glow:'rgba(106,172,0,0.34)' },
-  8:    { bg:'#2e5e14', border:'#428020',                glow:'rgba(66,128,32,0.28)' },
-  8.5:  { bg:'#106810', border:'#189018',                glow:'rgba(24,144,24,0.36)' },
+  0.5:  { bg:'#180000', border:'#220000',                glow:'rgba(34,0,0,0.35)' },
+  1:    { bg:'#200000', border:'#2e0101',                glow:'rgba(46,1,1,0.35)' },
+  1.5:  { bg:'#280000', border:'#3c0202',                glow:'rgba(60,2,2,0.36)' },
+  2:    { bg:'#300101', border:'#4a0303',                glow:'rgba(74,3,3,0.36)' },
+  2.5:  { bg:'#380101', border:'#590404',                glow:'rgba(89,4,4,0.38)' },
+  3:    { bg:'#400202', border:'#680606',                glow:'rgba(104,6,6,0.38)' },
+  3.5:  { bg:'#480303', border:'#780909',                glow:'rgba(120,9,9,0.38)' },
+  4:    { bg:'#500404', border:'#880c0c',                glow:'rgba(136,12,12,0.40)' },
+  4.5:  { bg:'#580606', border:'#981010',                glow:'rgba(152,16,16,0.40)' },
+  5:    { bg:'#600808', border:'#a91515',                glow:'rgba(169,21,21,0.40)' },
+  5.5:  { bg:'#680c0c', border:'#ba1a1a',                glow:'rgba(186,26,26,0.40)' },
+  6:    { bg:'#701010', border:'#cb2020',                glow:'rgba(203,32,32,0.40)' },
+  6.5:  { bg:'#781414', border:'#dc2626',                glow:'rgba(220,38,38,0.40)' },
+  7:    { bg:'#7f1d1d', border:'#e11d48',                glow:'rgba(225,29,72,0.40)' },
+  7.5:  { bg:'#831843', border:'#f43f5e',                glow:'rgba(244,63,94,0.40)' },
+  8:    { bg:'#7c2d12', border:'#f97316',                glow:'rgba(249,115,22,0.50)' }, // 8 is Orange
+  8.5:  { bg:'#785900', border:'#facc15',                glow:'rgba(250,204,21,0.50)' }, // 8.5 is Yellow
   9:    { bg:'#00922e', border:'#00c040',                glow:'rgba(0,192,64,0.55)' },
   9.5:  { bg:'#006e22', border:'#009832',                glow:'rgba(0,152,50,0.55)' },
   10:   { bg:'#004c16', border:'#007028',                glow:'rgba(0,112,40,0.60)' },
 };
+
+
+
 const STEPS = [0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10];
 
 function snap(val) {
@@ -691,10 +694,10 @@ function getMyRatingColor(score) {
 
   const col = getC(s);
   let textColor = '#eaeaf5';
-  if (s >= 9) textColor = '#4ade80';
-  else if (s >= 7) textColor = '#facc15';
-  else if (s >= 4.5) textColor = '#fb923c';
-  else if (s > 0) textColor = '#f87171';
+  if (s >= 9) textColor = '#4ade80';        // 9 and above: green
+  else if (s >= 8.5) textColor = '#fde047';  // 8.5: yellow
+  else if (s >= 8) textColor = '#fb923c';    // 8: orange
+  else if (s > 0) textColor = '#f87171';     // below 8: red
 
   return {
     bg: col.bg,
@@ -703,6 +706,9 @@ function getMyRatingColor(score) {
     text: textColor
   };
 }
+
+
+
 
 /* ── Set Ratings: parse, apply, delete, tabs & panels ────────── */
 function getSetRatingsList(num, setIdx) {
@@ -862,10 +868,12 @@ function updateMyDbBadge() {
 
 /* ── My Rating Modal ─────────────────────────────────────────── */
 let _myRatingModal = null;
+let _ignoreScrollSyncUntil = 0;
 
 function closeMyRatingModal() {
   document.querySelectorAll('.myrating-modal').forEach(m => m.remove());
   _myRatingModal = null;
+  _ignoreScrollSyncUntil = Date.now() + 350;
 }
 
 function toggleCoveredClip(num) {
@@ -898,6 +906,8 @@ function toggleCoveredClip(num) {
 
 function showMyRatingModal(triggerEl, num, setIdx) {
   closeMyRatingModal();
+  _ignoreScrollSyncUntil = Date.now() + 700;
+  highlightActiveBroll(num);
 
   const existing = getMyRating(num, setIdx);
   const entry = (ST.prompts[num]||[])[setIdx];
@@ -944,7 +954,14 @@ function showMyRatingModal(triggerEl, num, setIdx) {
   document.body.appendChild(modal);
 
   const input = _el('myrating-input');
-  setTimeout(() => { input?.focus(); input?.select(); }, 50);
+  setTimeout(() => {
+    try {
+      input?.focus({ preventScroll: true });
+      input?.select();
+    } catch {
+      input?.focus();
+    }
+  }, 60);
 
   const doSave = () => {
     const val = input ? input.value.trim() : '';
@@ -2522,7 +2539,10 @@ function renderHeatmap() {
     }
     col.title = `#${b.num} · ${mainTitle} · ${realTitle}\n"${b.line.slice(0, 70)}"`;
 
-    col.addEventListener('click', () => {
+    col.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _ignoreScrollSyncUntil = Date.now() + 700;
+      highlightActiveBroll(b.num);
       _el(`card-${b.num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
 
@@ -2536,6 +2556,7 @@ function renderHeatmap() {
 
 /* ── Bi-directional Overview <-> Main Page Scroll Sync ──────── */
 let _lastActiveBrollNum = null;
+let _isUserTouchingOverview = false;
 let _isUserScrollingOverview = false;
 let _isUserScrollingPage = false;
 let _overviewScrollEndTimer = null;
@@ -2569,7 +2590,6 @@ function getActiveBrollNumInViewport() {
   let closestNum = null;
   let closestDist = Infinity;
 
-
   for (const b of ST.brolls) {
     const el = _el(`card-${b.num}`);
     if (!el) continue;
@@ -2585,7 +2605,7 @@ function getActiveBrollNumInViewport() {
 }
 
 function syncOverviewBarToScroll(smooth = true) {
-  if (!ST.overviewScroll || _isUserScrollingOverview) return;
+  if (!ST.overviewScroll || _isUserScrollingOverview || _isUserTouchingOverview || Date.now() < _ignoreScrollSyncUntil || _myRatingModal) return;
   const grid = _el('heatmap-grid');
   if (!grid) return;
 
@@ -2609,7 +2629,7 @@ function syncOverviewBarToScroll(smooth = true) {
 }
 
 function syncMainPageToOverviewScroll() {
-  if (!ST.overviewScroll || _isUserScrollingPage) return;
+  if (!ST.overviewScroll || !_isUserTouchingOverview || Date.now() < _ignoreScrollSyncUntil || _myRatingModal) return;
   const grid = _el('heatmap-grid');
   if (!grid || !ST.brolls || !ST.brolls.length) return;
 
@@ -2636,6 +2656,7 @@ function syncMainPageToOverviewScroll() {
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
+
 
 
 
@@ -3344,9 +3365,29 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   }, { passive: true });
 
+  // Track user touch/pointer interaction on overview bar
+  const hmGrid = _el('heatmap-grid');
+  if (hmGrid) {
+    const onTouchStart = () => {
+      _isUserTouchingOverview = true;
+      _isUserScrollingOverview = true;
+    };
+    const onTouchEnd = () => {
+      setTimeout(() => {
+        _isUserTouchingOverview = false;
+        _isUserScrollingOverview = false;
+      }, 350);
+    };
+    hmGrid.addEventListener('touchstart', onTouchStart, { passive: true });
+    hmGrid.addEventListener('touchend', onTouchEnd, { passive: true });
+    hmGrid.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    hmGrid.addEventListener('pointerdown', onTouchStart, { passive: true });
+    window.addEventListener('pointerup', onTouchEnd, { passive: true });
+  }
+
   // Horizontal overview scroll -> updates main page scroll and highlights
-  _el('heatmap-grid')?.addEventListener('scroll', () => {
-    if (_isUserScrollingPage || !ST.overviewScroll) return;
+  hmGrid?.addEventListener('scroll', () => {
+    if (_isUserScrollingPage || !ST.overviewScroll || !_isUserTouchingOverview) return;
     _isUserScrollingOverview = true;
     clearTimeout(_overviewScrollEndTimer);
     _overviewScrollEndTimer = setTimeout(() => { _isUserScrollingOverview = false; }, 220);
@@ -3359,6 +3400,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       });
     }
   }, { passive: true });
+
 
 
 
