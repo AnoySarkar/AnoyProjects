@@ -2199,8 +2199,8 @@ function updateCardPrompts(num) {
   if (!prompts.length) return;
 
   const prow = document.createElement('div'); prow.className = 'c-prompts'; prow.id = `cp-${num}`;
-  const lbl = document.createElement('span'); lbl.className = 'p-label'; lbl.textContent = '🎬'; prow.appendChild(lbl);
   prompts.forEach((entry, i) => prow.appendChild(buildPromptChip(num, i, entry)));
+
 
   mid.appendChild(prow);
 
@@ -2642,10 +2642,10 @@ function buildCard(b) {
   /* Prompt chips */
   if(prompts.length){
     const prow=document.createElement('div'); prow.className='c-prompts'; prow.id=`cp-${b.num}`;
-    const lbl=document.createElement('span'); lbl.className='p-label'; lbl.textContent='🎬'; prow.appendChild(lbl);
     prompts.forEach((entry,i)=>prow.appendChild(buildPromptChip(b.num,i,entry)));
     mid.appendChild(prow);
   }
+
 
   card.appendChild(mid);
 
