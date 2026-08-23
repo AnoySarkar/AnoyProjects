@@ -2850,12 +2850,22 @@ function getFilteredLines() {
   const min = (minVal !== undefined && minVal !== '') ? parseFloat(minVal) : 0;
   const max = (maxVal !== undefined && maxVal !== '') ? parseFloat(maxVal) : 8.9;
   const includeUnscored = _el('lc-include-unscored') ? _el('lc-include-unscored').checked : true;
+  const skipReal9 = _el('lc-skip-real-9') ? _el('lc-skip-real-9').checked : false;
   const target = LC_TARGET;
 
   const matches = [];
 
   for (const b of (ST.brolls || [])) {
     if (!b || !b.line) continue;
+
+    // If skipReal9 is active, check if this line already has Real Rating >= 9 or is marked as Done
+    if (skipReal9) {
+      const lr = getLineRealRating(b.num);
+      if (lr.isRated && lr.score >= 9) {
+        continue;
+      }
+    }
+
     let score = null;
     let isRated = false;
 
@@ -2886,6 +2896,7 @@ function getFilteredLines() {
 
   return matches;
 }
+
 
 function updateLineCopyPreview() {
   const ta = _el('lc-preview-textarea');
@@ -3185,9 +3196,11 @@ document.addEventListener('DOMContentLoaded',()=>{
   _el('lc-min-score')?.addEventListener('input', updateLineCopyPreview);
   _el('lc-max-score')?.addEventListener('input', updateLineCopyPreview);
   _el('lc-include-unscored')?.addEventListener('change', updateLineCopyPreview);
+  _el('lc-skip-real-9')?.addEventListener('change', updateLineCopyPreview);
   _el('lc-include-num')?.addEventListener('change', updateLineCopyPreview);
   _el('lc-line-gap')?.addEventListener('change', updateLineCopyPreview);
   _el('btn-copy-filtered-lines')?.addEventListener('click', copyFilteredLines);
+
 
 
   /* Set Ratings section */

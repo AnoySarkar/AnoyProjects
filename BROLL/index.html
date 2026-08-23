@@ -17,8 +17,9 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="style.css?v=20260823_3" />
+  <link rel="stylesheet" href="style.css?v=20260823_4" />
 </head>
+
 
 
 
@@ -269,6 +270,11 @@
             </label>
           </div>
           <div class="lc-ctrl-grp">
+            <label class="lc-checkbox-label" title="Skip/exclude any line if its Real Rating is 9+ or marked Done">
+              <input type="checkbox" id="lc-skip-real-9" checked /> Skip Real ≥ 9 / Done
+            </label>
+          </div>
+          <div class="lc-ctrl-grp">
             <label class="lc-checkbox-label">
               <input type="checkbox" id="lc-include-num" checked /> Number prefix (1 ...)
             </label>
@@ -280,6 +286,7 @@
           </div>
           <button class="hbtn primary" id="btn-copy-filtered-lines">📋 Copy Lines</button>
         </div>
+
 
         <div class="lc-preview-wrap">
           <div class="lc-preview-hdr">
@@ -426,9 +433,10 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-<script src="app.js?v=20260823_3"></script>
+<script src="app.js?v=20260823_4"></script>
 </body>
 </html>
+
 
 
 
