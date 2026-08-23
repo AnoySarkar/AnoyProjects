@@ -2528,7 +2528,116 @@ function renderHeatmap() {
 
     grid.appendChild(col);
   });
+
+  if (isScroll) {
+    setTimeout(() => syncOverviewBarToScroll(false), 50);
+  }
 }
+
+/* ── Bi-directional Overview <-> Main Page Scroll Sync ──────── */
+let _lastActiveBrollNum = null;
+let _isUserScrollingOverview = false;
+let _isUserScrollingPage = false;
+let _overviewScrollEndTimer = null;
+let _pageScrollEndTimer = null;
+let _overviewScrollTicking = false;
+let _gridScrollTicking = false;
+
+function highlightActiveBroll(num) {
+  if (num === null || num === undefined) return;
+  if (num === _lastActiveBrollNum) return;
+  _lastActiveBrollNum = num;
+
+  // Highlight overview cell
+  const grid = _el('heatmap-grid');
+  if (grid) {
+    grid.querySelectorAll('.hm-col.is-scrolled-active').forEach(el => el.classList.remove('is-scrolled-active'));
+    const cell = _el(`hm-col-${num}`);
+    if (cell) cell.classList.add('is-scrolled-active');
+  }
+
+  // Highlight card border
+  document.querySelectorAll('.broll-card.is-active-focused').forEach(el => el.classList.remove('is-active-focused'));
+  const card = _el(`card-${num}`);
+  if (card) card.classList.add('is-active-focused');
+}
+
+function getActiveBrollNumInViewport() {
+  if (!ST.brolls || !ST.brolls.length) return null;
+  // Exact vertical middle of the screen
+  const targetY = window.innerHeight * 0.5;
+  let closestNum = null;
+  let closestDist = Infinity;
+
+
+  for (const b of ST.brolls) {
+    const el = _el(`card-${b.num}`);
+    if (!el) continue;
+    const rect = el.getBoundingClientRect();
+    const cardCenter = rect.top + rect.height / 2;
+    const dist = Math.abs(cardCenter - targetY);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestNum = b.num;
+    }
+  }
+  return closestNum;
+}
+
+function syncOverviewBarToScroll(smooth = true) {
+  if (!ST.overviewScroll || _isUserScrollingOverview) return;
+  const grid = _el('heatmap-grid');
+  if (!grid) return;
+
+  const activeNum = getActiveBrollNumInViewport();
+  if (activeNum === null) return;
+
+  highlightActiveBroll(activeNum);
+
+  const cell = _el(`hm-col-${activeNum}`);
+  if (!cell) return;
+
+  const cellLeft = cell.offsetLeft;
+  const cellWidth = cell.offsetWidth;
+  const gridWidth = grid.clientWidth;
+  const targetScrollLeft = cellLeft - (gridWidth / 2) + (cellWidth / 2);
+
+  grid.scrollTo({
+    left: Math.max(0, targetScrollLeft),
+    behavior: smooth ? 'smooth' : 'auto'
+  });
+}
+
+function syncMainPageToOverviewScroll() {
+  if (!ST.overviewScroll || _isUserScrollingPage) return;
+  const grid = _el('heatmap-grid');
+  if (!grid || !ST.brolls || !ST.brolls.length) return;
+
+  const centerPoint = grid.scrollLeft + (grid.clientWidth / 2);
+  let closestNum = null;
+  let closestDist = Infinity;
+
+  for (const b of ST.brolls) {
+    const cell = _el(`hm-col-${b.num}`);
+    if (!cell) continue;
+    const cellCenter = cell.offsetLeft + (cell.offsetWidth / 2);
+    const dist = Math.abs(cellCenter - centerPoint);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestNum = b.num;
+    }
+  }
+
+  if (closestNum === null) return;
+  highlightActiveBroll(closestNum);
+
+  const card = _el(`card-${closestNum}`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+
 
 function updateHmCell(num) {
   const col = _el(`hm-col-${num}`);
@@ -3218,6 +3327,40 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 
   let rT; window.addEventListener('resize',()=>{clearTimeout(rT);rT=setTimeout(renderHeatmap,120);});
+
+  // Vertical page scroll -> updates overview bar and highlights
+  window.addEventListener('scroll', () => {
+    if (_isUserScrollingOverview) return;
+    _isUserScrollingPage = true;
+    clearTimeout(_pageScrollEndTimer);
+    _pageScrollEndTimer = setTimeout(() => { _isUserScrollingPage = false; }, 200);
+
+    if (!_overviewScrollTicking) {
+      _overviewScrollTicking = true;
+      requestAnimationFrame(() => {
+        syncOverviewBarToScroll(true);
+        _overviewScrollTicking = false;
+      });
+    }
+  }, { passive: true });
+
+  // Horizontal overview scroll -> updates main page scroll and highlights
+  _el('heatmap-grid')?.addEventListener('scroll', () => {
+    if (_isUserScrollingPage || !ST.overviewScroll) return;
+    _isUserScrollingOverview = true;
+    clearTimeout(_overviewScrollEndTimer);
+    _overviewScrollEndTimer = setTimeout(() => { _isUserScrollingOverview = false; }, 220);
+
+    if (!_gridScrollTicking) {
+      _gridScrollTicking = true;
+      requestAnimationFrame(() => {
+        syncMainPageToOverviewScroll();
+        _gridScrollTicking = false;
+      });
+    }
+  }, { passive: true });
+
+
 
   // Keyboard: Ctrl+Z, Ctrl+Y
   document.addEventListener('keydown',e=>{
