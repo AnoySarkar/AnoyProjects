@@ -211,19 +211,38 @@ button.lock-pill.unlocked {
   overflow: hidden;
 }
 
-/* Scrollable mode */
+/* Scrollable mode: height + bottom padding ensures scrollbar is placed underneath the bar */
 .hm-linked-grid.scrollable {
   overflow-x: auto;
   overflow-y: hidden;
+  height: auto;
+  min-height: 24px;
+  padding-bottom: 5px;
   scrollbar-width: thin;
+  scrollbar-color: var(--accent) rgba(255,255,255,0.04);
 }
-.hm-linked-grid.scrollable::-webkit-scrollbar { height: 3px }
-.hm-linked-grid.scrollable::-webkit-scrollbar-track { background: var(--bg-3); border-radius: 99px }
-.hm-linked-grid.scrollable::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 99px }
+.hm-linked-grid.scrollable::-webkit-scrollbar {
+  height: 4px;
+}
+.hm-linked-grid.scrollable::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.04);
+  border-radius: 99px;
+  margin: 0 4px;
+}
+.hm-linked-grid.scrollable::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 99px;
+}
+.hm-linked-grid.scrollable::-webkit-scrollbar-thumb:hover {
+  background: #a594ff;
+}
 .hm-linked-grid.scrollable .hm-col {
-  flex: 0 0 auto;
-  min-width: 14px;
+  flex: 0 0 18px;
+  min-width: 18px;
+  width: 18px;
+  height: 24px;
 }
+
 .hm-col {
   flex: 1 1 0;
   min-width: 0;
@@ -399,11 +418,24 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 }
 .p-chip:hover  { transform:translateY(-1px); box-shadow:0 3px 10px rgba(124,109,250,0.2) }
 .p-chip.copied {
-  border-color: rgba(34, 197, 94, 0.45) !important;
-  background: rgba(34, 197, 94, 0.12) !important;
+  border-color: #16a34a !important;
+  background: rgba(34, 197, 94, 0.22) !important;
   color: #86efac !important;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.25) !important;
 }
-.p-chip.copied .p-chip-label { color: #86efac !important }
+.p-chip.copied .p-chip-label { color: #86efac !important; font-weight: 800 }
+.p-chip-srating {
+  font-size: 8px;
+  font-weight: 800;
+  font-family: var(--mono);
+  line-height: 1;
+  padding: 1.5px 4px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  margin-top: 1px;
+  letter-spacing: -0.2px;
+  background: rgba(255,255,255,0.04);
+}
 .p-chip.is-used {
   background:var(--accent-dim); border-color:var(--accent); color:var(--accent);
   font-weight:800; box-shadow:0 0 10px rgba(124,109,250,0.35);
@@ -411,8 +443,9 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .p-chip-pin    { font-size:10px; line-height:1 }
 .p-chip-top    { display:flex; align-items:center; gap:3px; line-height:1 }
 .p-chip-num    { font-size:11px; font-weight:700; line-height:1 }
-.p-chip-ck     { font-size:9.5px; font-weight:900; color:#22c55e; line-height:1; display:inline-block }
 .p-chip-rating { font-size:7.5px; font-weight:800; font-family:var(--mono); line-height:1; letter-spacing:0 }
+
+
 
 
 /* ── Why popup ─────────────────────────────────────────────────── */

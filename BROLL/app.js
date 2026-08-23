@@ -1073,14 +1073,42 @@ function parseSetRatings(text) {
   const results = [];
   for (const line of text.split('\n')) {
     const l = line.trim(); if (!l) continue;
-    // Match: NUM : NUM : SCORE : why text
-    const m = l.match(/^(\d+)\s*:\s*(\d+)\s*:\s*([\d.]+)\s*:\s*(.*)/);
-    if (!m) continue;
-    const score = parseFloat(m[3]);
-    if (isNaN(score) || score < 0 || score > 10) continue;
-    let why = m[4].trim();
-    if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
-    results.push({ brollNum: parseInt(m[1]), setIdx: parseInt(m[2]) - 1, score, why });
+
+    // Format 1: 14S6: 9.5 (why) or 14S6 : 9.5 : why or 14S6 - 9.5 - why
+    let m = l.match(/^#?(\d+)\s*[Ss]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
+    if (m) {
+      const score = parseFloat(m[3]);
+      if (!isNaN(score) && score >= 0 && score <= 10) {
+        let why = (m[4] || '').trim();
+        if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
+        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        continue;
+      }
+    }
+
+    // Format 2: 1 : 6 : 9.5 : why or 1 : 6 - 9.5 - why or 1.6 : 9.5 : why
+    m = l.match(/^#?(\d+)\s*[:\.]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
+    if (m) {
+      const score = parseFloat(m[3]);
+      if (!isNaN(score) && score >= 0 && score <= 10) {
+        let why = (m[4] || '').trim();
+        if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
+        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        continue;
+      }
+    }
+
+    // Format 3: B-roll 1 Set 6: 9.5 (why) or BROLL 1 ALT 6: 9.5 (why)
+    m = l.match(/^(?:broll|b-roll|clip)?\s*#?(\d+)\s*(?:set|alt|prompt|s)?\s*#?(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/i);
+    if (m) {
+      const score = parseFloat(m[3]);
+      if (!isNaN(score) && score >= 0 && score <= 10) {
+        let why = (m[4] || '').trim();
+        if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
+        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        continue;
+      }
+    }
   }
   return results;
 }
@@ -1091,19 +1119,59 @@ function applySetRatings(text) {
   if (!ST.setRatings) ST.setRatings = {};
   if (!ST.ratingBatches) ST.ratingBatches = [];
 
+  const batchId = uid();
   const brollsInBatch = [];
-  parsed.forEach(({ brollNum, setIdx, score, why }) => {
-    if (!ST.setRatings[brollNum]) ST.setRatings[brollNum] = {};
-    const existing = getSetRatingsList(brollNum, setIdx);
-    existing.push({ score, why, date: Date.now() });
-    ST.setRatings[brollNum][setIdx] = existing;
-    if (!brollsInBatch.includes(brollNum)) brollsInBatch.push(brollNum);
-  });
-  brollsInBatch.sort((a, b) => a - b);
+  const ratingsByBroll = {};
 
+  parsed.forEach(item => {
+    if (!ratingsByBroll[item.brollNum]) ratingsByBroll[item.brollNum] = [];
+    ratingsByBroll[item.brollNum].push(item);
+  });
+
+  for (const [brollNumStr, items] of Object.entries(ratingsByBroll)) {
+    const brollNum = parseInt(brollNumStr);
+    if (!brollsInBatch.includes(brollNum)) brollsInBatch.push(brollNum);
+    if (!ST.setRatings[brollNum]) ST.setRatings[brollNum] = {};
+
+    const prompts = ST.prompts[brollNum] || [];
+    const totalPrompts = prompts.length;
+    const maxRawSet = Math.max(...items.map(x => x.rawSetNum));
+
+    // Intelligent offset for multi-batch ratings:
+    // If incoming ratings are numbered 1..6 (maxRawSet <= 6) and this B-roll has more than 6 prompts (e.g. 12 prompts):
+    let offset = 0;
+    if (maxRawSet <= 6 && totalPrompts > 6) {
+      // Find first prompt index range of size 6 that is unrated
+      for (let i = 0; i < totalPrompts; i += 6) {
+        const hasRating = getSetRatingsList(brollNum, i).length > 0;
+        if (!hasRating) {
+          offset = i;
+          break;
+        }
+      }
+      // If all ranges already had some rating, check the start index of the latest prompt batch
+      if (offset === 0 && totalPrompts > items.length) {
+        const lastBatchId = prompts[totalPrompts - 1]?.batchId;
+        const firstIdxOfLastBatch = prompts.findIndex(p => p.batchId === lastBatchId);
+        if (firstIdxOfLastBatch > 0) {
+          offset = firstIdxOfLastBatch;
+        }
+      }
+    }
+
+    items.forEach(item => {
+      let setIdx = (item.rawSetNum - 1) + offset;
+      item.setIdx = setIdx;
+
+      const existing = getSetRatingsList(brollNum, setIdx);
+      existing.push({ score: item.score, why: item.why, batchId, date: Date.now() });
+      ST.setRatings[brollNum][setIdx] = existing;
+    });
+  }
+
+  brollsInBatch.sort((a, b) => a - b);
   const minN = Math.min(...brollsInBatch), maxN = Math.max(...brollsInBatch);
   const tabLabel = minN === maxN ? `#${minN}` : `#${minN}–${maxN}`;
-  const batchId = uid();
 
   ST.ratingBatches.push({
     id: batchId,
@@ -1119,7 +1187,7 @@ function applySetRatings(text) {
   const ta = _el('srating-textarea');
   if (ta) ta.value = '';
 
-  save();
+  save(true);
   updateAllPromptChips();
   updateSratingHint();
   renderRatingTabs();
@@ -1127,12 +1195,6 @@ function applySetRatings(text) {
   toast(`⭐ Applied ${parsed.length} ratings for B-roll ${tabLabel}`);
 
   // --- Ratings notification popup ---
-  const ratingsByBroll = {};
-  parsed.forEach(({ brollNum, setIdx, score, why }) => {
-    if (!ratingsByBroll[brollNum]) ratingsByBroll[brollNum] = [];
-    ratingsByBroll[brollNum].push({ setIdx, score, why });
-  });
-
   const IDEAL_BROLLS = 5, IDEAL_SETS = 6, IDEAL_TOTAL = IDEAL_BROLLS * IDEAL_SETS;
   const brollNums = brollsInBatch;
 
@@ -1165,6 +1227,7 @@ function applySetRatings(text) {
     () => {} // OK just closes
   );
 }
+
 
 
 function deleteSetRating(num, setIdx, ratingItemIdx = null) {
@@ -1339,19 +1402,28 @@ function showDeleteRatingBatchModal(batchId) {
 
 function deleteRatingBatch(batchId, delRatings) {
   const b = (ST.ratingBatches || []).find(x => x.id === batchId);
-  if (delRatings && b) {
-    b.brolls.forEach(num => {
-      delete ST.setRatings[num];
-    });
+  if (delRatings && b && ST.setRatings) {
+    for (const [num, sets] of Object.entries(ST.setRatings)) {
+      if (!sets || typeof sets !== 'object') continue;
+      for (const [setIdx, list] of Object.entries(sets)) {
+        if (Array.isArray(list)) {
+          const filtered = list.filter(r => r.batchId !== batchId);
+          if (filtered.length) sets[setIdx] = filtered;
+          else delete sets[setIdx];
+        }
+      }
+      if (!Object.keys(sets).length) delete ST.setRatings[num];
+    }
     updateAllPromptChips();
   }
   ST.ratingBatches = (ST.ratingBatches || []).filter(x => x.id !== batchId);
   if (ST.activeRatingBatch === batchId) switchRatingTab('new');
-  save();
+  save(true);
   renderRatingTabs();
   updateSratingHint();
   toast(delRatings ? '🗑 Rating batch + ratings removed' : '🗑 Rating batch removed (ratings kept)');
 }
+
 
 /* ── Why Popup (shows all ratings & reasons) ─────────────────── */
 function showWhyPopup(e, num, setIdx) {
@@ -1743,35 +1815,35 @@ function deletePromptEntry(num, idx) {
 }
 
 /* ── Copy prompt ────────────────────────────────────────────── */
-function copyPrompt(num, idx, triggerEl, markCopied = true) {
+function copyPrompt(num, idx, triggerEl, toggle = true) {
   const entry = (ST.prompts[num]||[])[idx]; if (!entry) return;
   const text = getCopyText(entry.text, num, idx);
   const oldCopied = !!entry.copied;
+  const newCopied = toggle ? !oldCopied : true;
+
   const doFlash = () => {
-    if (markCopied && !oldCopied) {
-      const apply = (val) => {
-        const e = (ST.prompts[num]||[])[idx];
-        if (e) {
-          e.copied = val;
-          save(true);
-          refreshCopyState(num, idx);
-        }
-      };
-      record(
-        () => apply(oldCopied),
-        () => apply(true),
-        `Copy Set ${idx+1} for #${num}`
-      );
-      apply(true);
-      toast(`📋 Copied Set ${idx+1} for #${num}`);
-    } else if (markCopied) {
-      toast(`📋 Copied Set ${idx+1} for #${num}`);
-    }
+    const apply = (val) => {
+      const e = (ST.prompts[num]||[])[idx];
+      if (e) {
+        e.copied = val;
+        save(true);
+        refreshCopyState(num, idx);
+      }
+    };
+    record(
+      () => apply(oldCopied),
+      () => apply(newCopied),
+      newCopied ? `Copy Set ${idx+1} for #${num} (Green)` : `Unmark Set ${idx+1} for #${num}`
+    );
+    apply(newCopied);
+    toast(newCopied ? `📋 Copied Set ${idx+1} for #${num}` : `↺ Set ${idx+1} for #${num} unmarked`);
   };
+
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(doFlash).catch(() => fbCopy(text, doFlash));
   } else { fbCopy(text, doFlash); }
 }
+
 
 function fbCopy(text, cb) {
   const ta = document.createElement('textarea');
@@ -2016,26 +2088,13 @@ function buildPromptChip(num, i, entry) {
   chip.className = 'p-chip' + (isCopied ? ' copied' : '') + (isUsed ? ' is-used' : '');
   chip.id = `pc-${num}-${i}`;
 
-  // If set rating exists, apply the rating's border and background tint
-  if (rColor) {
-    chip.style.borderColor = rColor.border;
-    chip.style.backgroundColor = rColor.bg;
-  }
-
   // Label span
   const sp = document.createElement('span');
   sp.className = 'p-chip-label';
-  if (isCopied) {
-    const ck = document.createElement('span');
-    ck.className = 'p-chip-ck';
-    ck.textContent = '✔ ';
-    sp.appendChild(ck);
-  }
-  sp.appendChild(document.createTextNode(`Set ${i+1}`));
+  sp.textContent = `Set ${i+1}`;
   chip.appendChild(sp);
 
-
-  // AI Rating badge if exists
+  // AI Rating badge if exists (colors ONLY the number badge)
   if (summary) {
     const rb = document.createElement('span');
     rb.className = 'p-chip-srating';
@@ -2046,41 +2105,30 @@ function buildPromptChip(num, i, entry) {
       rb.textContent = `${summary.avgScore}`;
       rb.title = `Average: ${summary.avgScore} (${summary.count} AI ratings)`;
     }
-    rb.style.color = rColor ? rColor.text : 'var(--text-3)';
+    if (rColor) {
+      rb.style.color = rColor.text;
+      rb.style.borderColor = rColor.border;
+      rb.style.backgroundColor = rColor.bg;
+    } else {
+      rb.style.color = 'var(--text-3)';
+    }
     chip.appendChild(rb);
   }
 
   const titleLines = [
     `Set ${i+1} for #${num}` + (summary ? ` · Avg: ${summary.avgScore}` + (summary.count > 1 ? ` (${summary.count} ratings)` : '') : ''),
     '',
-    '• Click: Copy prompt to clipboard (always keeps checkmark)',
-    '• Shift+Click or Hold 1.5s: Toggle checkmark on/off',
+    '• Click: Copy prompt & toggle green on/off',
     '• Right-click: View all AI ratings & reasons'
   ];
   chip.title = titleLines.join('\n');
 
-  // Left-click / Tap: ALWAYS COPY and ensure ticked!
+  // Left-click / Tap: Copy & toggle green / ungreen
   chip.addEventListener('click', e => {
     e.stopPropagation();
-    if (e.shiftKey) {
-      const oldVal = !!entry.copied;
-      const newVal = !oldVal;
-      const apply = (val) => {
-        entry.copied = val;
-        save(true);
-        refreshCopyState(num, i);
-      };
-      record(
-        () => apply(oldVal),
-        () => apply(newVal),
-        newVal ? `Tick Set ${i+1} for #${num}` : `Untick Set ${i+1} for #${num}`
-      );
-      apply(newVal);
-      toast(newVal ? `✔ Ticked Set ${i+1} for #${num}` : `✕ Unticked Set ${i+1} for #${num}`);
-    } else {
-      copyPrompt(num, i, chip, true);
-    }
+    copyPrompt(num, i, chip, true);
   });
+
 
   // Right-click: View all ratings & reasons popup
   chip.addEventListener('contextmenu', e => {
@@ -2088,7 +2136,7 @@ function buildPromptChip(num, i, entry) {
     showWhyPopup(e, num, i);
   });
 
-  // Mobile 1.5-second hold feature (toggle untick)
+  // Mobile 1.5-second hold feature (toggle green state)
   let holdTimer = null;
   let touchStartX = 0, touchStartY = 0;
   let didHoldTrigger = false;
@@ -2111,13 +2159,14 @@ function buildPromptChip(num, i, entry) {
         record(
           () => apply(oldVal),
           () => apply(newVal),
-          newVal ? `Tick Set ${i+1} for #${num}` : `Untick Set ${i+1} for #${num}`
+          newVal ? `Mark Set ${i+1} for #${num}` : `Unmark Set ${i+1} for #${num}`
         );
         apply(newVal);
-        toast(newVal ? `✔ Ticked Set ${i+1} for #${num}` : `✕ Unticked Set ${i+1} for #${num}`);
+        toast(newVal ? `Set ${i+1} for #${num} marked green` : `Set ${i+1} for #${num} unmarked`);
       }, 1500);
     }
   }, { passive: true });
+
 
 
   chip.addEventListener('touchmove', e => {
