@@ -103,32 +103,60 @@ function setApplyingRemote(val) {
   }
 }
 
-function updateSyncUI(status, text) {
+let _lastSavedTime = Date.now();
+let _lastSavedStatus = 'synced';
+let _lastRemoteUpdatedAt = 0;
+
+function updateSavedTimeDisplay() {
   const dot = _el('sync-dot');
   const txt = _el('sync-text');
   const pill = _el('sync-status');
   if (!dot || !txt) return;
 
-  dot.className = 'sync-dot';
-  if (status === 'syncing') {
-    dot.classList.add('syncing');
-    txt.textContent = text || 'Syncing…';
+  if (_lastSavedStatus === 'syncing') {
+    dot.className = 'sync-dot syncing';
+    txt.textContent = 'Syncing…';
     if (pill) pill.title = 'Uploading changes to Firebase Cloud…';
-  } else if (status === 'offline') {
-    dot.classList.add('offline');
-    txt.textContent = text || 'Offline';
-    if (pill) pill.title = 'Offline or cloud disconnected. Local storage is active.';
-  } else {
-    txt.textContent = text || 'Cloud';
-    if (pill) pill.title = 'Firebase Cloud Sync: Connected & synced across devices.';
+    return;
   }
+  if (_lastSavedStatus === 'offline') {
+    dot.className = 'sync-dot offline';
+    txt.textContent = 'Offline';
+    if (pill) pill.title = 'Offline or cloud disconnected. Local storage is active.';
+    return;
+  }
+
+  dot.className = 'sync-dot';
+  if (_lastSavedTime) {
+    const diff = Math.max(0, Math.floor((Date.now() - _lastSavedTime) / 1000));
+    let timeStr = 'Saved just now';
+    if (diff >= 5 && diff < 60) timeStr = `Saved ${diff}s ago`;
+    else if (diff >= 60 && diff < 3600) timeStr = `Saved ${Math.floor(diff / 60)}m ago`;
+    else if (diff >= 3600) timeStr = `Saved ${Math.floor(diff / 3600)}h ago`;
+    txt.textContent = timeStr;
+    if (pill) pill.title = `Firebase Cloud Synced (${timeStr})\nClick to force sync`;
+  } else {
+    txt.textContent = 'Cloud';
+  }
+}
+
+// Live 1-second interval to update "Saved X sec ago" text
+setInterval(updateSavedTimeDisplay, 1000);
+
+function updateSyncUI(status, text) {
+  _lastSavedStatus = status;
+  if (status === 'synced') {
+    _lastSavedTime = Date.now();
+  }
+  updateSavedTimeDisplay();
 }
 
 function pushToFirebase(immediate = false) {
   if (!_fbRef || _isApplyingRemote) return;
 
   if (_fbSyncTimer) clearTimeout(_fbSyncTimer);
-  updateSyncUI('syncing', 'Syncing…');
+  _lastSavedStatus = 'syncing';
+  updateSavedTimeDisplay();
 
   const doPush = () => {
     try {
@@ -141,25 +169,31 @@ function pushToFirebase(immediate = false) {
         PROJECTS[ACTIVE_PID].script = savedScript;
       }
 
+      const now = Date.now();
       const payload = {
         active: ACTIVE_PID,
         projects: JSON.parse(JSON.stringify(PROJECTS)),
         globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
         lastUpdatedBy: CLIENT_ID,
-        updatedAt: Date.now()
+        updatedAt: now
       };
 
+      _lastRemoteUpdatedAt = now;
       _fbRef.set(payload)
         .then(() => {
-          updateSyncUI('synced', 'Cloud');
+          _lastSavedTime = Date.now();
+          _lastSavedStatus = 'synced';
+          updateSavedTimeDisplay();
         })
         .catch(err => {
           console.error('Firebase save error:', err);
-          updateSyncUI('offline', 'Sync Error');
+          _lastSavedStatus = 'offline';
+          updateSavedTimeDisplay();
         });
     } catch (err) {
       console.error('Firebase push preparation error:', err);
-      updateSyncUI('offline', 'Sync Error');
+      _lastSavedStatus = 'offline';
+      updateSavedTimeDisplay();
     }
   };
 
@@ -169,6 +203,7 @@ function pushToFirebase(immediate = false) {
     _fbSyncTimer = setTimeout(doPush, 100);
   }
 }
+
 
 function applyRemoteData(data) {
   if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
@@ -246,13 +281,15 @@ function applyRemoteData(data) {
     updateAllPromptChips();
     renderBatchTabs();
     renderBatchPanel();
-    renderLibraryView();
     updateLibBadge();
     renderRatingTabs();
     renderRatingPanel();
     updateSratingHint();
     renderMyDatabase();
-    updateSyncUI('synced', 'Cloud');
+    _lastRemoteUpdatedAt = data.updatedAt || Date.now();
+    _lastSavedTime = data.updatedAt || Date.now();
+    _lastSavedStatus = 'synced';
+    updateSavedTimeDisplay();
     toast('☁️ Synced from Cloud');
   } catch (err) {
     console.error('Error applying remote data:', err);
@@ -310,6 +347,24 @@ function initFirebaseSync() {
       applyRemoteData(data);
     });
 
+    // Multi-device: instantly re-sync when tab becomes visible or receives window focus
+    const checkFreshRemote = () => {
+      if (!_fbRef || _isApplyingRemote) return;
+      _fbRef.once('value').then(snap => {
+        const data = snap.val();
+        if (data && data.updatedAt && data.updatedAt > (_lastRemoteUpdatedAt || 0)) {
+          if (data.lastUpdatedBy !== CLIENT_ID) {
+            applyRemoteData(data);
+          }
+        }
+      }).catch(() => {});
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkFreshRemote();
+    });
+    window.addEventListener('focus', checkFreshRemote);
+
     // Click on sync status pill to manual force sync
     _el('sync-status')?.addEventListener('click', () => {
       toast('🔄 Syncing with Cloud…');
@@ -321,6 +376,7 @@ function initFirebaseSync() {
     updateSyncUI('offline', 'Local Only');
   }
 }
+
 
 /* ── Global Prefix / Suffix (shared across all scripts) ─────── */
 const GLOBAL_CSET_KEY = 'br_global_cset';
@@ -1979,19 +2035,27 @@ function renderBatchTabs() {
   bar.innerHTML = '';
 
   const newTab = document.createElement('button');
+  newTab.type = 'button';
   newTab.className = 'batch-tab' + (ST.activeBatch === 'new' ? ' active' : '');
   newTab.innerHTML = '<span>＋ New Import</span>';
-  newTab.addEventListener('click', () => switchBatchTab('new'));
+  newTab.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchBatchTab('new');
+  });
   bar.appendChild(newTab);
 
   [...ST.batches].reverse().forEach(b => {
     const tab = document.createElement('button');
+    tab.type = 'button';
     tab.className = 'batch-tab' + (ST.activeBatch === b.id ? ' active' : '');
     const lbl = document.createElement('span'); lbl.className = 'btab-label'; lbl.textContent = b.label; tab.appendChild(lbl);
     const del = document.createElement('span'); del.className = 'btab-del'; del.textContent = '×'; del.title = 'Delete batch';
-    del.addEventListener('click', e => { e.stopPropagation(); showDeleteBatchModal(b.id); });
+    del.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); showDeleteBatchModal(b.id); });
     tab.appendChild(del);
-    tab.addEventListener('click', () => switchBatchTab(b.id));
+    tab.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchBatchTab(b.id);
+    });
     bar.appendChild(tab);
   });
 }
@@ -1999,16 +2063,14 @@ function renderBatchTabs() {
 function switchBatchTab(batchId) {
   if (ST.activeBatch === batchId && batchId !== 'new') {
     ST.activeBatch = 'new';
-    toast('👁️ Showing all B-rolls & prompt sets');
   } else {
     ST.activeBatch = batchId;
-    const b = ST.batches.find(x => x.id === batchId);
-    if (b) toast(`👁️ Filtered to Batch ${b.label}`);
   }
   renderBatchTabs();
   renderBatchPanel();
-  renderCards();
 }
+
+
 
 
 function renderBatchPanel() {
@@ -2073,78 +2135,11 @@ function updateLibBadge() {
 
 /* ── Library view ───────────────────────────────────────────── */
 function renderLibraryView() {
-  const view = _el('library-view'); if (!view) return;
-  const nums = Object.keys(ST.prompts).map(Number).filter(n=>(ST.prompts[n]||[]).length>0).sort((a,b)=>a-b);
-  if (!nums.length) {
-    view.innerHTML = `<div class="lib-empty"><span style="font-size:28px">📭</span><p>No prompts yet — import a batch above.</p></div>`;
-    return;
-  }
-  const groups = {};
-  nums.forEach(n => {
-    const base = Math.floor((n-1)/10)*10+1, key = `${base}–${base+9}`;
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(n);
-  });
-  view.innerHTML = '';
-  for (const [range, gNums] of Object.entries(groups)) {
-    const grp = document.createElement('div'); grp.className = 'lib-group';
-    const hdr = document.createElement('div'); hdr.className = 'lib-group-hdr';
-    const cnt = gNums.reduce((s,n) => s+(ST.prompts[n]?.length||0), 0);
-    hdr.innerHTML = `<span class="lib-range">B-ROLL ${range}</span><span class="lib-range-count">${cnt} prompts</span>`;
-    grp.appendChild(hdr);
-    gNums.forEach(num => {
-      const row = document.createElement('div'); row.className = 'lib-row'; row.id = `lr-${num}`;
-      const numLbl = document.createElement('span'); numLbl.className = 'lib-num'; numLbl.textContent = `#${num}`;
-      numLbl.addEventListener('click', () => _el(`card-${num}`)?.scrollIntoView({ behavior:'smooth', block:'center' }));
-      row.appendChild(numLbl);
-      const col = document.createElement('div'); col.className = 'lib-chips-col'; col.id = `lc-${num}`;
-      (ST.prompts[num]||[]).forEach((entry, i) => col.appendChild(buildLibChip(num, i, entry)));
-      row.appendChild(col); grp.appendChild(row);
-    });
-    view.appendChild(grp);
-  }
+  const view = _el('library-view');
+  if (view) view.innerHTML = '';
+  updateLibBadge();
 }
 
-function buildLibChip(num, i, entry) {
-  const used = ST.usedSets[num] === i;
-  const chip = document.createElement('div');
-  chip.className = 'lib-chip' + (entry.copied ? ' copied' : '') + (used ? ' is-used' : '');
-  chip.id = `lcp-${num}-${i}`;
-
-  const left = document.createElement('div'); left.className = 'lib-chip-left';
-
-  const numB = document.createElement('span'); numB.className = 'lib-chip-num'; numB.textContent = i+1;
-  left.appendChild(numB);
-  if (entry.copied) { const ck = document.createElement('span'); ck.className = 'lib-chip-check'; ck.textContent = '✓'; left.appendChild(ck); }
-  const pin = document.createElement('span');
-  pin.className = 'lib-chip-pin'; pin.textContent = '📌'; pin.title = 'Marked as used for rating';
-  pin.style.display = used ? '' : 'none';
-  left.appendChild(pin);
-  if (entry.batchId) {
-    const bIdx = ST.batches.findIndex(b => b.id === entry.batchId);
-    if (bIdx !== -1) {
-      const bb = document.createElement('span'); bb.className = 'lib-chip-batch';
-      bb.textContent = `B${bIdx+1}`; bb.title = ST.batches[bIdx].label; left.appendChild(bb);
-    }
-  }
-  chip.appendChild(left);
-
-  const preview = document.createElement('span'); preview.className = 'lib-chip-preview'; preview.textContent = entry.text.slice(0,100)+(entry.text.length>100?'…':'');
-  chip.appendChild(preview);
-
-  const actions = document.createElement('div'); actions.className = 'lib-chip-actions';
-  const copyBtn = document.createElement('button'); copyBtn.className = 'lca-btn copy'; copyBtn.textContent = '📋'; copyBtn.title = 'Copy (with prefix/suffix)';
-  copyBtn.addEventListener('click', e => { e.stopPropagation(); copyPrompt(num, i, copyBtn); });
-  const useBtn = document.createElement('button'); useBtn.className = 'lca-btn use' + (used?' is-used':''); useBtn.textContent = '📌'; useBtn.title = used ? 'Unmark as used' : 'Mark as set used for this rating';
-  useBtn.addEventListener('click', e => { e.stopPropagation(); setUsedSet(num, i); renderLibraryView(); });
-  const delBtn = document.createElement('button'); delBtn.className = 'lca-btn del'; delBtn.textContent = '✕'; delBtn.title = 'Delete this prompt';
-  delBtn.addEventListener('click', e => { e.stopPropagation(); deletePromptEntry(num, i); });
-  actions.appendChild(copyBtn); actions.appendChild(useBtn); actions.appendChild(delBtn);
-  chip.appendChild(actions);
-
-  preview.addEventListener('click', () => copyPrompt(num, i, chip));
-  return chip;
-}
 
 
 /* ── Build single prompt chip (Card & Library) ──────────────── */
@@ -2324,13 +2319,7 @@ function buildPromptChipsElement(num, prompts) {
     batchMap.get(bId).push({ entry, i });
   });
 
-  let hasVisible = false;
   batchMap.forEach((items, bId) => {
-    // If filtered to a specific batch tab, only render sets for that batch
-    if (ST.activeBatch && ST.activeBatch !== 'new' && bId !== ST.activeBatch) {
-      return;
-    }
-
     const groupEl = document.createElement('div');
     groupEl.className = 'p-batch-group';
     groupEl.dataset.batchId = bId;
@@ -2340,11 +2329,11 @@ function buildPromptChipsElement(num, prompts) {
     });
 
     prow.appendChild(groupEl);
-    hasVisible = true;
   });
 
-  return hasVisible ? prow : null;
+  return prow;
 }
+
 
 function updateCardPrompts(num) {
   const card = _el(`card-${num}`); if (!card) return;
@@ -2420,14 +2409,9 @@ function getLineRealRating(num) {
 
 /* ── Filter & Sort (Main Rating vs Real Rating) ─────────────── */
 function passes(b) {
-  // If filtered to a specific batch tab from Library:
-  if (ST.activeBatch && ST.activeBatch !== 'new') {
-    const hasBatchPrompts = (ST.prompts[b.num] || []).some(p => p.batchId === ST.activeBatch);
-    if (!hasBatchPrompts) return false;
-  }
-
   const target = ST.filterTarget || 'main';
   const f = ST.filter;
+
 
 
   if (target === 'main') {
@@ -2830,13 +2814,30 @@ function renderFilterCount() {
 /* ── Cards ──────────────────────────────────────────────────── */
 function renderCards(animate=false) {
   const box=_el('cards-container'), noRes=_el('no-results'), empty=_el('empty-state'), fbar=_el('filter-bar');
-  if(!ST.brolls.length){box.innerHTML='';empty.classList.remove('hidden');noRes.style.display='none';fbar.classList.add('hidden');return;}
+  if(!ST.brolls.length){
+    box.innerHTML='';empty.classList.remove('hidden');noRes.style.display='none';fbar.classList.add('hidden');
+    box.style.minHeight='';
+    return;
+  }
   empty.classList.add('hidden');fbar.classList.remove('hidden');
   const list=sortedList(ST.brolls.filter(passes)); renderFilterCount();
-  if(!list.length){box.innerHTML='';noRes.style.display='block';return;}
+
+  const curHeight = box.offsetHeight;
+  if (curHeight > 0) box.style.minHeight = curHeight + 'px';
+
+  if(!list.length){
+    box.innerHTML='';noRes.style.display='block';
+    requestAnimationFrame(() => { box.style.minHeight = ''; });
+    return;
+  }
   noRes.style.display='none'; box.innerHTML='';
   list.forEach((b,i)=>{const card=buildCard(b);if(animate){card.style.animationDelay=`${Math.min(i*18,300)}ms`;card.classList.add('card-enter');}box.appendChild(card);});
+
+  requestAnimationFrame(() => {
+    box.style.minHeight = '';
+  });
 }
+
 
 function buildCard(b) {
   const score=ST.scores[b.num]??null, col=getC(score), prompts=ST.prompts[b.num]||[];
