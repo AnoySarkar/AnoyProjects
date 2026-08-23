@@ -1742,7 +1742,7 @@ function parsePromptBatch(text) {
     const numM = sec.match(/^BROLL\s+(\d+)\s*:/i); if (!numM) continue;
     const num = parseInt(numM[1]);
     const vpIdx = sec.search(/VIDEO\s+PROMPT\s*:/i); if (vpIdx === -1) continue;
-    const chunks = sec.slice(vpIdx).split(/ALT\s+\d+\s*:/i).slice(1);
+    const chunks = sec.slice(vpIdx).split(/(?:ALT|SET)\s+\d+\s*:/i).slice(1);
     if (!result[num]) result[num] = [];
     for (const c of chunks) { const t = c.trim(); if (t) result[num].push(t); }
   }
@@ -1755,23 +1755,48 @@ function importPrompts(text) {
   const parsed = parsePromptBatch(text);
   const keys   = Object.keys(parsed);
   if (!keys.length) { toast('⚠️ No valid BROLL blocks found'); return; }
+
   let total = 0;
   const batchId = uid();
-  for (const [ns, alts] of Object.entries(parsed)) {
-    const num = parseInt(ns);
+  const rawBlocks = [];
+  const brollNums = keys.map(Number).sort((a, b) => a - b);
+
+  for (const num of brollNums) {
+    const alts = parsed[String(num)] || [];
     if (!ST.prompts[num]) ST.prompts[num] = [];
-    for (const t of alts) { ST.prompts[num].push({ text: t, batchId, copied: false }); total++; }
+    const startSet = ST.prompts[num].length + 1;
+
+    const blockLines = [`BROLL ${num}:`, 'VIDEO PROMPT:'];
+
+    alts.forEach((t, i) => {
+      const setNo = startSet + i;
+      ST.prompts[num].push({ text: t, batchId, copied: false });
+      total++;
+      blockLines.push(`SET ${setNo}: ${t}`);
+    });
+
+    rawBlocks.push(blockLines.join('\n'));
   }
-  const minN = Math.min(...keys.map(Number)), maxN = Math.max(...keys.map(Number));
-  const tabLabel = minN===maxN ? `#${minN}` : `#${minN}–${maxN}`;
-  ST.batches.push({ id:batchId, label:tabLabel, date:Date.now(), raw:text, brollCount:keys.length, promptCount:total });
+
+  const formattedRaw = rawBlocks.join('\n\n');
+  const minN = Math.min(...brollNums), maxN = Math.max(...brollNums);
+  const tabLabel = minN === maxN ? `#${minN}` : `#${minN}–${maxN}`;
+
+  ST.batches.push({
+    id: batchId,
+    label: tabLabel,
+    date: Date.now(),
+    raw: formattedRaw,
+    brollCount: brollNums.length,
+    promptCount: total
+  });
 
   // Stay on 'new' input tab and clear input textarea ready for next import
   ST.activeBatch = 'new';
   const ta = _el('prompt-textarea');
   if (ta) ta.value = '';
 
-  save();
+  save(true);
   renderBatchTabs();
   renderBatchPanel();
   updateAllPromptChips();
@@ -1780,14 +1805,13 @@ function importPrompts(text) {
 
   // --- Import notification popup ---
   const IDEAL_BROLLS = 5, IDEAL_SETS = 6, IDEAL_TOTAL = IDEAL_BROLLS * IDEAL_SETS;
-  const brollNums = keys.map(Number).sort((a,b)=>a-b);
   let breakdown = brollNums.map(num => {
-    const setCount = parsed[String(num)].length;
+    const setCount = (parsed[String(num)] || []).length;
     return `<tr><td style="padding:2px 10px 2px 0">B-roll #${num}</td><td>${setCount} set${setCount!==1?'s':''}</td></tr>`;
   }).join('');
 
   let matchNote;
-  if (total === IDEAL_TOTAL && keys.length === IDEAL_BROLLS) {
+  if (total === IDEAL_TOTAL && brollNums.length === IDEAL_BROLLS) {
     matchNote = `<p style="color:#4ade80;margin-top:8px">✅ Perfect — ${IDEAL_BROLLS} B-rolls × ${IDEAL_SETS} sets = ${IDEAL_TOTAL} prompts</p>`;
   } else {
     const diff = total - IDEAL_TOTAL;
@@ -1798,13 +1822,14 @@ function importPrompts(text) {
   showModal(
     `📥 Import Summary — ${tabLabel}`,
     `<div style="font-size:13px;line-height:1.5">
-      <p style="margin-bottom:6px"><strong>${total}</strong> prompt${total!==1?'s':''} imported across <strong>${keys.length}</strong> B-roll${keys.length!==1?'s':''}</p>
+      <p style="margin-bottom:6px"><strong>${total}</strong> prompt${total!==1?'s':''} imported across <strong>${brollNums.length}</strong> B-roll${brollNums.length!==1?'s':''}</p>
       <table style="border-collapse:collapse;margin-top:4px">${breakdown}</table>
       ${matchNote}
     </div>`,
     () => {} // OK just closes
   );
 }
+
 
 
 
@@ -2446,6 +2471,11 @@ function toggleOverviewScrollMode() {
   try { localStorage.setItem('br_overview_scroll', ST.overviewScroll ? 'true' : 'false'); } catch {}
   updateOverviewModeUI();
   renderHeatmap();
+  if (!ST.overviewScroll) {
+    highlightActiveBroll(null);
+  } else {
+    syncOverviewBarToScroll(false);
+  }
   toast(ST.overviewScroll ? '↔️ Overview: Scrollable View' : '🔍 Overview: Compressed Full View');
 }
 
@@ -2468,65 +2498,46 @@ function renderHeatmap() {
   if (!grid) return;
   grid.innerHTML = '';
 
-  updateOverviewModeUI();
-
-  if (!ST.brolls.length) {
-    grid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>';
-    return;
-  }
-
-  const N = ST.brolls.length;
   const isScroll = !!ST.overviewScroll;
-  const W = grid.clientWidth || (window.innerWidth - 28);
-  const cw = isScroll ? 18 : (W - (N - 1) * 1.5) / N;
-  const showNum = isScroll || cw >= 13;
-  const fs = isScroll ? 8.5 : (cw >= 22 ? 9.5 : cw >= 13 ? 7.5 : 0);
 
   ST.brolls.forEach(b => {
-    const mainScore = ST.scores[b.num] ?? null;
-    const mainCol = getC(mainScore);
-    const rData = getRealRatingOverviewData(b.num);
-    const rCol = rData ? (rData.isCovered ? getC(9) : getMyRatingColor(rData.score)) : getC(null);
-
     const col = document.createElement('div');
-    col.className = 'hm-col';
+    col.className = 'hm-col' + (isScroll ? ' is-scroll' : '');
     col.id = `hm-col-${b.num}`;
-    if (isScroll) {
-      col.style.width = '18px';
-      col.style.flex = '0 0 18px';
-    }
 
-    // Top tier (Main)
+    // Top tier: Main Rating
     const topTier = document.createElement('div');
-    topTier.className = 'hm-col-tier top';
+    topTier.className = 'hm-tier hm-tier-top';
     topTier.id = `hm-top-${b.num}`;
-    topTier.style.background = mainCol.bg;
+    const mainScore = ST.scores[b.num] ?? null;
+    const topC = getC(mainScore);
+    topTier.style.background = topC.bg;
+    topTier.style.borderColor = topC.border;
+    topTier.textContent = b.num;
 
-
-    // Bottom tier (Real)
+    // Bottom tier: Real Rating
     const botTier = document.createElement('div');
-    botTier.className = 'hm-col-tier bottom';
+    botTier.className = 'hm-tier hm-tier-bot';
     botTier.id = `hm-bot-${b.num}`;
-    let botBg = rCol ? rCol.bg : '#151525';
-    botTier.style.background = botBg;
-    if (rData && rData.score === 0 && !rData.isCovered) {
-      botTier.style.boxShadow = 'inset 0 0 4px #9333ea';
+    const rData = getBestRealRatingData(b.num);
+    if (rData) {
+      const botC = getMyRatingColor(rData.score);
+      if (botC) {
+        botTier.style.background = botC.bg;
+        botTier.style.borderColor = botC.border;
+      }
+      botTier.textContent = rData.score;
+    } else {
+      const nullC = getC(null);
+      botTier.style.background = nullC.bg;
+      botTier.style.borderColor = nullC.border;
+      botTier.textContent = '—';
     }
 
     col.appendChild(topTier);
     col.appendChild(botTier);
 
-    // Number overlay
-    if (showNum && fs > 0) {
-      const numSpan = document.createElement('span');
-      numSpan.className = 'hm-col-num';
-      numSpan.style.fontSize = fs + 'px';
-      numSpan.textContent = b.num;
-      col.appendChild(numSpan);
-    }
-
-    // Tooltip
-    const mainTitle = mainScore !== null ? `Main: ${mainScore}/10` : 'Main: unscored';
+    const mainTitle = mainScore !== null ? `Main: ${mainScore}/10` : 'Main: unrated';
     let realTitle = 'Real: unrated';
     if (rData) {
       if (rData.isCovered) {
@@ -2542,7 +2553,7 @@ function renderHeatmap() {
     col.addEventListener('click', (e) => {
       e.stopPropagation();
       _ignoreScrollSyncUntil = Date.now() + 700;
-      highlightActiveBroll(b.num);
+      if (ST.overviewScroll) highlightActiveBroll(b.num);
       _el(`card-${b.num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
 
@@ -2551,10 +2562,12 @@ function renderHeatmap() {
 
   if (isScroll) {
     setTimeout(() => syncOverviewBarToScroll(false), 50);
+  } else {
+    highlightActiveBroll(null);
   }
 }
 
-/* ── Bi-directional Overview <-> Main Page Scroll Sync ──────── */
+/* ── Overview <-> Main Page Scroll Sync ─────────────────────── */
 let _lastActiveBrollNum = null;
 let _isUserTouchingOverview = false;
 let _isUserScrollingOverview = false;
@@ -2565,7 +2578,21 @@ let _overviewScrollTicking = false;
 let _gridScrollTicking = false;
 
 function highlightActiveBroll(num) {
-  if (num === null || num === undefined) return;
+  if (!ST.overviewScroll) {
+    // When overview bar is in full mode, highlighting stays OFF
+    document.querySelectorAll('.hm-col.is-scrolled-active').forEach(el => el.classList.remove('is-scrolled-active'));
+    document.querySelectorAll('.broll-card.is-active-focused').forEach(el => el.classList.remove('is-active-focused'));
+    _lastActiveBrollNum = null;
+    return;
+  }
+
+  if (num === null || num === undefined) {
+    document.querySelectorAll('.hm-col.is-scrolled-active').forEach(el => el.classList.remove('is-scrolled-active'));
+    document.querySelectorAll('.broll-card.is-active-focused').forEach(el => el.classList.remove('is-active-focused'));
+    _lastActiveBrollNum = null;
+    return;
+  }
+
   if (num === _lastActiveBrollNum) return;
   _lastActiveBrollNum = num;
 
@@ -2605,7 +2632,7 @@ function getActiveBrollNumInViewport() {
 }
 
 function syncOverviewBarToScroll(smooth = true) {
-  if (!ST.overviewScroll || _isUserScrollingOverview || _isUserTouchingOverview || Date.now() < _ignoreScrollSyncUntil || _myRatingModal) return;
+  if (!ST.overviewScroll || Date.now() < _ignoreScrollSyncUntil || _myRatingModal) return;
   const grid = _el('heatmap-grid');
   if (!grid) return;
 
@@ -2628,34 +2655,6 @@ function syncOverviewBarToScroll(smooth = true) {
   });
 }
 
-function syncMainPageToOverviewScroll() {
-  if (!ST.overviewScroll || !_isUserTouchingOverview || Date.now() < _ignoreScrollSyncUntil || _myRatingModal) return;
-  const grid = _el('heatmap-grid');
-  if (!grid || !ST.brolls || !ST.brolls.length) return;
-
-  const centerPoint = grid.scrollLeft + (grid.clientWidth / 2);
-  let closestNum = null;
-  let closestDist = Infinity;
-
-  for (const b of ST.brolls) {
-    const cell = _el(`hm-col-${b.num}`);
-    if (!cell) continue;
-    const cellCenter = cell.offsetLeft + (cell.offsetWidth / 2);
-    const dist = Math.abs(cellCenter - centerPoint);
-    if (dist < closestDist) {
-      closestDist = dist;
-      closestNum = b.num;
-    }
-  }
-
-  if (closestNum === null) return;
-  highlightActiveBroll(closestNum);
-
-  const card = _el(`card-${closestNum}`);
-  if (card) {
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-}
 
 
 
@@ -3349,13 +3348,9 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   let rT; window.addEventListener('resize',()=>{clearTimeout(rT);rT=setTimeout(renderHeatmap,120);});
 
-  // Vertical page scroll -> updates overview bar and highlights
+  // Vertical page scroll -> updates overview bar and highlights in scroll mode
   window.addEventListener('scroll', () => {
-    if (_isUserScrollingOverview) return;
-    _isUserScrollingPage = true;
-    clearTimeout(_pageScrollEndTimer);
-    _pageScrollEndTimer = setTimeout(() => { _isUserScrollingPage = false; }, 200);
-
+    if (!ST.overviewScroll) return;
     if (!_overviewScrollTicking) {
       _overviewScrollTicking = true;
       requestAnimationFrame(() => {
@@ -3365,41 +3360,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
   }, { passive: true });
 
-  // Track user touch/pointer interaction on overview bar
-  const hmGrid = _el('heatmap-grid');
-  if (hmGrid) {
-    const onTouchStart = () => {
-      _isUserTouchingOverview = true;
-      _isUserScrollingOverview = true;
-    };
-    const onTouchEnd = () => {
-      setTimeout(() => {
-        _isUserTouchingOverview = false;
-        _isUserScrollingOverview = false;
-      }, 350);
-    };
-    hmGrid.addEventListener('touchstart', onTouchStart, { passive: true });
-    hmGrid.addEventListener('touchend', onTouchEnd, { passive: true });
-    hmGrid.addEventListener('touchcancel', onTouchEnd, { passive: true });
-    hmGrid.addEventListener('pointerdown', onTouchStart, { passive: true });
-    window.addEventListener('pointerup', onTouchEnd, { passive: true });
-  }
-
-  // Horizontal overview scroll -> updates main page scroll and highlights
-  hmGrid?.addEventListener('scroll', () => {
-    if (_isUserScrollingPage || !ST.overviewScroll || !_isUserTouchingOverview) return;
-    _isUserScrollingOverview = true;
-    clearTimeout(_overviewScrollEndTimer);
-    _overviewScrollEndTimer = setTimeout(() => { _isUserScrollingOverview = false; }, 220);
-
-    if (!_gridScrollTicking) {
-      _gridScrollTicking = true;
-      requestAnimationFrame(() => {
-        syncMainPageToOverviewScroll();
-        _gridScrollTicking = false;
-      });
-    }
-  }, { passive: true });
 
 
 
