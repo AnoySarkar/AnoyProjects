@@ -2498,46 +2498,64 @@ function renderHeatmap() {
   if (!grid) return;
   grid.innerHTML = '';
 
+  updateOverviewModeUI();
+
+  if (!ST.brolls.length) {
+    grid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>';
+    return;
+  }
+
+  const N = ST.brolls.length;
   const isScroll = !!ST.overviewScroll;
+  const W = grid.clientWidth || (window.innerWidth - 28);
+  const cw = isScroll ? 18 : (W - (N - 1) * 1.5) / N;
+  const showNum = isScroll || cw >= 13;
+  const fs = isScroll ? 8.5 : (cw >= 22 ? 9.5 : cw >= 13 ? 7.5 : 0);
 
   ST.brolls.forEach(b => {
-    const col = document.createElement('div');
-    col.className = 'hm-col' + (isScroll ? ' is-scroll' : '');
-    col.id = `hm-col-${b.num}`;
-
-    // Top tier: Main Rating
-    const topTier = document.createElement('div');
-    topTier.className = 'hm-tier hm-tier-top';
-    topTier.id = `hm-top-${b.num}`;
     const mainScore = ST.scores[b.num] ?? null;
-    const topC = getC(mainScore);
-    topTier.style.background = topC.bg;
-    topTier.style.borderColor = topC.border;
-    topTier.textContent = b.num;
+    const mainCol = getC(mainScore);
+    const rData = getRealRatingOverviewData(b.num);
+    const rCol = rData ? (rData.isCovered ? getC(9) : getMyRatingColor(rData.score)) : getC(null);
 
-    // Bottom tier: Real Rating
+    const col = document.createElement('div');
+    col.className = 'hm-col';
+    col.id = `hm-col-${b.num}`;
+    if (isScroll) {
+      col.style.width = '18px';
+      col.style.flex = '0 0 18px';
+    }
+
+    // Top tier (Main)
+    const topTier = document.createElement('div');
+    topTier.className = 'hm-col-tier top';
+    topTier.id = `hm-top-${b.num}`;
+    topTier.style.background = mainCol.bg;
+
+    // Bottom tier (Real)
     const botTier = document.createElement('div');
-    botTier.className = 'hm-tier hm-tier-bot';
+    botTier.className = 'hm-col-tier bottom';
     botTier.id = `hm-bot-${b.num}`;
-    const rData = getBestRealRatingData(b.num);
-    if (rData) {
-      const botC = getMyRatingColor(rData.score);
-      if (botC) {
-        botTier.style.background = botC.bg;
-        botTier.style.borderColor = botC.border;
-      }
-      botTier.textContent = rData.score;
-    } else {
-      const nullC = getC(null);
-      botTier.style.background = nullC.bg;
-      botTier.style.borderColor = nullC.border;
-      botTier.textContent = '—';
+    let botBg = rCol ? rCol.bg : '#151525';
+    botTier.style.background = botBg;
+    if (rData && rData.score === 0 && !rData.isCovered) {
+      botTier.style.boxShadow = 'inset 0 0 4px #9333ea';
     }
 
     col.appendChild(topTier);
     col.appendChild(botTier);
 
-    const mainTitle = mainScore !== null ? `Main: ${mainScore}/10` : 'Main: unrated';
+    // Number overlay
+    if (showNum && fs > 0) {
+      const numSpan = document.createElement('span');
+      numSpan.className = 'hm-col-num';
+      numSpan.style.fontSize = fs + 'px';
+      numSpan.textContent = b.num;
+      col.appendChild(numSpan);
+    }
+
+    // Tooltip
+    const mainTitle = mainScore !== null ? `Main: ${mainScore}/10` : 'Main: unscored';
     let realTitle = 'Real: unrated';
     if (rData) {
       if (rData.isCovered) {
@@ -2566,6 +2584,7 @@ function renderHeatmap() {
     highlightActiveBroll(null);
   }
 }
+
 
 /* ── Overview <-> Main Page Scroll Sync ─────────────────────── */
 let _lastActiveBrollNum = null;
@@ -3231,12 +3250,13 @@ function importJSON(file){
       if (d.suffix !== undefined) ST.suffix = d.suffix;
       if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
       if (d.script) loadScript(d.script, true);
-      save();
-      renderHeatmap(); renderStats();
+      save(true);
+      renderHeatmap(); renderStats(); renderCards(true);
       renderLibraryView(); renderBatchTabs(); updateLibBadge(); syncCsetUI();
       renderRatingTabs(); renderRatingPanel(); updateSratingHint(); updateAllPromptChips();
       renderMyDatabase();
       toast('📤 Imported');
+
 
     } catch(err) { console.error('Import error:', err); toast('❌ Invalid file'); }
   };
