@@ -66,7 +66,9 @@ const ST = {
   inputOpen:         true,
   libOpen:           false,
   csetOpen:          false,
+  overviewScroll:    false, // false = auto-compressed full view, true = horizontal scrollable
 };
+
 
 
 
@@ -756,30 +758,70 @@ function getMyRating(num, setIdx) {
 }
 
 function saveMyRating(num, setIdx, score, comment) {
-  if (!ST.myRatings) ST.myRatings = {};
-  if (!ST.myRatings[num]) ST.myRatings[num] = {};
-  ST.myRatings[num][setIdx] = { score: parseFloat(score), comment: comment || '', date: Date.now() };
-  save(true);
-  updateCardPrompts(num);
-  updateHmCell(num);
-  renderStats();
-  renderFilterCount();
-  renderMyDatabase();
-  updateMyDbBadge();
+  const old = getMyRating(num, setIdx);
+  const parsedScore = parseFloat(score);
+  const newComment = comment || '';
+
+  const apply = (val) => {
+    if (!ST.myRatings) ST.myRatings = {};
+    if (val === null) {
+      if (ST.myRatings[num]) {
+        delete ST.myRatings[num][setIdx];
+        if (!Object.keys(ST.myRatings[num]).length) delete ST.myRatings[num];
+      }
+    } else {
+      if (!ST.myRatings[num]) ST.myRatings[num] = {};
+      ST.myRatings[num][setIdx] = { score: val.score, comment: val.comment, date: val.date || Date.now() };
+    }
+    save(true);
+    updateCardPrompts(num);
+    updateHmCell(num);
+    renderStats();
+    renderFilterCount();
+    renderMyDatabase();
+    updateMyDbBadge();
+    updateLineCopyPreview();
+  };
+
+  record(
+    () => apply(old),
+    () => apply({ score: parsedScore, comment: newComment }),
+    `Real Rating #${num} Set ${setIdx+1}: ${parsedScore}`
+  );
+  apply({ score: parsedScore, comment: newComment });
 }
 
 function deleteMyRating(num, setIdx) {
-  if (ST.myRatings && ST.myRatings[num]) {
-    delete ST.myRatings[num][setIdx];
-    if (!Object.keys(ST.myRatings[num]).length) delete ST.myRatings[num];
-  }
-  save(true);
-  updateCardPrompts(num);
-  updateHmCell(num);
-  renderStats();
-  renderFilterCount();
-  renderMyDatabase();
-  updateMyDbBadge();
+  const old = getMyRating(num, setIdx);
+  if (!old) return;
+
+  const apply = (val) => {
+    if (!ST.myRatings) ST.myRatings = {};
+    if (val === null) {
+      if (ST.myRatings[num]) {
+        delete ST.myRatings[num][setIdx];
+        if (!Object.keys(ST.myRatings[num]).length) delete ST.myRatings[num];
+      }
+    } else {
+      if (!ST.myRatings[num]) ST.myRatings[num] = {};
+      ST.myRatings[num][setIdx] = { score: val.score, comment: val.comment, date: val.date || Date.now() };
+    }
+    save(true);
+    updateCardPrompts(num);
+    updateHmCell(num);
+    renderStats();
+    renderFilterCount();
+    renderMyDatabase();
+    updateMyDbBadge();
+    updateLineCopyPreview();
+  };
+
+  record(
+    () => apply(old),
+    () => apply(null),
+    `Delete Real Rating #${num} Set ${setIdx+1}`
+  );
+  apply(null);
 }
 
 
@@ -809,20 +851,30 @@ function closeMyRatingModal() {
 
 function toggleCoveredClip(num) {
   if (!ST.covered) ST.covered = {};
-  const isNowCovered = !ST.covered[num];
-  if (isNowCovered) {
-    ST.covered[num] = true;
-  } else {
-    delete ST.covered[num];
-  }
-  save(true);
-  updateCardPrompts(num);
-  updateHmCell(num);
-  renderStats();
-  renderFilterCount();
-  updateLineCopyPreview();
-  toast(isNowCovered ? `✔ B-roll #${num} marked as Done (9+ in Overview)` : `↺ B-roll #${num} unmarked as Done`);
+  const oldVal = !!ST.covered[num];
+  const newVal = !oldVal;
+
+  const apply = (val) => {
+    if (!ST.covered) ST.covered = {};
+    if (val) ST.covered[num] = true;
+    else delete ST.covered[num];
+    save(true);
+    updateCardPrompts(num);
+    updateHmCell(num);
+    renderStats();
+    renderFilterCount();
+    updateLineCopyPreview();
+  };
+
+  record(
+    () => apply(oldVal),
+    () => apply(newVal),
+    newVal ? `Done #${num}` : `Unmark Done #${num}`
+  );
+  apply(newVal);
+  toast(newVal ? `✔ B-roll #${num} marked as Done (9+ in Overview)` : `↺ B-roll #${num} unmarked as Done`);
 }
+
 
 
 function showMyRatingModal(triggerEl, num, setIdx) {
@@ -862,12 +914,6 @@ function showMyRatingModal(triggerEl, num, setIdx) {
         value="${escHtml(existingVal)}">
     </div>
     <div class="myrating-hint">Format: <code>8.8 comment</code> &nbsp;·&nbsp; Comment is optional</div>
-    <div class="myrating-covered-row">
-      <button type="button" class="myrating-covered-btn ${isCovered ? 'active' : ''}" id="myrating-covered-btn">
-        <span class="mcb-check">${isCovered ? '✔' : '◻'}</span>
-        <span class="mcb-text">${isCovered ? 'Done (Overview: 9+)' : 'Mark as Done (Overview: 9+)'}</span>
-      </button>
-    </div>
     <div class="myrating-actions">
       <button class="hbtn primary" id="myrating-save">✔ Save</button>
       ${existing ? `<button class="hbtn danger" id="myrating-delete">🗑 Delete</button>` : ''}
@@ -890,12 +936,6 @@ function showMyRatingModal(triggerEl, num, setIdx) {
     toast(`✔ Rated #${num} Set ${setIdx+1}: ${parsed.score}`);
   };
 
-  _el('myrating-covered-btn')?.addEventListener('click', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    closeMyRatingModal();
-    toggleCoveredClip(num);
-  });
 
 
   _el('myrating-close')?.addEventListener('click', closeMyRatingModal);
@@ -1461,11 +1501,32 @@ function showWhyPopup(e, num, setIdx) {
 
 
 
-/* ── Clear Copy History ──────────────────────────────────────── */
+/* ── Clear Copy History / Reset Ticks ───────────────────────── */
 function clearCopyHistory() {
-  Object.values(ST.prompts).forEach(arr => arr.forEach(e => { e.copied = false; }));
-  save(); updateAllPromptChips(); renderLibraryView();
+  const oldPromptsState = JSON.parse(JSON.stringify(ST.prompts));
+  const applyReset = () => {
+    Object.values(ST.prompts).forEach(arr => {
+      if (Array.isArray(arr)) arr.forEach(e => { e.copied = false; });
+    });
+    save(true);
+    updateAllPromptChips();
+    renderLibraryView();
+  };
+  const applyRestore = (oldState) => {
+    ST.prompts = JSON.parse(JSON.stringify(oldState));
+    save(true);
+    updateAllPromptChips();
+    renderLibraryView();
+  };
+  record(
+    () => applyRestore(oldPromptsState),
+    () => applyReset(),
+    'Reset all ticks for script'
+  );
+  applyReset();
+  toast('⟲ All ticks reset for this script');
 }
+
 
 /* ── Undo / Redo ────────────────────────────────────────────── */
 const H = { stack: [], pos: -1, MAX: 50 };
@@ -1492,8 +1553,7 @@ function refreshUR() {
   if (r) { r.disabled = H.pos >= H.stack.length-1; r.classList.toggle('disabled', H.pos >= H.stack.length-1); }
 }
 
-/* ── Storage: delegate to saveProjects ─────────────────────── */
-function save() { saveProjects(); }
+/* ── Storage: delegate to saveProjects (defined at line ~372) ─ */
 
 function loadStored() {
   // Now handled via loadProjects() / activateProject()
@@ -1686,11 +1746,25 @@ function deletePromptEntry(num, idx) {
 function copyPrompt(num, idx, triggerEl, markCopied = true) {
   const entry = (ST.prompts[num]||[])[idx]; if (!entry) return;
   const text = getCopyText(entry.text, num, idx);
+  const oldCopied = !!entry.copied;
   const doFlash = () => {
-    if (markCopied) {
-      entry.copied = true;
-      save();
-      refreshCopyState(num, idx);
+    if (markCopied && !oldCopied) {
+      const apply = (val) => {
+        const e = (ST.prompts[num]||[])[idx];
+        if (e) {
+          e.copied = val;
+          save(true);
+          refreshCopyState(num, idx);
+        }
+      };
+      record(
+        () => apply(oldCopied),
+        () => apply(true),
+        `Copy Set ${idx+1} for #${num}`
+      );
+      apply(true);
+      toast(`📋 Copied Set ${idx+1} for #${num}`);
+    } else if (markCopied) {
       toast(`📋 Copied Set ${idx+1} for #${num}`);
     }
   };
@@ -1723,17 +1797,27 @@ function refreshCopyState(num, idx) {
 /* ── Used Set ───────────────────────────────────────────────── */
 function setUsedSet(num, idx) {
   // idx = null → clear; same idx clicked again → clear (toggle)
-  const current = ST.usedSets[num];
-  const newVal  = (current === idx || idx === null) ? undefined : idx;
+  const oldVal  = ST.usedSets[num];
+  const newVal  = (oldVal === idx || idx === null) ? undefined : idx;
 
-  if (newVal === undefined) delete ST.usedSets[num];
-  else ST.usedSets[num] = newVal;
+  const apply = (val) => {
+    if (val === undefined) delete ST.usedSets[num];
+    else ST.usedSets[num] = val;
+    save(true);
+    updateCardPrompts(num);
+    updateSuBadge(num);
+    updateLibraryUsedSet(num);
+    updateHmCell(num);
+  };
 
-  save();
-  updateCardPrompts(num);
-  updateSuBadge(num);
-  updateLibraryUsedSet(num);
+  record(
+    () => apply(oldVal),
+    () => apply(newVal),
+    newVal !== undefined ? `Set Used #${num} S${newVal+1}` : `Clear Used #${num}`
+  );
+  apply(newVal);
 }
+
 
 function updateSuBadge(num) {
   const su = _el(`su-${num}`); if (!su) return;
@@ -1941,15 +2025,22 @@ function buildPromptChip(num, i, entry) {
   // Label span
   const sp = document.createElement('span');
   sp.className = 'p-chip-label';
-  sp.textContent = `Set ${i+1}`;
+  if (isCopied) {
+    const ck = document.createElement('span');
+    ck.className = 'p-chip-ck';
+    ck.textContent = '✔ ';
+    sp.appendChild(ck);
+  }
+  sp.appendChild(document.createTextNode(`Set ${i+1}`));
   chip.appendChild(sp);
+
 
   // AI Rating badge if exists
   if (summary) {
     const rb = document.createElement('span');
     rb.className = 'p-chip-srating';
     if (summary.isMajorityTen) {
-      rb.textContent = '10★';
+      rb.textContent = '10';
       rb.title = `Majority 10/10 (${summary.tenCount}/${summary.count} AI ratings)`;
     } else {
       rb.textContent = `${summary.avgScore}`;
@@ -1972,10 +2063,20 @@ function buildPromptChip(num, i, entry) {
   chip.addEventListener('click', e => {
     e.stopPropagation();
     if (e.shiftKey) {
-      entry.copied = !entry.copied;
-      save(true);
-      refreshCopyState(num, i);
-      toast(entry.copied ? `✔ Ticked Set ${i+1} for #${num}` : `✕ Unticked Set ${i+1} for #${num}`);
+      const oldVal = !!entry.copied;
+      const newVal = !oldVal;
+      const apply = (val) => {
+        entry.copied = val;
+        save(true);
+        refreshCopyState(num, i);
+      };
+      record(
+        () => apply(oldVal),
+        () => apply(newVal),
+        newVal ? `Tick Set ${i+1} for #${num}` : `Untick Set ${i+1} for #${num}`
+      );
+      apply(newVal);
+      toast(newVal ? `✔ Ticked Set ${i+1} for #${num}` : `✕ Unticked Set ${i+1} for #${num}`);
     } else {
       copyPrompt(num, i, chip, true);
     }
@@ -2000,13 +2101,24 @@ function buildPromptChip(num, i, entry) {
       holdTimer = setTimeout(() => {
         didHoldTrigger = true;
         if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
-        entry.copied = !entry.copied;
-        save(true);
-        refreshCopyState(num, i);
-        toast(entry.copied ? `✔ Ticked Set ${i+1} for #${num}` : `✕ Unticked Set ${i+1} for #${num}`);
+        const oldVal = !!entry.copied;
+        const newVal = !oldVal;
+        const apply = (val) => {
+          entry.copied = val;
+          save(true);
+          refreshCopyState(num, i);
+        };
+        record(
+          () => apply(oldVal),
+          () => apply(newVal),
+          newVal ? `Tick Set ${i+1} for #${num}` : `Untick Set ${i+1} for #${num}`
+        );
+        apply(newVal);
+        toast(newVal ? `✔ Ticked Set ${i+1} for #${num}` : `✕ Unticked Set ${i+1} for #${num}`);
       }, 1500);
     }
   }, { passive: true });
+
 
   chip.addEventListener('touchmove', e => {
     if (holdTimer && e.touches.length === 1) {
@@ -2090,24 +2202,18 @@ function updateCardPrompts(num) {
   const lbl = document.createElement('span'); lbl.className = 'p-label'; lbl.textContent = '🎬'; prow.appendChild(lbl);
   prompts.forEach((entry, i) => prow.appendChild(buildPromptChip(num, i, entry)));
 
-  // Add single DONE button right beside the last set box
-  const isCovered = !!(ST.covered && ST.covered[num]);
-  const doneBtn = document.createElement('button');
-  doneBtn.type = 'button';
-  doneBtn.className = 'p-chip done-btn' + (isCovered ? ' active' : '');
-  doneBtn.id = `done-btn-${num}`;
-  doneBtn.innerHTML = `<span class="done-check">${isCovered ? '✔' : '◻'}</span><span class="done-text">Done</span>`;
-  doneBtn.title = isCovered
-    ? `B-roll #${num} is marked as Done (9+ in Overview)\nClick to unmark`
-    : `Mark B-roll #${num} as Done with other clip (9+ in Overview)`;
-
-  doneBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleCoveredClip(num);
-  });
-  prow.appendChild(doneBtn);
-
   mid.appendChild(prow);
+
+  // Also refresh the Done button in the right column
+  const doneBtn = _el(`done-btn-${num}`);
+  if (doneBtn) {
+    const isCovered = !!(ST.covered && ST.covered[num]);
+    doneBtn.className = 'c-done-btn' + (isCovered ? ' active' : '');
+    doneBtn.innerHTML = isCovered ? '✔' : '◻';
+    doneBtn.title = isCovered
+      ? `B-roll #${num} is Done (9+ in Overview)\nClick to unmark`
+      : `Mark B-roll #${num} as Done (9+ in Overview)`;
+  }
 }
 
 
@@ -2249,11 +2355,35 @@ function getRealRatingOverviewData(num) {
   return ratingData;
 }
 
+/* ── Overview Mode Toggle ────────────────────────────────────── */
+function toggleOverviewScrollMode() {
+  ST.overviewScroll = !ST.overviewScroll;
+  try { localStorage.setItem('br_overview_scroll', ST.overviewScroll ? 'true' : 'false'); } catch {}
+  updateOverviewModeUI();
+  renderHeatmap();
+  toast(ST.overviewScroll ? '↔️ Overview: Scrollable View' : '🔍 Overview: Compressed Full View');
+}
+
+function updateOverviewModeUI() {
+  const btn = _el('hm-view-toggle');
+  const grid = _el('heatmap-grid');
+  if (btn) {
+    btn.classList.toggle('active', !!ST.overviewScroll);
+    btn.innerHTML = ST.overviewScroll ? '↔' : '⇔';
+    btn.title = ST.overviewScroll ? 'Switch to compressed full view' : 'Switch to scrollable view';
+  }
+  if (grid) {
+    grid.classList.toggle('scrollable', !!ST.overviewScroll);
+  }
+}
+
 /* ── Heatmap (Unified Linked 2-Tier: Top Main / Bottom Real) ── */
 function renderHeatmap() {
   const grid = _el('heatmap-grid');
   if (!grid) return;
   grid.innerHTML = '';
+
+  updateOverviewModeUI();
 
   if (!ST.brolls.length) {
     grid.innerHTML = '<span style="color:#44445a;font-size:11px;align-self:center;padding:0 4px">No script loaded</span>';
@@ -2261,10 +2391,11 @@ function renderHeatmap() {
   }
 
   const N = ST.brolls.length;
+  const isScroll = !!ST.overviewScroll;
   const W = grid.clientWidth || (window.innerWidth - 28);
-  const cw = (W - (N - 1) * 1.5) / N;
-  const showNum = cw >= 13;
-  const fs = cw >= 22 ? 9.5 : cw >= 13 ? 7.5 : 0;
+  const cw = isScroll ? 18 : (W - (N - 1) * 1.5) / N;
+  const showNum = isScroll || cw >= 13;
+  const fs = isScroll ? 8.5 : (cw >= 22 ? 9.5 : cw >= 13 ? 7.5 : 0);
 
   ST.brolls.forEach(b => {
     const mainScore = ST.scores[b.num] ?? null;
@@ -2275,6 +2406,10 @@ function renderHeatmap() {
     const col = document.createElement('div');
     col.className = 'hm-col';
     col.id = `hm-col-${b.num}`;
+    if (isScroll) {
+      col.style.width = '18px';
+      col.style.flex = '0 0 18px';
+    }
 
     // Top tier (Main)
     const topTier = document.createElement('div');
@@ -2545,6 +2680,21 @@ function buildCard(b) {
     }
   });
   right.appendChild(copyLineBtn);
+
+  // Done toggle button (below copy line)
+  const isCov = !!(ST.covered && ST.covered[b.num]);
+  const doneBtn = document.createElement('button');
+  doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
+  doneBtn.id = `done-btn-${b.num}`;
+  doneBtn.innerHTML = isCov ? '✔' : '◻';
+  doneBtn.title = isCov
+    ? `B-roll #${b.num} is Done (9+ in Overview)\nClick to unmark`
+    : `Mark B-roll #${b.num} as Done (9+ in Overview)`;
+  doneBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCoveredClip(b.num);
+  });
+  right.appendChild(doneBtn);
 
   card.appendChild(right);
   return card;
@@ -2921,6 +3071,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     ST.mainRatingLocked = (savedLock !== 'false'); // default true
   } catch {}
 
+  try {
+    const savedScroll = localStorage.getItem('br_overview_scroll');
+    ST.overviewScroll = (savedScroll === 'true');
+  } catch {}
+
   const ta = _el('script-textarea'); if (ta) ta.value = proj.script || '';
 
   _el('library-section')?.classList.add('collapsed');
@@ -2937,8 +3092,11 @@ document.addEventListener('DOMContentLoaded',()=>{
   renderMyDatabase();
   updateLineCopyPreview();
   updateRatingLockUI();
+  updateOverviewModeUI();
 
+  _el('hm-view-toggle')?.addEventListener('click', toggleOverviewScrollMode);
   _el('rating-lock-btn')?.addEventListener('click', toggleMainRatingLock);
+
   scrollToLastScoredBroll();
   initFirebaseSync();
 
@@ -2979,7 +3137,16 @@ document.addEventListener('DOMContentLoaded',()=>{
     renderHeatmap();renderStats();renderCards();renderBatchTabs();renderBatchPanel();renderLibraryView();updateLibBadge();updateSratingHint();renderRatingTabs();renderRatingPanel();
     toast('🗑️ Cleared');
   }));
-  _el('btn-reset').addEventListener('click',()=>showModal('Reset all scores?','Scores cleared, script and prompts kept.',()=>{ST.scores={};save();renderHeatmap();renderStats();renderCards();toast('↺ Scores reset');}));
+  _el('btn-reset').addEventListener('click', () => {
+    showModal(
+      'Reset all ticks for this script?',
+      'All green "copied" checkmarks for all prompt sets in this script will be unticked. Prompts, scores, and ratings will remain untouched.',
+      () => {
+        clearCopyHistory();
+      }
+    );
+  });
+
   _el('btn-undo').addEventListener('click',doUndo);
   _el('btn-redo').addEventListener('click',doRedo);
   _el('btn-export').addEventListener('click',exportData);

@@ -17,8 +17,10 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="style.css?v=20260822_11" />
+  <link rel="stylesheet" href="style.css?v=20260823_2" />
 </head>
+
+
 
 
 
@@ -65,7 +67,7 @@
         <button class="hbtn undo-btn disabled" id="btn-undo" disabled title="Undo (Ctrl+Z)">↩</button>
         <button class="hbtn redo-btn disabled" id="btn-redo" disabled title="Redo (Ctrl+Y)">↪</button>
         <div class="ur-sep"></div>
-        <button class="hbtn" id="btn-reset"  title="Reset scores">↺ <span>Reset</span></button>
+        <button class="hbtn" id="btn-reset"  title="Reset all ticks for this script">↺ <span>Reset</span></button>
         <button class="hbtn" id="btn-export" title="Export JSON">📥 <span>Export</span></button>
         <button class="hbtn" id="btn-import" title="Import JSON">📤 <span>Import</span></button>
         <button class="hbtn danger" id="btn-clear" title="Clear this script">🗑 <span>Clear</span></button>
@@ -76,6 +78,7 @@
     <div id="heatmap-panel">
       <div class="hm-header">
         <span class="hm-label">📊 Overview Bar</span>
+        <button class="hm-view-toggle" id="hm-view-toggle" title="Toggle between compressed and scrollable view">⇔</button>
         <span class="hm-legend">
           <span class="hm-leg-item"><span class="hm-leg-dot top"></span> Top: Main</span>
           <span class="hm-leg-item"><span class="hm-leg-dot bot"></span> Bottom: Real</span>
@@ -420,9 +423,11 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-<script src="app.js?v=20260822_11"></script>
+<script src="app.js?v=20260823_2"></script>
 </body>
 </html>
+
+
 
 
 

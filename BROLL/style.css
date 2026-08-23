@@ -98,7 +98,9 @@ input,textarea { font-family:inherit }
 #top-header {
   height:42px; display:flex; align-items:center;
   gap:8px; padding:0 14px; border-bottom:1px solid var(--border);
+  overflow-x:auto; overflow-y:hidden; scrollbar-width:none;
 }
+#top-header::-webkit-scrollbar { display:none }
 .logo { display:flex; align-items:center; gap:6px; flex-shrink:0 }
 .logo-icon { width:24px; height:24px; border-radius:5px; background:linear-gradient(135deg,var(--accent),#c084fc); display:flex; align-items:center; justify-content:center; font-size:12px }
 .logo-name  { font-size:12px; font-weight:800; letter-spacing:-0.3px }
@@ -187,6 +189,18 @@ button.lock-pill.unlocked {
 .hm-leg-dot.bot { background:#22c55e; }
 .hm-sub    { font-size:9px; color:var(--text-3); font-family:var(--mono); flex-shrink:0 }
 
+/* Overview View Toggle Button */
+.hm-view-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 18px; border-radius: 4px;
+  font-size: 11px; font-weight: 800;
+  background: var(--bg-4); border: 1px solid var(--border);
+  color: var(--text-3); cursor: pointer; transition: all 0.13s;
+  flex-shrink: 0; padding: 0; line-height: 1;
+}
+.hm-view-toggle:hover { background: var(--bg-3); color: var(--text-1); border-color: var(--border-hi) }
+.hm-view-toggle.active { background: rgba(124,109,250,0.15); border-color: var(--accent); color: var(--accent) }
+
 /* Linked Overview Grid (Auto-Compressed to Screen Width) */
 .hm-linked-grid {
   display: flex;
@@ -195,6 +209,20 @@ button.lock-pill.unlocked {
   height: 24px;
   align-items: stretch;
   overflow: hidden;
+}
+
+/* Scrollable mode */
+.hm-linked-grid.scrollable {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.hm-linked-grid.scrollable::-webkit-scrollbar { height: 3px }
+.hm-linked-grid.scrollable::-webkit-scrollbar-track { background: var(--bg-3); border-radius: 99px }
+.hm-linked-grid.scrollable::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 99px }
+.hm-linked-grid.scrollable .hm-col {
+  flex: 0 0 auto;
+  min-width: 14px;
 }
 .hm-col {
   flex: 1 1 0;
@@ -370,7 +398,12 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
   flex-shrink:0; letter-spacing:-0.3px; user-select:none;
 }
 .p-chip:hover  { transform:translateY(-1px); box-shadow:0 3px 10px rgba(124,109,250,0.2) }
-.p-chip.copied { }
+.p-chip.copied {
+  border-color: rgba(34, 197, 94, 0.45) !important;
+  background: rgba(34, 197, 94, 0.12) !important;
+  color: #86efac !important;
+}
+.p-chip.copied .p-chip-label { color: #86efac !important }
 .p-chip.is-used {
   background:var(--accent-dim); border-color:var(--accent); color:var(--accent);
   font-weight:800; box-shadow:0 0 10px rgba(124,109,250,0.35);
@@ -378,8 +411,9 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .p-chip-pin    { font-size:10px; line-height:1 }
 .p-chip-top    { display:flex; align-items:center; gap:3px; line-height:1 }
 .p-chip-num    { font-size:11px; font-weight:700; line-height:1 }
-.p-chip-ck     { font-size:9px; font-weight:800; color:#22c55e; line-height:1 }
+.p-chip-ck     { font-size:9.5px; font-weight:900; color:#22c55e; line-height:1; display:inline-block }
 .p-chip-rating { font-size:7.5px; font-weight:800; font-family:var(--mono); line-height:1; letter-spacing:0 }
+
 
 /* ── Why popup ─────────────────────────────────────────────────── */
 .why-popup { position:fixed; z-index:9999; background:#13132a; border:1px solid var(--accent); border-radius:10px; padding:10px 12px; max-width:320px; min-width:240px; box-shadow:0 8px 32px rgba(0,0,0,0.85),0 0 24px rgba(124,109,250,0.3); animation:whyIn 0.13s ease both; pointer-events:auto }
@@ -478,6 +512,32 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 }
 .broll-card:hover .c-copy-line { color:var(--text-1); border-color:var(--border-hi) }
 .c-copy-line:hover { background:var(--accent-dim); border-color:var(--accent); color:#fff; transform:scale(1.08) }
+
+/* Done toggle button (right column, below copy) */
+.c-done-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-3);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.13s;
+  flex-shrink: 0;
+  font-weight: 800;
+}
+.broll-card:hover .c-done-btn { color: var(--text-1); border-color: var(--border-hi) }
+.c-done-btn:hover { background: rgba(34,197,94,0.1); border-color: #16a34a; color: #86efac; transform: scale(1.08) }
+.c-done-btn.active {
+  background: rgba(34,197,94,0.2);
+  border-color: #16a34a;
+  color: #22c55e;
+  box-shadow: 0 0 8px rgba(34,197,94,0.3);
+}
 
 
 @keyframes cardIn { from{opacity:0;transform:translateX(-5px)} to{opacity:1;transform:none} }
