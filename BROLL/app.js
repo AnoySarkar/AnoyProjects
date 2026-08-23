@@ -757,12 +757,25 @@ function getMyRating(num, setIdx) {
   return ST.myRatings?.[num]?.[setIdx] ?? null;
 }
 
+function updateDoneBtnUI(num) {
+  const doneBtn = _el(`done-btn-${num}`);
+  if (!doneBtn) return;
+  const isCov = !!(ST.covered && ST.covered[num]);
+  doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
+  doneBtn.innerHTML = isCov ? '✔' : '◻';
+  doneBtn.title = isCov
+    ? `B-roll #${num} is Done (9+ in Overview)\nClick to unmark`
+    : `Mark B-roll #${num} as Done (9+ in Overview)`;
+}
+
 function saveMyRating(num, setIdx, score, comment) {
   const old = getMyRating(num, setIdx);
   const parsedScore = parseFloat(score);
   const newComment = comment || '';
+  const oldCovered = !!(ST.covered && ST.covered[num]);
+  const newCovered = (parsedScore >= 9) ? true : oldCovered;
 
-  const apply = (val) => {
+  const apply = (val, cov) => {
     if (!ST.myRatings) ST.myRatings = {};
     if (val === null) {
       if (ST.myRatings[num]) {
@@ -773,8 +786,11 @@ function saveMyRating(num, setIdx, score, comment) {
       if (!ST.myRatings[num]) ST.myRatings[num] = {};
       ST.myRatings[num][setIdx] = { score: val.score, comment: val.comment, date: val.date || Date.now() };
     }
+    if (!ST.covered) ST.covered = {};
+    if (cov) ST.covered[num] = true; else delete ST.covered[num];
     save(true);
     updateCardPrompts(num);
+    updateDoneBtnUI(num);
     updateHmCell(num);
     renderStats();
     renderFilterCount();
@@ -784,16 +800,17 @@ function saveMyRating(num, setIdx, score, comment) {
   };
 
   record(
-    () => apply(old),
-    () => apply({ score: parsedScore, comment: newComment }),
+    () => apply(old, oldCovered),
+    () => apply({ score: parsedScore, comment: newComment }, newCovered),
     `Real Rating #${num} Set ${setIdx+1}: ${parsedScore}`
   );
-  apply({ score: parsedScore, comment: newComment });
+  apply({ score: parsedScore, comment: newComment }, newCovered);
 }
 
 function deleteMyRating(num, setIdx) {
   const old = getMyRating(num, setIdx);
   if (!old) return;
+  const oldCovered = !!(ST.covered && ST.covered[num]);
 
   const apply = (val) => {
     if (!ST.myRatings) ST.myRatings = {};
@@ -808,6 +825,7 @@ function deleteMyRating(num, setIdx) {
     }
     save(true);
     updateCardPrompts(num);
+    updateDoneBtnUI(num);
     updateHmCell(num);
     renderStats();
     renderFilterCount();
@@ -823,6 +841,7 @@ function deleteMyRating(num, setIdx) {
   );
   apply(null);
 }
+
 
 
 
@@ -2756,22 +2775,59 @@ function applySliderStyle(inp,score){const col=getC(score);const pct=score!==nul
 function updateScoreVal(num,val){const sv=_el(`sv-${num}`);if(!sv)return;const col=getC(val);sv.textContent=(val!==null&&val!==undefined)?`${snap(val)}`:'—';sv.style.background=col.bg;sv.style.borderColor=col.border;}
 
 /* ── Score actions ──────────────────────────────────────────── */
-function setScore(num,val){
-  const oldScore=ST.scores[num]??null, newScore=snap(val);
-  if(oldScore===newScore)return;
-  if(newScore!==null){
+function setScore(num, val) {
+  const oldScore = ST.scores[num] ?? null, newScore = snap(val);
+  if (oldScore === newScore) return;
+  if (newScore !== null) {
     try { localStorage.setItem('br_last_scored_' + ACTIVE_PID, num); } catch {}
   }
-  const apply=s=>{if(s===null)delete ST.scores[num];else ST.scores[num]=s;save();updateCardVisuals(num,s);updateHmCell(num);renderStats();renderFilterCount();};
-  record(()=>apply(oldScore),()=>apply(newScore),`Score #${num}: ${scoreLbl(oldScore)} → ${scoreLbl(newScore)}`);
-  apply(newScore);
+  const oldCovered = !!(ST.covered && ST.covered[num]);
+  const newCovered = (newScore !== null && newScore >= 9) ? true : oldCovered;
+
+  const apply = (s, cov) => {
+    if (s === null) delete ST.scores[num]; else ST.scores[num] = s;
+    if (!ST.covered) ST.covered = {};
+    if (cov) ST.covered[num] = true; else delete ST.covered[num];
+    save(true);
+    updateCardVisuals(num, s);
+    updateDoneBtnUI(num);
+    updateHmCell(num);
+    renderStats();
+    renderFilterCount();
+    updateLineCopyPreview();
+  };
+
+  record(
+    () => apply(oldScore, oldCovered),
+    () => apply(newScore, newCovered),
+    `Score #${num}: ${scoreLbl(oldScore)} → ${scoreLbl(newScore)}`
+  );
+  apply(newScore, newCovered);
 }
-function clearScore(num){
-  const old=ST.scores[num]??null; if(old===null)return;
-  const apply=s=>{if(s===null)delete ST.scores[num];else ST.scores[num]=s;save();updateCardVisuals(num,s);updateHmCell(num);renderStats();renderFilterCount();};
-  record(()=>apply(old),()=>apply(null),`Clear score #${num}`);
+
+function clearScore(num) {
+  const old = ST.scores[num] ?? null; if (old === null) return;
+  const oldCovered = !!(ST.covered && ST.covered[num]);
+
+  const apply = (s) => {
+    if (s === null) delete ST.scores[num]; else ST.scores[num] = s;
+    save(true);
+    updateCardVisuals(num, s);
+    updateDoneBtnUI(num);
+    updateHmCell(num);
+    renderStats();
+    renderFilterCount();
+    updateLineCopyPreview();
+  };
+
+  record(
+    () => apply(old),
+    () => apply(null),
+    `Clear score #${num}`
+  );
   apply(null);
 }
+
 
 function scrollToLastScoredBroll() {
   if (!ST.brolls.length) return;
