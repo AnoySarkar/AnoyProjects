@@ -451,12 +451,28 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .c-prompts {
   display:flex;
   align-items:flex-start;
-  gap:4px;
+  gap:6px;
   flex-wrap:wrap;
   width:100%;
   overflow:visible;
 }
+.p-batch-group {
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:3px 5px;
+  background:rgba(255, 255, 255, 0.035);
+  border:1px solid rgba(255, 255, 255, 0.08);
+  border-radius:8px;
+  flex-shrink:0;
+  transition:border-color 0.15s, background 0.15s;
+}
+.p-batch-group:hover {
+  background:rgba(255, 255, 255, 0.055);
+  border-color:rgba(255, 255, 255, 0.14);
+}
 .p-label   { font-size:9px; opacity:0.3; flex-shrink:0 }
+
 .p-chip {
   display:flex; flex-direction:column; align-items:center; gap:1px;
   min-width:32px; padding:3px 8px 4px; height:auto;

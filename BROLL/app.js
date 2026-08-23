@@ -1997,8 +1997,19 @@ function renderBatchTabs() {
 }
 
 function switchBatchTab(batchId) {
-  ST.activeBatch = batchId; renderBatchTabs(); renderBatchPanel();
+  if (ST.activeBatch === batchId && batchId !== 'new') {
+    ST.activeBatch = 'new';
+    toast('👁️ Showing all B-rolls & prompt sets');
+  } else {
+    ST.activeBatch = batchId;
+    const b = ST.batches.find(x => x.id === batchId);
+    if (b) toast(`👁️ Filtered to Batch ${b.label}`);
+  }
+  renderBatchTabs();
+  renderBatchPanel();
+  renderCards();
 }
+
 
 function renderBatchPanel() {
   const np = _el('batch-panel-new'), dp = _el('batch-panel-detail'); if (!np || !dp) return;
@@ -2299,6 +2310,42 @@ function buildPromptChip(num, i, entry) {
 
 
 
+function buildPromptChipsElement(num, prompts) {
+  if (!prompts || !prompts.length) return null;
+  const prow = document.createElement('div');
+  prow.className = 'c-prompts';
+  prow.id = `cp-${num}`;
+
+  // Group prompts by batchId
+  const batchMap = new Map();
+  prompts.forEach((entry, i) => {
+    const bId = entry.batchId || 'default';
+    if (!batchMap.has(bId)) batchMap.set(bId, []);
+    batchMap.get(bId).push({ entry, i });
+  });
+
+  let hasVisible = false;
+  batchMap.forEach((items, bId) => {
+    // If filtered to a specific batch tab, only render sets for that batch
+    if (ST.activeBatch && ST.activeBatch !== 'new' && bId !== ST.activeBatch) {
+      return;
+    }
+
+    const groupEl = document.createElement('div');
+    groupEl.className = 'p-batch-group';
+    groupEl.dataset.batchId = bId;
+
+    items.forEach(({ entry, i }) => {
+      groupEl.appendChild(buildPromptChip(num, i, entry));
+    });
+
+    prow.appendChild(groupEl);
+    hasVisible = true;
+  });
+
+  return hasVisible ? prow : null;
+}
+
 function updateCardPrompts(num) {
   const card = _el(`card-${num}`); if (!card) return;
   const existingPr = _el(`cp-${num}`);
@@ -2306,13 +2353,8 @@ function updateCardPrompts(num) {
   const prompts = ST.prompts[num] || [];
 
   if (existingPr) existingPr.remove();
-  if (!prompts.length) return;
-
-  const prow = document.createElement('div'); prow.className = 'c-prompts'; prow.id = `cp-${num}`;
-  prompts.forEach((entry, i) => prow.appendChild(buildPromptChip(num, i, entry)));
-
-
-  mid.appendChild(prow);
+  const prow = buildPromptChipsElement(num, prompts);
+  if (prow) mid.appendChild(prow);
 
   // Also refresh the Done button in the right column
   const doneBtn = _el(`done-btn-${num}`);
@@ -2325,6 +2367,7 @@ function updateCardPrompts(num) {
       : `Mark B-roll #${num} as Done (9+ in Overview)`;
   }
 }
+
 
 
 
@@ -2377,8 +2420,15 @@ function getLineRealRating(num) {
 
 /* ── Filter & Sort (Main Rating vs Real Rating) ─────────────── */
 function passes(b) {
+  // If filtered to a specific batch tab from Library:
+  if (ST.activeBatch && ST.activeBatch !== 'new') {
+    const hasBatchPrompts = (ST.prompts[b.num] || []).some(p => p.batchId === ST.activeBatch);
+    if (!hasBatchPrompts) return false;
+  }
+
   const target = ST.filterTarget || 'main';
   const f = ST.filter;
+
 
   if (target === 'main') {
     const s = ST.scores[b.num] ?? null;
@@ -2856,11 +2906,9 @@ function buildCard(b) {
   mid.appendChild(slRow);
 
   /* Prompt chips */
-  if(prompts.length){
-    const prow=document.createElement('div'); prow.className='c-prompts'; prow.id=`cp-${b.num}`;
-    prompts.forEach((entry,i)=>prow.appendChild(buildPromptChip(b.num,i,entry)));
-    mid.appendChild(prow);
-  }
+  const prow = buildPromptChipsElement(b.num, prompts);
+  if (prow) mid.appendChild(prow);
+
 
 
   card.appendChild(mid);
@@ -3199,6 +3247,54 @@ function copyFilteredLines() {
   }
 }
 
+function getNeedsWorkLines() {
+  if (!ST.brolls || !ST.brolls.length) return [];
+  const skipReal9 = _el('lc-skip-real-9') ? _el('lc-skip-real-9').checked : true;
+
+  return ST.brolls.filter(b => {
+    // If skip real >= 9 or covered is checked
+    if (skipReal9) {
+      if (ST.covered && ST.covered[b.num]) return false;
+      const lr = getLineRealRating(b.num);
+      if (lr.isRated && lr.score >= 9) return false;
+    }
+
+    if (LC_TARGET === 'main') {
+      const s = ST.scores[b.num] ?? null;
+      return s === null || s < 9;
+    } else {
+      const lr = getLineRealRating(b.num);
+      return !lr.isRated || lr.score < 9;
+    }
+  });
+}
+
+function copyNeedsWorkLines() {
+  const matches = getNeedsWorkLines();
+  if (!matches.length) {
+    toast('🎉 All lines are 9+! No lines need work.');
+    return;
+  }
+  const includeNum = _el('lc-include-num') ? _el('lc-include-num').checked : true;
+  const lineGap = _el('lc-line-gap') ? _el('lc-line-gap').checked : true;
+
+  const formattedLines = matches.map(b => {
+    const prefix = includeNum ? `${b.num} ` : '';
+    return `${prefix}${b.line}`;
+  });
+
+  const sep = lineGap ? '\n\n' : '\n';
+  const text = formattedLines.join(sep);
+
+  const doConfirm = () => toast(`📋 Copied ${matches.length} "Needs Work" lines to clipboard!`);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(doConfirm).catch(() => fbCopy(text, doConfirm));
+  } else {
+    fbCopy(text, doConfirm);
+  }
+}
+
+
 /* ── Export / Import ────────────────────────────────────────── */
 
 function exportData(){
@@ -3470,6 +3566,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   _el('lc-include-num')?.addEventListener('change', updateLineCopyPreview);
   _el('lc-line-gap')?.addEventListener('change', updateLineCopyPreview);
   _el('btn-copy-filtered-lines')?.addEventListener('click', copyFilteredLines);
+  _el('btn-copy-needs-work-lines')?.addEventListener('click', copyNeedsWorkLines);
+
 
 
 
