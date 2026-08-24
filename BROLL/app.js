@@ -1309,12 +1309,19 @@ function applySetRatings(text) {
   const minN = Math.min(...brollsInBatch), maxN = Math.max(...brollsInBatch);
   const tabLabel = minN === maxN ? `#${minN}` : `#${minN}–${maxN}`;
 
+  const setsByBroll = {};
+  for (const [brollNumStr, items] of Object.entries(ratingsByBroll)) {
+    const brollNum = parseInt(brollNumStr);
+    setsByBroll[brollNum] = items.map(x => x.setIdx);
+  }
+
   ST.ratingBatches.push({
     id: batchId,
     label: tabLabel,
     date: Date.now(),
     raw: text,
     brolls: brollsInBatch,
+    setsByBroll,
     count: parsed.length
   });
 
@@ -1328,6 +1335,7 @@ function applySetRatings(text) {
   updateSratingHint();
   renderRatingTabs();
   renderRatingPanel();
+
   toast(`⭐ Applied ${parsed.length} ratings for B-roll ${tabLabel}`);
 
   // --- Ratings notification popup ---
@@ -1437,10 +1445,53 @@ function renderRatingTabs() {
   });
 }
 
+/* ── Batch Sets Helper (100% Precise) ───────────────────────── */
+function getBatchSetsForBroll(batch, num) {
+  if (!batch) return null;
+  // 1. If batch has setsByBroll
+  if (batch.setsByBroll && Array.isArray(batch.setsByBroll[num]) && batch.setsByBroll[num].length > 0) {
+    return batch.setsByBroll[num];
+  }
+  // 2. Check ST.setRatings[num] for items with r.batchId === batch.id
+  const sets = ST.setRatings[num] || {};
+  const matched = Object.keys(sets)
+    .map(Number)
+    .filter(idx => getSetRatingsList(num, idx).some(r => r.batchId === batch.id));
+  if (matched.length > 0) return matched.sort((a, b) => a - b);
+
+  // 3. Parse batch.raw if available
+  if (batch.raw) {
+    try {
+      const parsed = parseSetRatings(batch.raw);
+      const forThisBroll = parsed.filter(x => x.brollNum === num);
+      if (forThisBroll.length > 0) {
+        const rawIndices = forThisBroll.map(x => x.rawSetNum - 1);
+        return Array.from(new Set(rawIndices)).sort((a, b) => a - b);
+      }
+    } catch {}
+  }
+
+  // 4. Default: return first 6 set indices if sets exist
+  const allIndices = Object.keys(sets).map(Number).sort((a, b) => a - b);
+  return allIndices.slice(0, 6);
+}
+
 function switchRatingTab(batchId) {
   ST.activeRatingBatch = batchId;
   renderRatingTabs();
-  renderRatingPanel();
+  if (batchId === 'new') {
+    ST.activeRatingBatchFilter = null;
+    renderRatingPanel();
+    const banner = document.getElementById('batch-filter-banner');
+    if (banner) banner.remove();
+  } else {
+    ST.activeRatingBatchFilter = batchId;
+    switchBottomTab('p');
+    renderCards();
+    const firstCard = document.querySelector('.broll-card');
+    if (firstCard) firstCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toast(`⭐ Opened Rating Batch ${batchId} on Prompts page`);
+  }
 }
 
 /* ── Bottom Tab Switcher (Global) ─────────────────────────── */
@@ -1453,96 +1504,10 @@ function switchBottomTab(tab) {
 function renderRatingPanel() {
   const np = _el('srating-panel-new'), dp = _el('srating-panel-detail');
   if (!np || !dp) return;
-  if (ST.activeRatingBatch === 'new') {
-    np.classList.remove('hidden');
-    dp.classList.add('hidden');
-    return;
-  }
-  np.classList.add('hidden');
-  dp.classList.remove('hidden');
-
-  const b = (ST.ratingBatches || []).find(x => x.id === ST.activeRatingBatch);
-  if (!b) {
-    dp.innerHTML = '<p style="color:var(--text-3);font-size:12px;padding:12px">Rating batch not found.</p>';
-    return;
-  }
-  const dt = new Date(b.date);
-
-  dp.innerHTML = `
-    <div class="rdetail-header">
-      <div class="bdh-info">
-        <span class="rdetail-title">${escHtml(b.label)} Ratings</span>
-        <span class="rdetail-meta">${dt.toLocaleString('en-IN')} · ${b.brolls.length} B-rolls · ${b.count || b.brolls.length} ratings</span>
-      </div>
-      <div class="bdh-actions" style="display:flex;gap:6px;">
-        <button class="hbtn" id="btn-copy-rbatch">📋 Copy Batch Prompts</button>
-        <button class="hbtn danger" id="btn-del-rbatch">🗑 Delete Batch</button>
-      </div>
-    </div>
-    <div class="rdetail-cards" id="rdetail-items"></div>
-  `;
-
-  _el('btn-del-rbatch')?.addEventListener('click', () => showDeleteRatingBatchModal(b.id));
-
-  _el('btn-copy-rbatch')?.addEventListener('click', () => {
-    const lines = [];
-    b.brolls.forEach(num => {
-      const broll = ST.brolls.find(x => x.num === num);
-      const sets = ST.setRatings[num] || {};
-      let batchSetIndices = Object.keys(sets)
-        .map(Number)
-        .filter(idx => getSetRatingsList(num, idx).some(r => r.batchId === b.id))
-        .sort((a, c) => a - c);
-
-      if (!batchSetIndices.length) {
-        batchSetIndices = Object.keys(sets).map(Number).sort((a, c) => a - c);
-      }
-
-      const prompts = ST.prompts[num] || [];
-      if (batchSetIndices.length) {
-        lines.push(`-- B-roll #${num}: ${broll?.line || ''} --`);
-        batchSetIndices.forEach(idx => {
-          const p = prompts[idx];
-          if (p?.text) lines.push(`Set ${idx + 1}: ${p.text}`);
-        });
-        lines.push('');
-      }
-    });
-    const fullText = lines.join('\n');
-    if (!fullText.trim()) { toast('⚠️ No prompts found for this batch'); return; }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(fullText).then(() => toast('📋 Copied batch prompts!')).catch(() => fbCopy(fullText, () => toast('📋 Copied batch prompts!')));
-    } else {
-      fbCopy(fullText, () => toast('📋 Copied batch prompts!'));
-    }
-  });
-
-  const listEl = _el('rdetail-items');
-  if (!listEl) return;
-
-  b.brolls.forEach(num => {
-    let brollObj = ST.brolls.find(x => x.num === num);
-    if (!brollObj) {
-      brollObj = { num: num, line: `B-roll #${num}` };
-    }
-
-    // Determine set indices that belong to this rating batch
-    const sets = ST.setRatings[num] || {};
-    let batchSetIndices = Object.keys(sets)
-      .map(Number)
-      .filter(idx => getSetRatingsList(num, idx).some(r => r.batchId === b.id))
-      .sort((a, c) => a - c);
-
-    if (!batchSetIndices.length) {
-      batchSetIndices = Object.keys(sets).map(Number).sort((a, c) => a - c);
-    }
-
-    const card = buildCard(brollObj, batchSetIndices, `rb-${b.id}-`);
-    // Card in rating batch is expanded so batch prompt sets are visible
-    card.classList.add('is-expanded');
-    listEl.appendChild(card);
-  });
+  np.classList.remove('hidden');
+  dp.classList.add('hidden');
 }
+
 
 
 
@@ -2917,10 +2882,43 @@ function renderCards(animate=false) {
     return;
   }
   empty.classList.add('hidden');fbar.classList.remove('hidden');
-  const list=sortedList(ST.brolls.filter(passes)); renderFilterCount();
+
+  let list = sortedList(ST.brolls.filter(passes));
+
+  const activeRBatch = ST.activeRatingBatchFilter ? (ST.ratingBatches || []).find(x => x.id === ST.activeRatingBatchFilter) : null;
+  if (activeRBatch) {
+    list = list.filter(b => activeRBatch.brolls.includes(b.num));
+  }
+
+  renderFilterCount();
 
   const curHeight = box.offsetHeight;
   if (curHeight > 0) box.style.minHeight = curHeight + 'px';
+
+  // Render batch filter banner if active
+  const existingBanner = document.getElementById('batch-filter-banner');
+  if (existingBanner) existingBanner.remove();
+
+  if (activeRBatch) {
+    const banner = document.createElement('div');
+    banner.id = 'batch-filter-banner';
+    banner.className = 'batch-filter-banner';
+    banner.innerHTML = `
+      <div class="bfb-info">
+        <span class="bfb-badge">⭐ Rating Batch: ${escHtml(activeRBatch.label)}</span>
+        <span class="bfb-meta">Showing ${list.length} B-rolls (${activeRBatch.count || list.length} ratings)</span>
+      </div>
+      <button class="hbtn" id="btn-clear-batch-filter">✕ Show All Cards</button>
+    `;
+    banner.querySelector('#btn-clear-batch-filter').addEventListener('click', () => {
+      ST.activeRatingBatchFilter = null;
+      ST.activeRatingBatch = 'new';
+      renderRatingTabs();
+      renderCards();
+      toast('👁️ Showing all cards');
+    });
+    box.parentElement.insertBefore(banner, box);
+  }
 
   if(!list.length){
     box.innerHTML='';noRes.style.display='block';
@@ -2928,13 +2926,21 @@ function renderCards(animate=false) {
     return;
   }
   noRes.style.display='none'; box.innerHTML='';
-  list.forEach((b,i)=>{const card=buildCard(b);if(animate){card.style.animationDelay=`${Math.min(i*18,300)}ms`;card.classList.add('card-enter');}box.appendChild(card);});
+
+  list.forEach((b,i)=>{
+    const allowedSets = activeRBatch ? getBatchSetsForBroll(activeRBatch, b.num) : null;
+    const card=buildCard(b, allowedSets);
+    if (activeRBatch) card.classList.add('is-expanded');
+    if(animate){card.style.animationDelay=`${Math.min(i*18,300)}ms`;card.classList.add('card-enter');}
+    box.appendChild(card);
+  });
   updateCompactViewUI();
 
   requestAnimationFrame(() => {
     box.style.minHeight = '';
   });
 }
+
 
 
 
