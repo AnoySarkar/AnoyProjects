@@ -94,16 +94,34 @@ let _fbRef = null;
 let _fbSyncTimer = null;
 let _isApplyingRemote = false;
 let _remoteTimer = null;
+let _hasPendingLocalChange = false; // track if a save was blocked during remote apply
+let _lastLocalSaveTime = 0;        // timestamp of last successful local write
+let _lastFirebaseSaveTime = 0;     // timestamp of last successful firebase write
+let _fbConnected = false;
+let _fbRetryTimer = null;
+let _fbRetryCount = 0;
 
 function setApplyingRemote(val) {
   _isApplyingRemote = !!val;
   if (_remoteTimer) clearTimeout(_remoteTimer);
   if (val) {
-    _remoteTimer = setTimeout(() => { _isApplyingRemote = false; }, 800);
+    // Safety: always release after 1.5 seconds max, then flush any pending save
+    _remoteTimer = setTimeout(() => {
+      _isApplyingRemote = false;
+      if (_hasPendingLocalChange) {
+        _hasPendingLocalChange = false;
+        pushToFirebase(true);
+      }
+    }, 1500);
+  } else {
+    // Released early — flush pending save immediately
+    if (_hasPendingLocalChange) {
+      _hasPendingLocalChange = false;
+      pushToFirebase(true);
+    }
   }
 }
 
-let _lastSavedTime = Date.now();
 let _lastSavedStatus = 'synced';
 let _lastRemoteUpdatedAt = 0;
 
@@ -115,50 +133,62 @@ function updateSavedTimeDisplay() {
 
   if (_lastSavedStatus === 'syncing') {
     dot.className = 'sync-dot syncing';
-    txt.textContent = 'Syncing…';
-    if (pill) pill.title = 'Uploading changes to Firebase Cloud…';
+    txt.textContent = 'Saving…';
+    if (pill) pill.title = 'Uploading changes to Firebase…';
     return;
   }
   if (_lastSavedStatus === 'offline') {
     dot.className = 'sync-dot offline';
-    txt.textContent = 'Offline';
-    if (pill) pill.title = 'Offline or cloud disconnected. Local storage is active.';
+    txt.textContent = _fbConnected ? 'Save Error' : 'Offline';
+    if (pill) pill.title = 'Not saved to cloud. Click to retry.';
     return;
   }
 
   dot.className = 'sync-dot';
-  if (_lastSavedTime) {
-    const diff = Math.max(0, Math.floor((Date.now() - _lastSavedTime) / 1000));
+  if (_lastFirebaseSaveTime > 0) {
+    const diff = Math.max(0, Math.floor((Date.now() - _lastFirebaseSaveTime) / 1000));
     let timeStr = 'Saved just now';
     if (diff >= 5 && diff < 60) timeStr = `Saved ${diff}s ago`;
     else if (diff >= 60 && diff < 3600) timeStr = `Saved ${Math.floor(diff / 60)}m ago`;
     else if (diff >= 3600) timeStr = `Saved ${Math.floor(diff / 3600)}h ago`;
     txt.textContent = timeStr;
-    if (pill) pill.title = `Firebase Cloud Synced (${timeStr})\nClick to force sync`;
+    if (pill) pill.title = `Cloud synced — ${timeStr}\nClick to force sync now`;
   } else {
     txt.textContent = 'Cloud';
+    if (pill) pill.title = 'Click to sync';
   }
 }
 
-// Live 1-second interval to update "Saved X sec ago" text
 setInterval(updateSavedTimeDisplay, 1000);
 
 function updateSyncUI(status, text) {
+  // Do NOT reset _lastFirebaseSaveTime here (connection events are not saves)
   _lastSavedStatus = status;
-  if (status === 'synced') {
-    _lastSavedTime = Date.now();
-  }
   updateSavedTimeDisplay();
 }
 
 function pushToFirebase(immediate = false) {
-  if (!_fbRef || _isApplyingRemote) return;
+  if (!_fbRef) return; // no firebase, silently skip
+
+  // If currently applying remote data, queue the push for after it finishes
+  if (_isApplyingRemote) {
+    _hasPendingLocalChange = true;
+    return;
+  }
 
   if (_fbSyncTimer) clearTimeout(_fbSyncTimer);
   _lastSavedStatus = 'syncing';
   updateSavedTimeDisplay();
 
   const doPush = () => {
+    if (_isApplyingRemote) {
+      // Still blocked — queue again
+      _hasPendingLocalChange = true;
+      _lastSavedStatus = 'synced'; // don't show spinning forever
+      updateSavedTimeDisplay();
+      return;
+    }
+
     try {
       const ta = _el('script-textarea');
       const savedScript = ta && ta.value !== undefined && ta.value !== null
@@ -178,17 +208,24 @@ function pushToFirebase(immediate = false) {
         updatedAt: now
       };
 
-      _lastRemoteUpdatedAt = now;
       _fbRef.set(payload)
         .then(() => {
-          _lastSavedTime = Date.now();
+          _lastFirebaseSaveTime = Date.now();
+          _lastRemoteUpdatedAt = now;
           _lastSavedStatus = 'synced';
+          _fbRetryCount = 0;
+          if (_fbRetryTimer) { clearTimeout(_fbRetryTimer); _fbRetryTimer = null; }
           updateSavedTimeDisplay();
         })
         .catch(err => {
           console.error('Firebase save error:', err);
           _lastSavedStatus = 'offline';
           updateSavedTimeDisplay();
+          // Auto-retry with backoff: 2s, 5s, 10s, 30s
+          _fbRetryCount = Math.min(_fbRetryCount + 1, 4);
+          const retryDelay = [2000, 5000, 10000, 30000][_fbRetryCount - 1];
+          if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
+          _fbRetryTimer = setTimeout(() => pushToFirebase(true), retryDelay);
         });
     } catch (err) {
       console.error('Firebase push preparation error:', err);
@@ -200,13 +237,24 @@ function pushToFirebase(immediate = false) {
   if (immediate) {
     doPush();
   } else {
-    _fbSyncTimer = setTimeout(doPush, 100);
+    _fbSyncTimer = setTimeout(doPush, 300); // slightly longer debounce to batch rapid changes
   }
 }
 
 
 function applyRemoteData(data) {
   if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
+
+  // CRITICAL: If we have local changes that haven't been saved yet, don't let remote overwrite them
+  // A local change is "newer" if it was saved to localStorage more recently than the remote timestamp
+  const remoteUpdatedAt = data.updatedAt || 0;
+  if (_lastLocalSaveTime > 0 && _lastLocalSaveTime > remoteUpdatedAt && data.lastUpdatedBy !== CLIENT_ID) {
+    // Our local state is newer — push it instead of applying remote
+    console.log('Local state newer than remote, pushing local instead of applying remote.');
+    pushToFirebase(true);
+    return;
+  }
+
   setApplyingRemote(true);
   try {
 
@@ -286,8 +334,8 @@ function applyRemoteData(data) {
     renderRatingPanel();
     updateSratingHint();
     renderMyDatabase();
-    _lastRemoteUpdatedAt = data.updatedAt || Date.now();
-    _lastSavedTime = data.updatedAt || Date.now();
+    _lastRemoteUpdatedAt = remoteUpdatedAt;
+    _lastFirebaseSaveTime = remoteUpdatedAt || Date.now();
     _lastSavedStatus = 'synced';
     updateSavedTimeDisplay();
     toast('☁️ Synced from Cloud');
@@ -314,22 +362,25 @@ function initFirebaseSync() {
     _fbDb = firebase.database();
     _fbRef = _fbDb.ref('broll_app_data');
 
-    // Monitor connection state
+    // Monitor connection state — do NOT mark as "synced" just because connected
     _fbDb.ref('.info/connected').on('value', snap => {
-      const connected = !!snap.val();
-      if (!connected) {
-        updateSyncUI('offline', 'Offline');
-      } else {
-        updateSyncUI('synced', 'Cloud');
+      _fbConnected = !!snap.val();
+      if (!_fbConnected) {
+        _lastSavedStatus = 'offline';
+        updateSavedTimeDisplay();
+      } else if (_lastSavedStatus === 'offline') {
+        // Reconnected — push any pending changes immediately
+        _lastSavedStatus = 'syncing';
+        updateSavedTimeDisplay();
+        pushToFirebase(true);
       }
     });
 
-    // Listen for remote updates
+    // Listen for remote updates (real-time listener)
     let isInitialRead = true;
     _fbRef.on('value', snap => {
       const data = snap.val();
       if (!data || !data.projects || Object.keys(data.projects).length === 0) {
-        // Cloud is empty, push current local state to initialize it
         console.log('Firebase database empty, pushing local state...');
         pushToFirebase(true);
         isInitialRead = false;
@@ -340,22 +391,23 @@ function initFirebaseSync() {
         applyRemoteData(data);
         return;
       }
-      // If change originated from this client tab, skip
+      // Skip updates we ourselves pushed
       if (data.lastUpdatedBy === CLIENT_ID) {
         return;
       }
       applyRemoteData(data);
     });
 
-    // Multi-device: instantly re-sync when tab becomes visible or receives window focus
+    // Multi-device: check for newer cloud data when tab becomes visible / gains focus
     const checkFreshRemote = () => {
       if (!_fbRef || _isApplyingRemote) return;
       _fbRef.once('value').then(snap => {
         const data = snap.val();
-        if (data && data.updatedAt && data.updatedAt > (_lastRemoteUpdatedAt || 0)) {
-          if (data.lastUpdatedBy !== CLIENT_ID) {
-            applyRemoteData(data);
-          }
+        if (!data || !data.updatedAt) return;
+        // Only apply if remote is genuinely newer and from a different device
+        if (data.lastUpdatedBy === CLIENT_ID) return;
+        if (data.updatedAt > (_lastRemoteUpdatedAt || 0)) {
+          applyRemoteData(data);
         }
       }).catch(() => {});
     };
@@ -367,7 +419,7 @@ function initFirebaseSync() {
 
     // Click on sync status pill to manual force sync
     _el('sync-status')?.addEventListener('click', () => {
-      toast('🔄 Syncing with Cloud…');
+      toast('🔄 Force syncing with Cloud…');
       pushToFirebase(true);
     });
 
@@ -390,7 +442,7 @@ function loadGlobalCset() {
     if (d) {
       ST.prefix = d.prefix || '';
       ST.suffix = d.suffix || '';
-      ST.labelEnabled = (d.labelEnabled !== false); // default true
+      ST.labelEnabled = (d.labelEnabled !== false);
       return;
     }
   } catch {}
@@ -407,7 +459,6 @@ function _projData(name) {
 
 function saveProjects(immediate = false) {
   if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
-    // Read script from DOM; fall back to what's already saved (never lose it)
     const ta = _el('script-textarea');
     const savedScript = ta && ta.value !== undefined && ta.value !== null
       ? ta.value
@@ -425,9 +476,13 @@ function saveProjects(immediate = false) {
       covered:       JSON.parse(JSON.stringify(ST.covered||{})),
     };
   }
-  try { localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS })); } catch {}
+  // Always write to localStorage FIRST (instant, never fails due to network)
+  try {
+    localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    _lastLocalSaveTime = Date.now(); // track when we last saved locally
+  } catch {}
   saveGlobalCset();
-  pushToFirebase(immediate); // Sync to Firebase Cloud
+  pushToFirebase(immediate); // then push to Firebase
 }
 
 function save(immediate = false) { saveProjects(immediate); }
