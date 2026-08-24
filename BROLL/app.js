@@ -428,7 +428,7 @@ function applyRemoteData(data) {
     renderRatingTabs();
     renderRatingPanel();
     updateSratingHint();
-    renderMyDatabase();
+
     _lastRemoteUpdatedAt = remoteUpdatedAt;
     _lastFirebaseSaveTime = remoteUpdatedAt || Date.now();
     _lastSavedStatus = 'synced';
@@ -769,7 +769,7 @@ function activateProject(pid) {
   renderHeatmap(); renderStats(); renderCards(true); updateAllPromptChips();
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge(); syncCsetUI();
   updateSratingHint(); renderRatingTabs(); renderRatingPanel();
-  renderMyDatabase();
+
   updateLineCopyPreview();
   scrollToLastScoredBroll();
 }
@@ -1006,9 +1006,8 @@ function saveMyRating(num, setIdx, score, comment) {
     updateHmCell(num);
     renderStats();
     renderFilterCount();
-    renderMyDatabase();
-    updateMyDbBadge();
     updateLineCopyPreview();
+
   };
 
   record(
@@ -1041,9 +1040,8 @@ function deleteMyRating(num, setIdx) {
     updateHmCell(num);
     renderStats();
     renderFilterCount();
-    renderMyDatabase();
-    updateMyDbBadge();
     updateLineCopyPreview();
+
   };
 
   record(
@@ -1057,19 +1055,7 @@ function deleteMyRating(num, setIdx) {
 
 
 
-function updateMyDbBadge() {
-  const el = _el('mydb-badge');
-  if (!el) return;
-  let total = 0;
-  for (const sets of Object.values(ST.myRatings || {})) {
-    if (!sets || typeof sets !== 'object') continue;
-    for (const item of Object.values(sets)) {
-      if (item && typeof item === 'object' && item.score !== undefined) total++;
-    }
-  }
-  el.textContent = total;
-  el.classList.toggle('active', total > 0);
-}
+function updateMyDbBadge() { /* removed */ }
 
 
 /* ── My Rating Modal ─────────────────────────────────────────── */
@@ -1221,95 +1207,7 @@ function showMyRatingModal(triggerEl, num, setIdx) {
 }
 
 
-/* ── My Database render ──────────────────────────────────────── */
-let _myDbFilter = { above: null, below: null, keyword: '' };
 
-function renderMyDatabase() {
-  const view = _el('mydb-view');
-  if (!view) return;
-  updateMyDbBadge();
-
-  // Collect all entries
-  const entries = [];
-  for (const [numStr, sets] of Object.entries(ST.myRatings || {})) {
-    if (!sets || typeof sets !== 'object') continue;
-    const num = parseFloat(numStr);
-    if (isNaN(num)) continue;
-    for (const [idxStr, rating] of Object.entries(sets)) {
-      if (!rating || typeof rating !== 'object' || rating.score === undefined) continue;
-      const setIdx = parseInt(idxStr);
-      if (isNaN(setIdx)) continue;
-      const entry = (ST.prompts[num] || [])[setIdx];
-      const broll = ST.brolls.find(b => b.num === num);
-      entries.push({ num, setIdx, rating, entry, broll });
-    }
-  }
-
-
-  // Apply filters
-  const { above, below, keyword } = _myDbFilter;
-  const filtered = entries.filter(({ rating }) => {
-    const s = parseFloat(rating.score);
-    if (above !== null && s < above) return false;
-    if (below !== null && s > below) return false;
-    if (keyword) {
-      const kw = keyword.toLowerCase();
-      const inComment = (rating.comment||'').toLowerCase().includes(kw);
-      const inPrompt = ((ST.prompts[rating.num]||[])[rating.setIdx]?.text||'').toLowerCase().includes(kw);
-      if (!inComment && !inPrompt) return false;
-    }
-    return true;
-  });
-
-  // Sort by score desc
-  filtered.sort((a, b) => parseFloat(b.rating.score) - parseFloat(a.rating.score));
-
-  if (!filtered.length) {
-    view.innerHTML = `<div class="mydb-empty">${entries.length ? '🔍 No entries match your filter.' : '📭 No personal ratings yet. Click ✏ on any prompt chip to rate it.'}</div>`;
-    return;
-  }
-
-  view.innerHTML = '';
-  filtered.forEach(({ num, setIdx, rating, entry, broll }) => {
-    const rColor = getMyRatingColor(rating.score);
-    const promptText = entry?.text || '—';
-    const brollLine = broll?.line || `B-roll #${num}`;
-
-    const row = document.createElement('div');
-    row.className = 'mydb-entry';
-
-    row.innerHTML = `
-      <div class="mydb-entry-hdr">
-        <span class="mydb-score-badge" style="color:${rColor.text};border-color:${rColor.border};background:${rColor.bg}">${rating.score}</span>
-        <span class="mydb-label">#${num} · Set ${setIdx+1}</span>
-        <span class="mydb-comment">${escHtml(rating.comment||'')}</span>
-        <button class="mydb-copy-btn" title="Copy with metadata">📋</button>
-        <button class="mydb-edit-btn" title="Edit rating">✏</button>
-        <button class="mydb-del-btn" title="Delete rating">🗑</button>
-      </div>
-      <div class="mydb-broll-line">📽 ${escHtml(brollLine)}</div>
-      <div class="mydb-prompt">${escHtml(promptText)}</div>
-    `;
-
-    row.querySelector('.mydb-copy-btn').addEventListener('click', () => {
-      const meta = `[#${num} Set ${setIdx+1} | My Rating: ${rating.score}${rating.comment ? ' — ' + rating.comment : ''}]\nB-roll: ${brollLine}\n\n${promptText}`;
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(meta).then(() => toast(`📋 Copied #${num} Set ${setIdx+1} with metadata`)).catch(() => fbCopy(meta, () => toast(`📋 Copied`)));
-      } else { fbCopy(meta, () => toast(`📋 Copied`)); }
-    });
-
-    row.querySelector('.mydb-edit-btn').addEventListener('click', e => {
-      showMyRatingModal(e.target, num, setIdx);
-    });
-
-    row.querySelector('.mydb-del-btn').addEventListener('click', () => {
-      deleteMyRating(num, setIdx);
-      toast(`🗑 Deleted rating for #${num} Set ${setIdx+1}`);
-    });
-
-    view.appendChild(row);
-  });
-}
 
 function parseSetRatings(text) {
   const results = [];
@@ -2446,9 +2344,32 @@ function buildPromptChip(num, i, entry) {
     showMyRatingModal(myBtn, num, i);
   });
 
+  // Right-click (PC) → instant rate 5
+  myBtn.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    saveMyRating(num, i, 5, '');
+    toast(`⚡ Quick rated #${num} Set ${i + 1}: 5`);
+  });
+
+  // Long-press (mobile / touchscreen) → instant rate 5 after 800ms hold
+  let _lpTimer = null;
+  myBtn.addEventListener('touchstart', e => {
+    _lpTimer = setTimeout(() => {
+      _lpTimer = null;
+      e.target.classList.add('longpress-flash');
+      saveMyRating(num, i, 5, '');
+      toast(`⚡ Quick rated #${num} Set ${i + 1}: 5`);
+      setTimeout(() => e.target.classList.remove('longpress-flash'), 400);
+    }, 800);
+  }, { passive: true });
+  myBtn.addEventListener('touchend', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } });
+  myBtn.addEventListener('touchmove', () => { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } });
+
   wrapper.appendChild(myBtn);
   return wrapper;
 }
+
 
 
 
@@ -3501,7 +3422,7 @@ function importJSON(file){
       renderHeatmap(); renderStats(); renderCards(true);
       renderLibraryView(); renderBatchTabs(); updateLibBadge(); syncCsetUI();
       renderRatingTabs(); renderRatingPanel(); updateSratingHint(); updateAllPromptChips();
-      renderMyDatabase();
+  
       toast('📤 Imported');
 
 
@@ -3592,8 +3513,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   _el('library-section')?.classList.add('collapsed');
   _el('cset-section')?.classList.add('collapsed');
-  _el('mydb-section')?.classList.add('collapsed');
   if (ST.brolls.length) collapseInput();
+
 
   renderProjectTabs();
   renderFilterChips();
@@ -3601,7 +3522,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge();
 
   syncCsetUI(); updateSratingHint(); renderRatingTabs(); renderRatingPanel(); refreshUR();
-  renderMyDatabase();
+
   updateLineCopyPreview();
   updateRatingLockUI();
   updateOverviewModeUI();
@@ -3856,38 +3777,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   if (document.body.scrollHeight > window.innerHeight + 300) jb?.classList.add('visible');
 
 
-  /* My Rating Database */
-  _el('mydb-toggle')?.addEventListener('click', () => {
-    const sec = _el('mydb-section'); if (!sec) return;
-    sec.classList.toggle('collapsed');
-    document.querySelector('#mydb-toggle .it-chevron').textContent = sec.classList.contains('collapsed') ? '▼' : '▲';
-  });
-  _el('mydb-filter-above')?.addEventListener('input', e => {
-    const v = e.target.value.trim();
-    _myDbFilter.above = v ? parseFloat(v) : null;
-    renderMyDatabase();
-  });
-  _el('mydb-filter-below')?.addEventListener('input', e => {
-    const v = e.target.value.trim();
-    _myDbFilter.below = v ? parseFloat(v) : null;
-    renderMyDatabase();
-  });
-  _el('mydb-filter-keyword')?.addEventListener('input', e => {
-    _myDbFilter.keyword = e.target.value.trim();
-    renderMyDatabase();
-  });
-  _el('mydb-filter-clear')?.addEventListener('click', () => {
-    _myDbFilter = { above: null, below: null, keyword: '' };
-    const fa = _el('mydb-filter-above'); if (fa) fa.value = '';
-    const fb = _el('mydb-filter-below'); if (fb) fb.value = '';
-    const fk = _el('mydb-filter-keyword'); if (fk) fk.value = '';
-    renderMyDatabase();
-  });
-  _el('btn-clear-myratings')?.addEventListener('click', () => showModal(
-    'Clear ALL personal ratings?',
-    'All your personal ratings and comments will be removed.',
-    () => { ST.myRatings = {}; save(); updateAllPromptChips(); renderMyDatabase(); toast('🗑️ Personal ratings cleared'); }
-  ));
+
 
   /* Service Worker for PWA / TWA */
   if ('serviceWorker' in navigator) {
