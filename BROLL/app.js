@@ -167,10 +167,86 @@ function updateSyncUI(status, text) {
   updateSavedTimeDisplay();
 }
 
-function pushToFirebase(immediate = false) {
-  if (!_fbRef) return; // no firebase, silently skip
+/* ── Deep merge helpers ─────────────────────────────────────── */
+// Merges two rating objects: keeps all entries, prefers the one with newer 'date'
+function _mergeMyRatings(cloud, local) {
+  const result = {};
+  const allNums = new Set([...Object.keys(cloud || {}), ...Object.keys(local || {})]);
+  allNums.forEach(num => {
+    const cSets = cloud?.[num] || {};
+    const lSets = local?.[num] || {};
+    const allIdxs = new Set([...Object.keys(cSets), ...Object.keys(lSets)]);
+    result[num] = {};
+    allIdxs.forEach(idx => {
+      const c = cSets[idx], l = lSets[idx];
+      if (!c) { result[num][idx] = l; }
+      else if (!l) { result[num][idx] = c; }
+      else {
+        // Both exist — prefer whichever has a newer date
+        result[num][idx] = ((l.date || 0) >= (c.date || 0)) ? l : c;
+      }
+    });
+    if (!Object.keys(result[num]).length) delete result[num];
+  });
+  return result;
+}
 
-  // If currently applying remote data, queue the push for after it finishes
+// Merges scores: for each num, prefer whichever is non-null; if both exist, keep local (user just changed it)
+function _mergeScores(cloud, local) {
+  return { ...(cloud || {}), ...(local || {}) };
+}
+
+// Merges covered: union — if either device marked it done, keep it done; local can also unmark
+function _mergeCovered(cloud, local) {
+  return { ...(cloud || {}), ...(local || {}) };
+}
+
+// Merges prompts: keep all prompts from both devices; local wins for same num
+function _mergePrompts(cloud, local) {
+  const result = { ...(cloud || {}) };
+  Object.entries(local || {}).forEach(([num, lPrompts]) => {
+    if (!result[num] || !result[num].length) {
+      result[num] = lPrompts;
+    } else {
+      // Merge by batchId: keep all batches, local prompts for matching batchId win
+      const cPrompts = result[num] || [];
+      const localBatchIds = new Set(lPrompts.map(p => p.batchId).filter(Boolean));
+      const cloudOnlyPrompts = cPrompts.filter(p => p.batchId && !localBatchIds.has(p.batchId));
+      result[num] = [...cloudOnlyPrompts, ...lPrompts];
+    }
+  });
+  return result;
+}
+
+// Merges batches arrays: union by id
+function _mergeBatches(cloud, local) {
+  const map = new Map();
+  (cloud || []).forEach(b => map.set(b.id, b));
+  (local || []).forEach(b => map.set(b.id, b)); // local wins on conflict
+  return Array.from(map.values());
+}
+
+// Full project-level merge: local changes applied on top of cloud state
+function _mergeProject(cloudProj, localProj) {
+  if (!cloudProj) return localProj;
+  if (!localProj) return cloudProj;
+  return {
+    name:          localProj.name || cloudProj.name,
+    script:        localProj.script || cloudProj.script,
+    scores:        _mergeScores(cloudProj.scores, localProj.scores),
+    myRatings:     _mergeMyRatings(cloudProj.myRatings, localProj.myRatings),
+    covered:       _mergeCovered(cloudProj.covered, localProj.covered),
+    prompts:       _mergePrompts(cloudProj.prompts, localProj.prompts),
+    batches:       _mergeBatches(cloudProj.batches, localProj.batches),
+    usedSets:      { ...(cloudProj.usedSets || {}), ...(localProj.usedSets || {}) },
+    setRatings:    { ...(cloudProj.setRatings || {}), ...(localProj.setRatings || {}) },
+    ratingBatches: _mergeBatches(cloudProj.ratingBatches, localProj.ratingBatches),
+  };
+}
+
+function pushToFirebase(immediate = false) {
+  if (!_fbRef) return;
+
   if (_isApplyingRemote) {
     _hasPendingLocalChange = true;
     return;
@@ -182,13 +258,13 @@ function pushToFirebase(immediate = false) {
 
   const doPush = () => {
     if (_isApplyingRemote) {
-      // Still blocked — queue again
       _hasPendingLocalChange = true;
-      _lastSavedStatus = 'synced'; // don't show spinning forever
+      _lastSavedStatus = 'synced';
       updateSavedTimeDisplay();
       return;
     }
 
+    // Build local payload first
     try {
       const ta = _el('script-textarea');
       const savedScript = ta && ta.value !== undefined && ta.value !== null
@@ -198,48 +274,67 @@ function pushToFirebase(immediate = false) {
       if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
         PROJECTS[ACTIVE_PID].script = savedScript;
       }
+    } catch {}
 
-      const now = Date.now();
+    const now = Date.now();
+    const localProjects = JSON.parse(JSON.stringify(PROJECTS));
+
+    // READ current cloud state first, then MERGE local changes on top, then WRITE
+    _fbRef.once('value').then(snap => {
+      const cloudData = snap.val();
+
+      let mergedProjects = localProjects;
+
+      // If cloud has data from another device that's newer, merge carefully
+      if (cloudData && cloudData.projects && cloudData.lastUpdatedBy !== CLIENT_ID) {
+        mergedProjects = {};
+        const allPids = new Set([
+          ...Object.keys(cloudData.projects),
+          ...Object.keys(localProjects)
+        ]);
+        allPids.forEach(pid => {
+          mergedProjects[pid] = _mergeProject(cloudData.projects[pid], localProjects[pid]);
+        });
+      }
+
       const payload = {
         active: ACTIVE_PID,
-        projects: JSON.parse(JSON.stringify(PROJECTS)),
+        projects: mergedProjects,
         globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
         lastUpdatedBy: CLIENT_ID,
         updatedAt: now
       };
 
-      _fbRef.set(payload)
-        .then(() => {
-          _lastFirebaseSaveTime = Date.now();
-          _lastRemoteUpdatedAt = now;
-          _lastSavedStatus = 'synced';
-          _fbRetryCount = 0;
-          if (_fbRetryTimer) { clearTimeout(_fbRetryTimer); _fbRetryTimer = null; }
-          updateSavedTimeDisplay();
-        })
-        .catch(err => {
-          console.error('Firebase save error:', err);
-          _lastSavedStatus = 'offline';
-          updateSavedTimeDisplay();
-          // Auto-retry with backoff: 2s, 5s, 10s, 30s
-          _fbRetryCount = Math.min(_fbRetryCount + 1, 4);
-          const retryDelay = [2000, 5000, 10000, 30000][_fbRetryCount - 1];
-          if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
-          _fbRetryTimer = setTimeout(() => pushToFirebase(true), retryDelay);
-        });
-    } catch (err) {
-      console.error('Firebase push preparation error:', err);
+      return _fbRef.set(payload);
+    })
+    .then(() => {
+      _lastFirebaseSaveTime = Date.now();
+      _lastRemoteUpdatedAt = now;
+      _lastSavedStatus = 'synced';
+      _fbRetryCount = 0;
+      if (_fbRetryTimer) { clearTimeout(_fbRetryTimer); _fbRetryTimer = null; }
+      updateSavedTimeDisplay();
+    })
+    .catch(err => {
+      console.error('Firebase save error:', err);
       _lastSavedStatus = 'offline';
       updateSavedTimeDisplay();
-    }
+      _fbRetryCount = Math.min(_fbRetryCount + 1, 4);
+      const retryDelay = [2000, 5000, 10000, 30000][_fbRetryCount - 1];
+      if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
+      _fbRetryTimer = setTimeout(() => pushToFirebase(true), retryDelay);
+    });
   };
 
   if (immediate) {
     doPush();
   } else {
-    _fbSyncTimer = setTimeout(doPush, 300); // slightly longer debounce to batch rapid changes
+    _fbSyncTimer = setTimeout(doPush, 300);
   }
 }
+
+
+
 
 
 function applyRemoteData(data) {
