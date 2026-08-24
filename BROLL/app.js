@@ -863,12 +863,8 @@ function renderProjectTabs() {
   addBtn.title='Create new script';
   addBtn.addEventListener('click', createProject);
   bar.appendChild(addBtn);
-
-  const clrBtn=document.createElement('button');
-  clrBtn.className='proj-clr-btn'; clrBtn.id='btn-clear-copy';
-  clrBtn.textContent='⟲ History'; clrBtn.title='Clear copy history for this script';
-  bar.appendChild(clrBtn);
 }
+
 
 /* ── Rating Colors for AI Prompt Sets ─────────────────────────── */
 function getRatingColor(score) {
@@ -1447,6 +1443,13 @@ function switchRatingTab(batchId) {
   renderRatingPanel();
 }
 
+/* ── Bottom Tab Switcher (Global) ─────────────────────────── */
+function switchBottomTab(tab) {
+  document.querySelectorAll('.btab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== `tab-panel-${tab}`));
+  scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function renderRatingPanel() {
   const np = _el('srating-panel-new'), dp = _el('srating-panel-detail');
   if (!np || !dp) return;
@@ -1471,63 +1474,78 @@ function renderRatingPanel() {
         <span class="rdetail-title">${escHtml(b.label)} Ratings</span>
         <span class="rdetail-meta">${dt.toLocaleString('en-IN')} · ${b.brolls.length} B-rolls · ${b.count || b.brolls.length} ratings</span>
       </div>
-      <div class="bdh-actions">
-        <button class="hbtn danger" id="btn-del-rbatch">🗑 Delete</button>
+      <div class="bdh-actions" style="display:flex;gap:6px;">
+        <button class="hbtn" id="btn-copy-rbatch">📋 Copy Batch Prompts</button>
+        <button class="hbtn danger" id="btn-del-rbatch">🗑 Delete Batch</button>
       </div>
     </div>
-    <div class="rdetail-list" id="rdetail-items"></div>
+    <div class="rdetail-cards" id="rdetail-items"></div>
   `;
 
   _el('btn-del-rbatch')?.addEventListener('click', () => showDeleteRatingBatchModal(b.id));
+
+  _el('btn-copy-rbatch')?.addEventListener('click', () => {
+    const lines = [];
+    b.brolls.forEach(num => {
+      const broll = ST.brolls.find(x => x.num === num);
+      const sets = ST.setRatings[num] || {};
+      let batchSetIndices = Object.keys(sets)
+        .map(Number)
+        .filter(idx => getSetRatingsList(num, idx).some(r => r.batchId === b.id))
+        .sort((a, c) => a - c);
+
+      if (!batchSetIndices.length) {
+        batchSetIndices = Object.keys(sets).map(Number).sort((a, c) => a - c);
+      }
+
+      const prompts = ST.prompts[num] || [];
+      if (batchSetIndices.length) {
+        lines.push(`-- B-roll #${num}: ${broll?.line || ''} --`);
+        batchSetIndices.forEach(idx => {
+          const p = prompts[idx];
+          if (p?.text) lines.push(`Set ${idx + 1}: ${p.text}`);
+        });
+        lines.push('');
+      }
+    });
+    const fullText = lines.join('\n');
+    if (!fullText.trim()) { toast('⚠️ No prompts found for this batch'); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(fullText).then(() => toast('📋 Copied batch prompts!')).catch(() => fbCopy(fullText, () => toast('📋 Copied batch prompts!')));
+    } else {
+      fbCopy(fullText, () => toast('📋 Copied batch prompts!'));
+    }
+  });
 
   const listEl = _el('rdetail-items');
   if (!listEl) return;
 
   b.brolls.forEach(num => {
+    let brollObj = ST.brolls.find(x => x.num === num);
+    if (!brollObj) {
+      brollObj = { num: num, line: `B-roll #${num}` };
+    }
+
+    // Determine set indices that belong to this rating batch
     const sets = ST.setRatings[num] || {};
-    const setIndices = Object.keys(sets).map(Number).sort((a, b) => a - b);
-    if (!setIndices.length) return;
+    let batchSetIndices = Object.keys(sets)
+      .map(Number)
+      .filter(idx => getSetRatingsList(num, idx).some(r => r.batchId === b.id))
+      .sort((a, c) => a - c);
 
-    const grp = document.createElement('div');
-    grp.className = 'rdetail-broll-group';
+    if (!batchSetIndices.length) {
+      batchSetIndices = Object.keys(sets).map(Number).sort((a, c) => a - c);
+    }
 
-    const brollHdr = document.createElement('div');
-    brollHdr.className = 'rdetail-broll-hdr';
-    brollHdr.innerHTML = `<span>B-ROLL #${num}</span><span>${setIndices.length} sets rated</span>`;
-    brollHdr.title = 'Click to jump to B-roll card';
-    brollHdr.style.cursor = 'pointer';
-    brollHdr.addEventListener('click', () => _el(`card-${num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-    grp.appendChild(brollHdr);
-
-    const rowsWrap = document.createElement('div');
-    rowsWrap.className = 'rdetail-broll-rows';
-
-    setIndices.forEach(idx => {
-      const summary = getSetRatingSummary(num, idx);
-      if (!summary) return;
-      const rColor = summary.color || { border: 'var(--border)', text: 'var(--text-1)', bg: 'transparent' };
-      const ratings = summary.ratings;
-      const whySummary = ratings.map((r, i) => ratings.length > 1 ? `[#${i+1}: ${r.score}] ${r.why}` : r.why).join('\n\n');
-
-      const row = document.createElement('div');
-      row.className = 'rdetail-row';
-      row.innerHTML = `
-        <span class="rdetail-set">Set ${idx + 1}${ratings.length > 1 ? ` (${ratings.length})` : ''}</span>
-        <span class="rdetail-score" style="border-color:${rColor.border};color:${rColor.text};background:${rColor.bg}">${summary.avgScore}</span>
-        <span class="rdetail-why" title="${escHtml(whySummary)}">${escHtml(whySummary || '—')}</span>
-        <button class="rdetail-del" title="Remove rating">✕</button>
-      `;
-      row.querySelector('.rdetail-del').addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        deleteSetRating(num, idx);
-      });
-      rowsWrap.appendChild(row);
-    });
-
-    grp.appendChild(rowsWrap);
-    listEl.appendChild(grp);
+    const card = buildCard(brollObj, batchSetIndices, `rb-${b.id}-`);
+    // Card in rating batch is expanded so batch prompt sets are visible
+    card.classList.add('is-expanded');
+    listEl.appendChild(card);
   });
 }
+
+
+
 
 function showDeleteRatingBatchModal(batchId) {
   const b = (ST.ratingBatches || []).find(x => x.id === batchId); if (!b) return;
@@ -2191,17 +2209,18 @@ function renderLibraryView() {
 
 
 /* ── Build single prompt chip (Card & Library) ──────────────── */
-function buildPromptChip(num, i, entry) {
+function buildPromptChip(num, i, entry, idPrefix = '') {
   const chip = document.createElement('button');
   const isCopied = !!entry.copied;
   const isUsed = ST.usedSets[num] === i;
+
 
   const summary = getSetRatingSummary(num, i);
   const rColor = summary ? summary.color : null;
 
   // Base classes
   chip.className = 'p-chip' + (isCopied ? ' copied' : '') + (isUsed ? ' is-used' : '');
-  chip.id = `pc-${num}-${i}`;
+  chip.id = idPrefix ? `${idPrefix}pc-${num}-${i}` : `pc-${num}-${i}`;
 
   // Label span
   const sp = document.createElement('span');
@@ -2264,7 +2283,7 @@ function buildPromptChip(num, i, entry) {
       holdTimer = setTimeout(() => {
         didHoldTrigger = true;
         if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
-        const oldVal = !!entry.copied;
+        const oldVal = !entry.copied;
         const newVal = !oldVal;
         const apply = (val) => {
           entry.copied = val;
@@ -2323,7 +2342,7 @@ function buildPromptChip(num, i, entry) {
   const myR = getMyRating(num, i);
   const myBtn = document.createElement('button');
   myBtn.className = 'myrating-chip-btn' + (myR ? ' has-rating' : '');
-  myBtn.id = `myrb-${num}-${i}`;
+  myBtn.id = idPrefix ? `${idPrefix}myrb-${num}-${i}` : `myrb-${num}-${i}`;
   if (myR) {
     const mc = getMyRatingColor(myR.score);
     myBtn.textContent = myR.score === 0 ? '0 ↺' : myR.score;
@@ -2376,15 +2395,21 @@ function buildPromptChip(num, i, entry) {
 
 
 
-function buildPromptChipsElement(num, prompts) {
+function buildPromptChipsElement(num, prompts, allowedSetIndices = null, idPrefix = '') {
   if (!prompts || !prompts.length) return null;
+  const filtered = prompts
+    .map((entry, i) => ({ entry, i }))
+    .filter(x => !allowedSetIndices || allowedSetIndices.includes(x.i));
+
+  if (!filtered.length) return null;
+
   const prow = document.createElement('div');
   prow.className = 'c-prompts';
-  prow.id = `cp-${num}`;
+  prow.id = idPrefix ? `${idPrefix}cp-${num}` : `cp-${num}`;
 
   // Group prompts by batchId
   const batchMap = new Map();
-  prompts.forEach((entry, i) => {
+  filtered.forEach(({ entry, i }) => {
     const bId = entry.batchId || 'default';
     if (!batchMap.has(bId)) batchMap.set(bId, []);
     batchMap.get(bId).push({ entry, i });
@@ -2396,7 +2421,7 @@ function buildPromptChipsElement(num, prompts) {
     groupEl.dataset.batchId = bId;
 
     items.forEach(({ entry, i }) => {
-      groupEl.appendChild(buildPromptChip(num, i, entry));
+      groupEl.appendChild(buildPromptChip(num, i, entry, idPrefix));
     });
 
     prow.appendChild(groupEl);
@@ -2404,6 +2429,7 @@ function buildPromptChipsElement(num, prompts) {
 
   return prow;
 }
+
 
 
 function updateCardPrompts(num) {
@@ -2903,6 +2929,7 @@ function renderCards(animate=false) {
   }
   noRes.style.display='none'; box.innerHTML='';
   list.forEach((b,i)=>{const card=buildCard(b);if(animate){card.style.animationDelay=`${Math.min(i*18,300)}ms`;card.classList.add('card-enter');}box.appendChild(card);});
+  updateCompactViewUI();
 
   requestAnimationFrame(() => {
     box.style.minHeight = '';
@@ -2910,24 +2937,28 @@ function renderCards(animate=false) {
 }
 
 
-function buildCard(b) {
+
+function buildCard(b, allowedSetIndices = null, idPrefix = '') {
   const score=ST.scores[b.num]??null, col=getC(score), prompts=ST.prompts[b.num]||[];
   const used=ST.usedSets[b.num];
 
   const card=document.createElement('div');
-  card.className='broll-card'; card.id=`card-${b.num}`;
+  card.className='broll-card';
+  card.id = idPrefix ? `${idPrefix}card-${b.num}` : `card-${b.num}`;
   card.style.borderLeftColor=col.border;
 
   /* Badge */
   const badge=document.createElement('div');
-  badge.className='c-num'; badge.id=`cn-${b.num}`;
+  badge.className='c-num';
+  badge.id = idPrefix ? `${idPrefix}cn-${b.num}` : `cn-${b.num}`;
   badge.style.background=col.bg;
   badge.style.boxShadow=col.glow!=='transparent'?`0 3px 14px ${col.glow}`:'none';
   badge.textContent=b.num; card.appendChild(badge);
 
   /* Middle */
   const mid=document.createElement('div'); mid.className='c-mid';
-  const line=document.createElement('div'); line.className='c-line'; line.textContent=b.line; line.title=b.line; mid.appendChild(line);
+  const line=document.createElement('div'); line.className='c-line'; line.textContent=b.line; line.title=b.line;
+  mid.appendChild(line);
 
   /* Slider */
   const slRow=document.createElement('div'); slRow.className='c-slider-row';
@@ -2935,7 +2966,8 @@ function buildCard(b) {
   const slWrap=document.createElement('div'); slWrap.className='slider-wrap' + (ST.mainRatingLocked ? ' is-locked' : '');
   const inp=document.createElement('input');
   inp.type='range'; inp.min='0'; inp.max='10'; inp.step='0.5'; inp.value=score!==null?score:'0';
-  inp.className='score-slider'; inp.id=`sl-${b.num}`;
+  inp.className='score-slider';
+  inp.id = idPrefix ? `${idPrefix}sl-${b.num}` : `sl-${b.num}`;
   inp.disabled = !!ST.mainRatingLocked;
   inp.setAttribute('list','score-steps'); inp.setAttribute('aria-label',`B-roll ${b.num} score`);
   applySliderStyle(inp, score);
@@ -2977,24 +3009,24 @@ function buildCard(b) {
   const l10=document.createElement('span'); l10.className='s-label'; l10.textContent='10'; slRow.appendChild(l10);
   mid.appendChild(slRow);
 
-  /* Prompt chips */
-  const prow = buildPromptChipsElement(b.num, prompts);
+  /* Prompt chips (filtered to allowed sets if passed) */
+  const prow = buildPromptChipsElement(b.num, prompts, allowedSetIndices, idPrefix);
   if (prow) mid.appendChild(prow);
-
-
 
   card.appendChild(mid);
 
-  /* Right: score wrap + clear */
+  /* Right: score wrap + copy line + done + expand */
   const right=document.createElement('div'); right.className='c-right';
 
   const scoreWrap=document.createElement('div'); scoreWrap.className='c-score-wrap';
-  const val=document.createElement('div'); val.className='score-val'; val.id=`sv-${b.num}`;
+  const val=document.createElement('div'); val.className='score-val';
+  val.id = idPrefix ? `${idPrefix}sv-${b.num}` : `sv-${b.num}`;
   val.style.background=col.bg; val.style.borderColor=col.border; val.textContent=scoreLbl(score);
   scoreWrap.appendChild(val);
 
   const suBadge=document.createElement('div');
-  suBadge.className='su-badge'+(used!==undefined?'':' hidden'); suBadge.id=`su-${b.num}`;
+  suBadge.className='su-badge'+(used!==undefined?'':' hidden');
+  suBadge.id = idPrefix ? `${idPrefix}su-${b.num}` : `su-${b.num}`;
   suBadge.textContent=used!==undefined?`S${used+1}`:''; suBadge.title=used!==undefined?`Used set ${used+1} for this rating`:'';
   scoreWrap.appendChild(suBadge);
   right.appendChild(scoreWrap);
@@ -3021,7 +3053,7 @@ function buildCard(b) {
   const isCov = !!(ST.covered && ST.covered[b.num]);
   const doneBtn = document.createElement('button');
   doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
-  doneBtn.id = `done-btn-${b.num}`;
+  doneBtn.id = idPrefix ? `${idPrefix}done-btn-${b.num}` : `done-btn-${b.num}`;
   doneBtn.innerHTML = isCov ? '✔' : '◻';
   doneBtn.title = isCov
     ? `B-roll #${b.num} is Done (9+ in Overview)\nClick to unmark`
@@ -3032,9 +3064,29 @@ function buildCard(b) {
   });
   right.appendChild(doneBtn);
 
+  const countDisplay = allowedSetIndices ? allowedSetIndices.length : prompts.length;
+  // Open / Expand prompt boxes button (below Copy & Done buttons)
+  if (countDisplay > 0) {
+    const expBtn = document.createElement('button');
+    expBtn.className = 'c-exp-card-btn';
+    expBtn.id = idPrefix ? `${idPrefix}exp-btn-${b.num}` : `exp-btn-${b.num}`;
+    expBtn.innerHTML = `<span class="exp-count">${countDisplay}</span><span class="exp-arrow">▾</span>`;
+    expBtn.title = `Expand prompt sets for #${b.num} (${countDisplay} set${countDisplay>1?'s':''})`;
+    expBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isExp = card.classList.toggle('is-expanded');
+      expBtn.classList.toggle('active', isExp);
+      const arr = expBtn.querySelector('.exp-arrow');
+      if (arr) arr.textContent = isExp ? '▴' : '▾';
+    });
+    right.appendChild(expBtn);
+  }
+
   card.appendChild(right);
   return card;
 }
+
+
 
 
 
@@ -3208,11 +3260,13 @@ function setFilter(f) {
     c.classList.toggle('active', isAct);
     c.setAttribute('aria-pressed', isAct ? 'true' : 'false');
   });
+  _el('tb-needs-work')?.classList.toggle('active', f === 'needs');
   if (!f.startsWith('below:')) { const e = _el('fb-below'); if (e) e.value = ''; }
   if (!f.startsWith('above:')) { const e = _el('fb-above'); if (e) e.value = ''; }
   renderCards();
   renderFilterCount();
 }
+
 
 /* ── Line Copy & Filter Tool ────────────────────────────────── */
 let LC_TARGET = 'main';
@@ -3271,6 +3325,24 @@ function getFilteredLines() {
 }
 
 
+function formatBatch5Lines(matches, includeNum, lineGap) {
+  const formattedLines = matches.map(b => {
+    const prefix = includeNum ? `${b.num} ` : '';
+    return `${prefix}${b.line}`;
+  });
+
+  const chunks = [];
+  for (let i = 0; i < formattedLines.length; i += 5) {
+    const chunk = formattedLines.slice(i, i + 5);
+    const itemSep = lineGap ? '\n\n' : '\n';
+    chunks.push(chunk.join(itemSep));
+  }
+
+  // 2 line gap (2 blank lines = \n\n\n) between each batch of 5
+  const batchSep = lineGap ? '\n\n\n\n' : '\n\n\n';
+  return chunks.join(batchSep);
+}
+
 function updateLineCopyPreview() {
   const ta = _el('lc-preview-textarea');
   const countBadge = _el('lc-count-badge');
@@ -3281,13 +3353,7 @@ function updateLineCopyPreview() {
   const includeNum = _el('lc-include-num') ? _el('lc-include-num').checked : true;
   const lineGap = _el('lc-line-gap') ? _el('lc-line-gap').checked : true;
 
-  const formattedLines = matches.map(b => {
-    const prefix = includeNum ? `${b.num} ` : '';
-    return `${prefix}${b.line}`;
-  });
-
-  const sep = lineGap ? '\n\n' : '\n';
-  const text = formattedLines.join(sep);
+  const text = formatBatch5Lines(matches, includeNum, lineGap);
   ta.value = text;
 
   const countText = `${matches.length} line${matches.length === 1 ? '' : 's'} matching filter`;
@@ -3311,7 +3377,7 @@ function copyFilteredLines() {
   }
   const text = ta.value.trim();
   const matches = getFilteredLines();
-  const doConfirm = () => toast(`📋 Copied ${matches.length} filtered lines to clipboard!`);
+  const doConfirm = () => toast(`📋 Copied ${matches.length} filtered lines in batches of 5!`);
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(doConfirm).catch(() => fbCopy(text, doConfirm));
   } else {
@@ -3350,21 +3416,16 @@ function copyNeedsWorkLines() {
   const includeNum = _el('lc-include-num') ? _el('lc-include-num').checked : true;
   const lineGap = _el('lc-line-gap') ? _el('lc-line-gap').checked : true;
 
-  const formattedLines = matches.map(b => {
-    const prefix = includeNum ? `${b.num} ` : '';
-    return `${prefix}${b.line}`;
-  });
+  const text = formatBatch5Lines(matches, includeNum, lineGap);
 
-  const sep = lineGap ? '\n\n' : '\n';
-  const text = formattedLines.join(sep);
-
-  const doConfirm = () => toast(`📋 Copied ${matches.length} "Needs Work" lines to clipboard!`);
+  const doConfirm = () => toast(`📋 Copied ${matches.length} "Needs Work" lines in batches of 5!`);
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(doConfirm).catch(() => fbCopy(text, doConfirm));
   } else {
     fbCopy(text, doConfirm);
   }
 }
+
 
 
 /* ── Export / Import ────────────────────────────────────────── */
@@ -3454,7 +3515,21 @@ function setText(id,v){const e=_el(id);if(e)e.textContent=v;}
 function setStyle(id,p,v){const e=_el(id);if(e)e.style[p]=v;}
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-/* ── Main Rating Lock (Mistouch Protection) ───────────────── */
+/* ── Settings Center Sync ──────────────────────────────────── */
+function syncSettingsUI() {
+  const comp = _el('setting-compact-view');
+  if (comp) comp.checked = !!ST.compactView;
+
+  const ovScroll = _el('setting-overview-scroll');
+  if (ovScroll) ovScroll.checked = !!ST.overviewScroll;
+
+  const slLock = _el('setting-slider-lock');
+  if (slLock) slLock.checked = !!ST.mainRatingLocked;
+
+  const ad9 = _el('setting-autodone-9');
+  if (ad9) ad9.checked = (ST.autoDone9 !== false);
+}
+
 function updateRatingLockUI() {
   const btn = _el('rating-lock-btn');
   const ic = _el('lock-icon');
@@ -3474,6 +3549,7 @@ function updateRatingLockUI() {
   document.querySelectorAll('.slider-wrap').forEach(sw => {
     sw.classList.toggle('is-locked', isLocked);
   });
+  syncSettingsUI();
 }
 
 function toggleMainRatingLock() {
@@ -3482,6 +3558,22 @@ function toggleMainRatingLock() {
   updateRatingLockUI();
   toast(ST.mainRatingLocked ? '🔒 Main rating locked to prevent accidental changes' : '🔓 Main rating unlocked for editing');
 }
+
+/* ── Compact Cards View (Hide Prompt Boxes) ─────────────────── */
+function updateCompactViewUI() {
+  const isCompact = !!ST.compactView;
+  _el('cards-container')?.classList.toggle('compact-cards', isCompact);
+  _el('tb-compact-toggle')?.classList.toggle('active', isCompact);
+  syncSettingsUI();
+}
+
+function toggleCompactView() {
+  ST.compactView = !ST.compactView;
+  try { localStorage.setItem('br_compact_cards', ST.compactView ? 'true' : 'false'); } catch {}
+  updateCompactViewUI();
+  toast(ST.compactView ? '🗜️ Compact View: Prompts hidden' : '👁️ Normal View: Prompts visible');
+}
+
 
 /* ── Init ───────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3505,6 +3597,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   } catch {}
 
   try {
+    const savedCompact = localStorage.getItem('br_compact_cards');
+    ST.compactView = (savedCompact !== 'false'); // default true
+  } catch {
+    ST.compactView = true;
+  }
+
+
+  try {
     const savedScroll = localStorage.getItem('br_overview_scroll');
     ST.overviewScroll = (savedScroll === 'true');
   } catch {}
@@ -3513,6 +3613,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   _el('library-section')?.classList.add('collapsed');
   _el('cset-section')?.classList.add('collapsed');
+
   if (ST.brolls.length) collapseInput();
 
 
@@ -3575,18 +3676,18 @@ document.addEventListener('DOMContentLoaded',()=>{
   _el('prompt-textarea')?.addEventListener('paste', () => autoPad(_el('prompt-textarea')));
   _el('srating-textarea')?.addEventListener('paste', () => autoPad(_el('srating-textarea')));
 
-  _el('input-toggle').addEventListener('click',()=>{if(ST.inputOpen)collapseInput();else expandInput();});
+  _el('input-toggle')?.addEventListener('click',()=>{if(ST.inputOpen)collapseInput();else expandInput();});
 
   /* Header */
-  _el('btn-clear').addEventListener('click',()=>showModal('Clear this script?','Script + scores + prompts for this script will be removed.',()=>{
-    _el('script-textarea').value='';
+  _el('btn-clear')?.addEventListener('click',()=>showModal('Clear this script?','Script + scores + prompts for this script will be removed.',()=>{
+    const sta = _el('script-textarea'); if (sta) sta.value='';
     ST.brolls=[];ST.scores={};ST.prompts={};ST.batches=[];ST.usedSets={};ST.setRatings={};ST.ratingBatches=[];ST.activeRatingBatch='new';
     save(); expandInput();
     renderProjectTabs();
     renderHeatmap();renderStats();renderCards();renderBatchTabs();renderBatchPanel();renderLibraryView();updateLibBadge();updateSratingHint();renderRatingTabs();renderRatingPanel();
     toast('🗑️ Cleared');
   }));
-  _el('btn-reset').addEventListener('click', () => {
+  _el('btn-reset')?.addEventListener('click', () => {
     showModal(
       'Reset all ticks for this script?',
       'All green "copied" checkmarks for all prompt sets in this script will be unticked. Prompts, scores, and ratings will remain untouched.',
@@ -3596,29 +3697,61 @@ document.addEventListener('DOMContentLoaded',()=>{
     );
   });
 
-  _el('btn-undo').addEventListener('click',doUndo);
-  _el('btn-redo').addEventListener('click',doRedo);
-  _el('btn-export').addEventListener('click',exportData);
-  _el('btn-import').addEventListener('click',()=>_el('file-input').click());
-  _el('file-input').addEventListener('change',e=>{if(e.target.files[0]){importJSON(e.target.files[0]);e.target.value='';}});
+  _el('btn-undo')?.addEventListener('click',doUndo);
+  _el('btn-redo')?.addEventListener('click',doRedo);
+  _el('btn-export')?.addEventListener('click',exportData);
+  _el('btn-import')?.addEventListener('click',()=>_el('file-input')?.click());
+  _el('file-input')?.addEventListener('change',e=>{if(e.target.files[0]){importJSON(e.target.files[0]);e.target.value='';}});
 
   /* Copy Settings — handlers save to GLOBAL cset key */
-  _el('cset-toggle').addEventListener('click',()=>{
+  _el('cset-toggle')?.addEventListener('click',()=>{
     const sec=_el('cset-section');if(!sec)return;
     ST.csetOpen=!ST.csetOpen;sec.classList.toggle('collapsed',!ST.csetOpen);
-    document.querySelector('#cset-toggle .it-chevron').textContent=ST.csetOpen?'▲':'▼';
+    const ch = document.querySelector('#cset-toggle .it-chevron');
+    if (ch) ch.textContent=ST.csetOpen?'▲':'▼';
   });
-  _el('cset-prefix').addEventListener('input',e=>{ST.prefix=e.target.value;saveGlobalCset();updateCsetHint();});
-  _el('cset-suffix').addEventListener('input',e=>{ST.suffix=e.target.value;saveGlobalCset();updateCsetHint();});
+  _el('cset-prefix')?.addEventListener('input',e=>{ST.prefix=e.target.value;saveGlobalCset();updateCsetHint();});
+  _el('cset-suffix')?.addEventListener('input',e=>{ST.suffix=e.target.value;saveGlobalCset();updateCsetHint();});
   _el('cset-label-toggle')?.addEventListener('change', e => {
     ST.labelEnabled = e.target.checked;
     saveGlobalCset();
     updateCsetHint();
     toast(ST.labelEnabled ? '🏷️ B-roll & Set tag enabled' : '🏷️ B-roll & Set tag disabled');
   });
-  _el('cset-clear-pre').addEventListener('click',()=>{ST.prefix='';_el('cset-prefix').value='';saveGlobalCset();updateCsetHint();toast('Prefix cleared');});
-  _el('cset-clear-suf').addEventListener('click',()=>{ST.suffix='';_el('cset-suffix').value='';saveGlobalCset();updateCsetHint();toast('Suffix cleared');});
+  _el('cset-clear-pre')?.addEventListener('click',()=>{ST.prefix='';const cp=_el('cset-prefix');if(cp)cp.value='';saveGlobalCset();updateCsetHint();toast('Prefix cleared');});
+  _el('cset-clear-suf')?.addEventListener('click',()=>{ST.suffix='';const cs=_el('cset-suffix');if(cs)cs.value='';saveGlobalCset();updateCsetHint();toast('Suffix cleared');});
 
+  /* Settings Center Switch Listeners */
+  _el('setting-compact-view')?.addEventListener('change', e => {
+    ST.compactView = e.target.checked;
+    try { localStorage.setItem('br_compact_cards', ST.compactView ? 'true' : 'false'); } catch {}
+    updateCompactViewUI();
+    toast(ST.compactView ? '🗜️ Compact View: Prompts hidden' : '👁️ Normal View: Prompts visible');
+  });
+
+  _el('setting-overview-scroll')?.addEventListener('change', () => {
+    toggleOverviewScrollMode();
+    syncSettingsUI();
+  });
+
+  _el('setting-slider-lock')?.addEventListener('change', () => {
+    toggleMainRatingLock();
+    syncSettingsUI();
+  });
+
+  _el('setting-autodone-9')?.addEventListener('change', e => {
+    ST.autoDone9 = e.target.checked;
+    try { localStorage.setItem('br_auto_done_9', ST.autoDone9 ? 'true' : 'false'); } catch {}
+    toast(ST.autoDone9 ? '✔ Auto-Done on 9+ enabled' : '◻ Auto-Done on 9+ disabled');
+  });
+
+  _el('setting-force-sync')?.addEventListener('click', () => {
+    toast('🔄 Cloud sync in progress…');
+    pushToFirebase(true);
+  });
+
+  _el('setting-export-json')?.addEventListener('click', exportData);
+  _el('setting-import-json')?.addEventListener('click', () => _el('file-input')?.click());
 
   /* Line Copy & Filter section */
   _el('line-copy-toggle')?.addEventListener('click', () => {
@@ -3640,18 +3773,15 @@ document.addEventListener('DOMContentLoaded',()=>{
   _el('btn-copy-filtered-lines')?.addEventListener('click', copyFilteredLines);
   _el('btn-copy-needs-work-lines')?.addEventListener('click', copyNeedsWorkLines);
 
-
-
-
   /* Set Ratings section */
-
-  _el('srating-toggle').addEventListener('click',()=>{
+  _el('srating-toggle')?.addEventListener('click',()=>{
     const sec=_el('srating-section');if(!sec)return;
     sec.classList.toggle('collapsed');
-    document.querySelector('#srating-toggle .it-chevron').textContent=sec.classList.contains('collapsed')?'▼':'▲';
+    const ch = document.querySelector('#srating-toggle .it-chevron');
+    if (ch) ch.textContent=sec.classList.contains('collapsed')?'▼':'▲';
   });
-  _el('btn-apply-ratings').addEventListener('click',()=>{
-    const t=_el('srating-textarea').value.trim();if(!t){toast('⚠️ Paste rating lines first');return;}
+  _el('btn-apply-ratings')?.addEventListener('click',()=>{
+    const t=_el('srating-textarea')?.value.trim();if(!t){toast('⚠️ Paste rating lines first');return;}
     applySetRatings(t);
   });
   _el('btn-paste-ratings')?.addEventListener('click', async () => {
@@ -3676,14 +3806,13 @@ document.addEventListener('DOMContentLoaded',()=>{
       toast('⚠️ Cannot read clipboard — use Ctrl+V');
     }
   });
-  _el('btn-clear-rating-input').addEventListener('click',()=>{_el('srating-textarea').value='';});
-  _el('btn-clear-all-ratings').addEventListener('click',()=>showModal('Clear all set ratings?','All set ratings and why text will be removed.',()=>{
+  _el('btn-clear-rating-input')?.addEventListener('click',()=>{const ta=_el('srating-textarea');if(ta)ta.value='';});
+  _el('btn-clear-all-ratings')?.addEventListener('click',()=>showModal('Clear all set ratings?','All set ratings and why text will be removed.',()=>{
     ST.setRatings={};ST.ratingBatches=[];ST.activeRatingBatch='new';save();updateAllPromptChips();updateSratingHint();renderRatingTabs();renderRatingPanel();toast('🗑️ Set ratings cleared');
   }));
 
-
   /* Clear copy history — event delegation on project-bar */
-  _el('project-bar').addEventListener('click',e=>{
+  _el('project-bar')?.addEventListener('click',e=>{
     if(e.target.closest('#btn-clear-copy')){
       showModal('Clear copy history?','All green "copied" marks for this script will be removed.',()=>{
         clearCopyHistory();toast('⟲ Copy history cleared');
@@ -3726,14 +3855,13 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 
   /* Sort */
-
   document.querySelectorAll('.sort-btn').forEach(btn=>btn.addEventListener('click',()=>{ST.sortBy=btn.dataset.sort;document.querySelectorAll('.sort-btn').forEach(b=>b.classList.toggle('active',b.dataset.sort===ST.sortBy));renderCards();}));
 
   /* Library */
-  _el('library-toggle').addEventListener('click',()=>{const sec=_el('library-section');if(!sec)return;ST.libOpen=!ST.libOpen;sec.classList.toggle('collapsed',!ST.libOpen);document.querySelector('#library-toggle .it-chevron').textContent=ST.libOpen?'▲':'▼';});
-  _el('btn-import-prompts').addEventListener('click',()=>{const t=_el('prompt-textarea').value.trim();if(!t){toast('⚠️ Paste prompt batch first');return;}importPrompts(t);_el('prompt-textarea').value='';});
-  _el('btn-clear-prompt-input').addEventListener('click',()=>{_el('prompt-textarea').value='';});
-  _el('btn-clear-prompts').addEventListener('click',()=>showModal('Clear ALL prompts?','Removes every prompt and all batch history.',()=>{
+  _el('library-toggle')?.addEventListener('click',()=>{const sec=_el('library-section');if(!sec)return;ST.libOpen=!ST.libOpen;sec.classList.toggle('collapsed',!ST.libOpen);const ch=document.querySelector('#library-toggle .it-chevron');if(ch)ch.textContent=ST.libOpen?'▲':'▼';});
+  _el('btn-import-prompts')?.addEventListener('click',()=>{const t=_el('prompt-textarea')?.value.trim();if(!t){toast('⚠️ Paste prompt batch first');return;}importPrompts(t);const pta=_el('prompt-textarea');if(pta)pta.value='';});
+  _el('btn-clear-prompt-input')?.addEventListener('click',()=>{const pta=_el('prompt-textarea');if(pta)pta.value='';});
+  _el('btn-clear-prompts')?.addEventListener('click',()=>showModal('Clear ALL prompts?','Removes every prompt and all batch history.',()=>{
     ST.prompts={};ST.batches=[];ST.usedSets={};ST.activeBatch='new';
     save();updateAllPromptChips();renderBatchTabs();renderBatchPanel();renderLibraryView();updateLibBadge();toast('🗑️ All prompts cleared');
   }));
@@ -3750,7 +3878,6 @@ document.addEventListener('DOMContentLoaded',()=>{
       } else {
         ta.value = text;
       }
-      // Same autoPad behavior: ensure 2 trailing newlines and move cursor to end
       setTimeout(() => {
         if (!ta.value.endsWith('\n\n')) ta.value = ta.value.trimEnd() + '\n\n';
         ta.scrollTop = ta.scrollHeight;
@@ -3773,8 +3900,38 @@ document.addEventListener('DOMContentLoaded',()=>{
   }, { passive: true });
   jt?.addEventListener('click', () => scrollTo({ top: 0, behavior: 'smooth' }));
   jb?.addEventListener('click', () => scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
-  // Show bottom button initially if page is scrollable
   if (document.body.scrollHeight > window.innerHeight + 300) jb?.classList.add('visible');
+
+  /* ── Bottom Tab Bar ─────────────────────────────────────── */
+  document.querySelectorAll('.btab').forEach(b => {
+    b.addEventListener('click', () => switchBottomTab(b.dataset.tab));
+  });
+
+
+  /* ── Toolbar 🔍: toggle filter bar ──────────────────────── */
+  _el('tb-filter-toggle')?.addEventListener('click', () => {
+    const fb = _el('filter-bar');
+    if (!fb) return;
+    const hidden = fb.classList.toggle('hidden');
+    _el('tb-filter-toggle')?.classList.toggle('active', !hidden);
+    switchBottomTab('p');
+  });
+
+
+  /* ── Toolbar ⚡: Needs Work (<9) quick filter ────────────── */
+  _el('tb-needs-work')?.addEventListener('click', () => {
+    switchBottomTab('p');
+    if (ST.filter === 'needs') {
+      setFilter('all');
+    } else {
+      setFilter('needs');
+      toast('⚡ Filter: Needs Work (<9)');
+    }
+  });
+
+  /* ── Toolbar 🗜️: Compact View (hide prompts) ────────────── */
+  updateCompactViewUI();
+  _el('tb-compact-toggle')?.addEventListener('click', toggleCompactView);
 
 
 
