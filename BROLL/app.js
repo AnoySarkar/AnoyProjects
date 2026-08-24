@@ -2403,8 +2403,11 @@ function updateCardPrompts(num) {
   const mid = card.querySelector('.c-mid');
   const prompts = ST.prompts[num] || [];
 
+  const activeRBatch = ST.activeRatingBatchFilter ? (ST.ratingBatches || []).find(x => x.id === ST.activeRatingBatchFilter) : null;
+  const allowedSets = activeRBatch ? getBatchSetsForBroll(activeRBatch, num) : null;
+
   if (existingPr) existingPr.remove();
-  const prow = buildPromptChipsElement(num, prompts);
+  const prow = buildPromptChipsElement(num, prompts, allowedSets);
   if (prow) mid.appendChild(prow);
 
   // Also refresh the Done button in the right column
@@ -2418,6 +2421,7 @@ function updateCardPrompts(num) {
       : `Mark B-roll #${num} as Done (9+ in Overview)`;
   }
 }
+
 
 
 
