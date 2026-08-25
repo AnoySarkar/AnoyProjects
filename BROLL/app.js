@@ -237,8 +237,10 @@ function _mergeProject(cloudProj, localProj) {
   if (!cloudProj) return localProj;
   if (!localProj) return cloudProj;
   return {
-    name:          localProj.name || cloudProj.name,
-    script:        localProj.script || cloudProj.script,
+    name:          localProj.name || cloudProj.name || 'Script',
+    script:        localProj.script !== undefined ? localProj.script : (cloudProj.script || ''),
+    bengaliScript: localProj.bengaliScript !== undefined ? localProj.bengaliScript : (cloudProj.bengaliScript || ''),
+    bengaliLines:  localProj.bengaliLines || cloudProj.bengaliLines || parseAltScript(localProj.bengaliScript || cloudProj.bengaliScript || ''),
     scores:        _mergeScores(cloudProj.scores, localProj.scores),
     myRatings:     _mergeMyRatings(cloudProj.myRatings, localProj.myRatings),
     covered:       _mergeCovered(cloudProj.covered, localProj.covered),
@@ -277,8 +279,15 @@ function pushToFirebase(immediate = false) {
         ? ta.value
         : (PROJECTS[ACTIVE_PID]?.script || '');
 
+      const bnTa = _el('script-bengali-textarea');
+      const savedBnScript = bnTa && bnTa.value !== undefined && bnTa.value !== null
+        ? bnTa.value
+        : (PROJECTS[ACTIVE_PID]?.bengaliScript || ST.bengaliScript || '');
+
       if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
         PROJECTS[ACTIVE_PID].script = savedScript;
+        PROJECTS[ACTIVE_PID].bengaliScript = savedBnScript;
+        PROJECTS[ACTIVE_PID].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
       }
     } catch {}
 
@@ -318,35 +327,34 @@ function pushToFirebase(immediate = false) {
       _lastRemoteUpdatedAt = now;
       _lastSavedStatus = 'synced';
       _fbRetryCount = 0;
-      if (_fbRetryTimer) { clearTimeout(_fbRetryTimer); _fbRetryTimer = null; }
       updateSavedTimeDisplay();
+      if (_hasPendingLocalChange) {
+        _hasPendingLocalChange = false;
+        pushToFirebase(true);
+      }
     })
     .catch(err => {
-      console.error('Firebase save error:', err);
-      _lastSavedStatus = 'offline';
+      console.warn('Firebase push failed:', err);
+      _lastSavedStatus = 'error';
       updateSavedTimeDisplay();
-      _fbRetryCount = Math.min(_fbRetryCount + 1, 4);
-      const retryDelay = [2000, 5000, 10000, 30000][_fbRetryCount - 1];
-      if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
-      _fbRetryTimer = setTimeout(() => pushToFirebase(true), retryDelay);
+      if (_fbRetryCount < 5) {
+        _fbRetryCount++;
+        if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
+        _fbRetryTimer = setTimeout(() => pushToFirebase(true), Math.min(1000 * Math.pow(2, _fbRetryCount), 30000));
+      }
     });
   };
 
   if (immediate) {
     doPush();
   } else {
-    _fbSyncTimer = setTimeout(doPush, 300);
+    _fbSyncTimer = setTimeout(doPush, 2000);
   }
 }
 
-
-
-
-
 function applyRemoteData(data) {
-  if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
+  if (!data || !data.projects || typeof data.projects !== 'object') return;
 
-  // CRITICAL: If we have local changes that haven't been saved yet, don't let remote overwrite them
   // A local change is "newer" if it was saved to localStorage more recently than the remote timestamp
   const remoteUpdatedAt = data.updatedAt || 0;
   if (_lastLocalSaveTime > 0 && _lastLocalSaveTime > remoteUpdatedAt && data.lastUpdatedBy !== CLIENT_ID) {
@@ -365,6 +373,8 @@ function applyRemoteData(data) {
       PROJECTS[k] = {
         name: v.name || 'Script',
         script: v.script || '',
+        bengaliScript: v.bengaliScript || '',
+        bengaliLines: v.bengaliLines || parseAltScript(v.bengaliScript || ''),
         scores: _migrateScores(v.scores),
         prompts: _migratePrompts(v.prompts || {}),
         batches: v.batches || [],
@@ -377,7 +387,10 @@ function applyRemoteData(data) {
     }
 
     // 2. Sync active project ID (keep current active script if valid so user doesn't get kicked)
-    if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    const savedActivePid = localStorage.getItem('br_last_active_pid');
+    if (savedActivePid && PROJECTS[savedActivePid]) {
+      ACTIVE_PID = savedActivePid;
+    } else if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
       // keep current script tab active
     } else if (data.active && PROJECTS[data.active]) {
       ACTIVE_PID = data.active;
@@ -399,6 +412,7 @@ function applyRemoteData(data) {
     // 4. Update localStorage cache
     try {
       localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+      if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
     } catch {}
 
     // 5. Update active project working state
@@ -412,6 +426,8 @@ function applyRemoteData(data) {
       ST.ratingBatches     = proj.ratingBatches || [];
       ST.myRatings         = _migrateMyRatings(proj.myRatings);
       ST.covered           = _migrateCovered(proj.covered || {});
+      ST.bengaliScript     = proj.bengaliScript || '';
+      ST.bengaliLines      = proj.bengaliLines || parseAltScript(proj.bengaliScript || '');
       ST.brolls            = parseScript(proj.script || '');
 
       const ta = _el('script-textarea');
@@ -792,32 +808,56 @@ function loadProjects() {
 
 function activateProject(pid) {
   if (!PROJECTS[pid]) return;
-  saveProjects();
+
+  // 1. If switching from another project, cleanly save that project first
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID] && ACTIVE_PID !== pid) {
+    const ta = _el('script-textarea');
+    const bnTa = _el('script-bengali-textarea');
+    PROJECTS[ACTIVE_PID].script = ta ? ta.value : (PROJECTS[ACTIVE_PID].script || '');
+    PROJECTS[ACTIVE_PID].bengaliScript = bnTa ? bnTa.value : (PROJECTS[ACTIVE_PID].bengaliScript || ST.bengaliScript || '');
+    PROJECTS[ACTIVE_PID].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+    PROJECTS[ACTIVE_PID].scores = JSON.parse(JSON.stringify(ST.scores || {}));
+    PROJECTS[ACTIVE_PID].prompts = JSON.parse(JSON.stringify(ST.prompts || {}));
+    PROJECTS[ACTIVE_PID].batches = JSON.parse(JSON.stringify(ST.batches || []));
+    PROJECTS[ACTIVE_PID].usedSets = JSON.parse(JSON.stringify(ST.usedSets || {}));
+    PROJECTS[ACTIVE_PID].setRatings = JSON.parse(JSON.stringify(ST.setRatings || {}));
+    PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+    PROJECTS[ACTIVE_PID].myRatings = JSON.parse(JSON.stringify(ST.myRatings || {}));
+    PROJECTS[ACTIVE_PID].covered = JSON.parse(JSON.stringify(ST.covered || {}));
+    try {
+      localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    } catch {}
+  }
+
+  // 2. Set new active PID
   ACTIVE_PID = pid;
   localStorage.setItem('br_last_active_pid', pid);
-  const proj = PROJECTS[pid];
-  ST.scores            = proj.scores        || {};
-  ST.prompts           = _migratePrompts(proj.prompts);
-  ST.batches           = proj.batches       || [];
-  ST.usedSets          = proj.usedSets      || {};
-  ST.setRatings        = _migrateSetRatings(proj.setRatings);
-  ST.ratingBatches     = proj.ratingBatches || [];
-  ST.myRatings         = proj.myRatings     || {};
-  ST.covered           = _migrateCovered(proj.covered);
-  ST.bengaliScript     = proj.bengaliScript || '';
-  ST.bengaliLines      = proj.bengaliLines  || parseAltScript(proj.bengaliScript || '');
-  ST.activeRatingBatch = 'new';
 
+  // 3. Deep-clone the project data to prevent reference bleeding between scripts
+  const proj = PROJECTS[pid];
+  ST.scores            = JSON.parse(JSON.stringify(proj.scores || {}));
+  ST.prompts           = JSON.parse(JSON.stringify(_migratePrompts(proj.prompts)));
+  ST.batches           = JSON.parse(JSON.stringify(proj.batches || []));
+  ST.usedSets          = JSON.parse(JSON.stringify(proj.usedSets || {}));
+  ST.setRatings        = JSON.parse(JSON.stringify(_migrateSetRatings(proj.setRatings)));
+  ST.ratingBatches     = JSON.parse(JSON.stringify(proj.ratingBatches || []));
+  ST.myRatings         = JSON.parse(JSON.stringify(proj.myRatings || {}));
+  ST.covered           = JSON.parse(JSON.stringify(_migrateCovered(proj.covered)));
+  ST.bengaliScript     = proj.bengaliScript || '';
+  ST.bengaliLines      = JSON.parse(JSON.stringify(proj.bengaliLines || parseAltScript(proj.bengaliScript || '')));
+  ST.activeRatingBatch = 'new';
   ST.brolls            = parseScript(proj.script || '');
+
+  // 4. Update UI
   ST.filterTarget = 'main'; ST.filter = 'all'; ST.sortBy = 'num'; ST.activeBatch = 'new';
   _el('fb-target-main')?.classList.add('active');
   _el('fb-target-real')?.classList.remove('active');
-  const ta = _el('script-textarea'); if (ta) ta.value = proj.script||'';
+  const ta = _el('script-textarea'); if (ta) ta.value = proj.script || '';
   const bnTa = _el('script-bengali-textarea'); if (bnTa) bnTa.value = proj.bengaliScript || '';
   renderFilterChips();
-  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort==='num'));
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === 'num'));
   if (ST.brolls.length) collapseInput(); else expandInput();
-  H.stack=[]; H.pos=-1; refreshUR();
+  H.stack = []; H.pos = -1; refreshUR();
   renderProjectTabs();
   renderHeatmap(); renderStats(); renderCards(true); updateAllPromptChips();
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge(); syncCsetUI();
@@ -842,11 +882,20 @@ function createProject() {
       const inp = _el('new-script-name-input');
       const chosenName = (inp && inp.value.trim()) ? inp.value.trim() : defaultName;
       createProjectBackup('Before Create Script');
-      saveProjects();
+
+      // Save current project first
+      saveProjects(true);
+
+      // Create new empty project structure
       const pid = uid();
       PROJECTS[pid] = _projData(chosenName);
-      saveProjects();
+
+      // Switch to new project cleanly
       activateProject(pid);
+
+      // Persist newly created project to local & cloud immediately
+      saveProjects(true);
+
       expandInput();
       setTimeout(() => _el('script-textarea')?.focus(), 50);
       toast(`✅ "${chosenName}" created`);
@@ -863,20 +912,47 @@ function createProject() {
 }
 
 function deleteProject(pid) {
-  if (Object.keys(PROJECTS).length<=1) { toast('⚠️ Cannot delete the only script'); return; }
-  const name = PROJECTS[pid]?.name||'Script';
+  if (Object.keys(PROJECTS).length <= 1) { toast('⚠️ Cannot delete the only script'); return; }
+  const name = PROJECTS[pid]?.name || 'Script';
   createProjectBackup(`Before Delete ${name}`);
   delete PROJECTS[pid];
-  saveProjects();
-  if (ACTIVE_PID===pid) { activateProject(Object.keys(PROJECTS)[0]); }
+  saveProjects(true);
+  if (ACTIVE_PID === pid) { activateProject(Object.keys(PROJECTS)[0]); }
   else { renderProjectTabs(); }
   toast(`🗑 Deleted "${name}"`);
 }
 
+function promptRenameProject(pid) {
+  if (!PROJECTS[pid]) return;
+  const old = PROJECTS[pid].name || 'Script';
+  showModal(
+    'Rename Script',
+    `<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+       <label style="font-size:12px;color:var(--text-2);">Script Name:</label>
+       <input type="text" id="rename-script-input" class="p-opt-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px;" value="${escHtml(old)}" />
+     </div>`,
+    () => {
+      const inp = _el('rename-script-input');
+      const newName = (inp && inp.value.trim()) ? inp.value.trim() : old;
+      renameProject(pid, newName);
+    },
+    null,
+    'Save Name',
+    'Cancel',
+    'primary'
+  );
+  setTimeout(() => {
+    const inp = _el('rename-script-input');
+    if (inp) { inp.focus(); inp.select(); }
+  }, 100);
+}
+
 function renameProject(pid, newName) {
-  if (!PROJECTS[pid]||!newName.trim()) return;
+  if (!PROJECTS[pid] || !newName || !newName.trim()) return;
   PROJECTS[pid].name = newName.trim();
-  saveProjects(); renderProjectTabs();
+  saveProjects(true); // Immediate write & Firebase push
+  renderProjectTabs();
+  toast(`✏️ Renamed to "${PROJECTS[pid].name}"`);
 }
 
 function renderProjectTabs() {
@@ -885,61 +961,58 @@ function renderProjectTabs() {
   const pids = Object.keys(PROJECTS);
   pids.forEach(pid => {
     const proj = PROJECTS[pid];
-    const isActive = pid===ACTIVE_PID;
+    const isActive = pid === ACTIVE_PID;
     const tab = document.createElement('div');
-    tab.className = 'proj-tab'+(isActive?' active':'');
-    tab.setAttribute('role','tab');
-    tab.setAttribute('aria-selected', isActive?'true':'false');
+    tab.className = 'proj-tab' + (isActive ? ' active' : '');
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
 
     const nameEl = document.createElement('span');
     nameEl.className = 'proj-tab-name';
     nameEl.textContent = proj.name;
-    nameEl.title = 'Double-click to rename';
+    nameEl.title = 'Double-click or right-click to rename';
     nameEl.addEventListener('dblclick', e => {
       e.stopPropagation();
-      const old = PROJECTS[pid]?.name||'';
-      nameEl.contentEditable='true'; nameEl.focus();
-      const r=document.createRange(); r.selectNodeContents(nameEl);
-      window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
-      const done = () => { nameEl.contentEditable='false'; renameProject(pid, nameEl.textContent||old); };
-      nameEl.addEventListener('blur', done, {once:true});
-      nameEl.addEventListener('keydown', ev => {
-        if (ev.key==='Enter'){ev.preventDefault();nameEl.blur();}
-        if (ev.key==='Escape'){nameEl.textContent=old;nameEl.blur();}
-      });
+      promptRenameProject(pid);
+    });
+    tab.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      promptRenameProject(pid);
     });
     tab.appendChild(nameEl);
 
     /* clip count badge */
-    const cnt = isActive ? ST.brolls.length : parseScript(proj.script||'').length;
-    if (cnt>0) {
-      const badge=document.createElement('span');
-      badge.className='proj-tab-badge'; badge.textContent=cnt;
+    const cnt = isActive ? ST.brolls.length : parseScript(proj.script || '').length;
+    if (cnt > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'proj-tab-badge'; badge.textContent = cnt;
       tab.appendChild(badge);
     }
 
     /* delete button (only if >1 project) */
-    if (pids.length>1) {
-      const del=document.createElement('span');
-      del.className='proj-tab-del'; del.textContent='×';
-      del.title=`Delete "${proj.name}"`;
+    if (pids.length > 1) {
+      const del = document.createElement('span');
+      del.className = 'proj-tab-del'; del.textContent = '×';
+      del.title = `Delete "${proj.name}"`;
       del.addEventListener('click', e => {
         e.stopPropagation();
-        showModal(`Delete "${proj.name}"?`, 'All scores, prompts and batches will be removed.', ()=>deleteProject(pid));
+        showModal(`Delete "${proj.name}"?`, 'All scores, prompts and batches will be removed.', () => deleteProject(pid));
       });
       tab.appendChild(del);
     }
-    if (!isActive) tab.addEventListener('click', ()=>activateProject(pid));
+    if (!isActive) tab.addEventListener('click', () => activateProject(pid));
     bar.appendChild(tab);
   });
 
-  const addBtn=document.createElement('button');
-  addBtn.className='proj-add-btn';
-  addBtn.innerHTML='<span>＋</span>';
-  addBtn.title='Create new script';
+  const addBtn = document.createElement('button');
+  addBtn.className = 'proj-add-btn';
+  addBtn.innerHTML = '<span>＋</span>';
+  addBtn.title = 'Create new script';
   addBtn.addEventListener('click', createProject);
   bar.appendChild(addBtn);
 }
+
 
 
 
@@ -3630,10 +3703,20 @@ function copyNeedsWorkLines() {
 /* ── Export / Import ────────────────────────────────────────── */
 
 function exportData(){
+  saveProjects(true);
   const ta = _el('script-textarea');
+  const bnTa = _el('script-bengali-textarea');
   const scriptVal = ta ? ta.value : (PROJECTS[ACTIVE_PID]?.script || '');
+  const bnScriptVal = bnTa ? bnTa.value : (PROJECTS[ACTIVE_PID]?.bengaliScript || ST.bengaliScript || '');
+
   const d = {
-    v: 6, date: new Date().toISOString(), script: scriptVal,
+    v: 7,
+    date: new Date().toISOString(),
+    active: ACTIVE_PID,
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    script: scriptVal,
+    bengaliScript: bnScriptVal,
+    bengaliLines: JSON.parse(JSON.stringify(ST.bengaliLines || {})),
     scores: JSON.parse(JSON.stringify(ST.scores)),
     prompts: JSON.parse(JSON.stringify(ST.prompts)),
     batches: JSON.parse(JSON.stringify(ST.batches)),
@@ -3642,10 +3725,12 @@ function exportData(){
     ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches || [])),
     myRatings: JSON.parse(JSON.stringify(ST.myRatings || {})),
     covered: JSON.parse(JSON.stringify(ST.covered || {})),
-    prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled,
+    prefix: ST.prefix,
+    suffix: ST.suffix,
+    labelEnabled: ST.labelEnabled,
   };
   const json = JSON.stringify(d, null, 2);
-  const filename = `broll-${new Date().toISOString().slice(0,10)}.json`;
+  const filename = `broll-tracker-${new Date().toISOString().slice(0,10)}.json`;
   try {
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -3658,38 +3743,76 @@ function exportData(){
     a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
     a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
-  toast('📥 Exported');
+  toast('📥 Exported complete backup');
 }
+
 function importJSON(file){
   const r = new FileReader();
   r.onload = ev => {
     try {
       const d = JSON.parse(ev.target.result);
-      if (d.script) { const ta = _el('script-textarea'); if (ta) ta.value = d.script; }
-      ST.scores        = d.scores        || {};
-      ST.prompts       = _migratePrompts(d.prompts || {});
-      ST.batches       = d.batches       || [];
-      ST.usedSets      = d.usedSets      || {};
-      ST.setRatings    = _migrateSetRatings(d.setRatings || {});
-      ST.ratingBatches = d.ratingBatches || [];
-      ST.myRatings     = _migrateMyRatings(d.myRatings || {});
-      ST.covered       = _migrateCovered(d.covered || {});
-      if (d.prefix !== undefined) ST.prefix = d.prefix;
-      if (d.suffix !== undefined) ST.suffix = d.suffix;
-      if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
-      if (d.script) loadScript(d.script, true);
+      createProjectBackup('Before Import JSON');
+
+      // If full multi-project export
+      if (d.projects && typeof d.projects === 'object' && Object.keys(d.projects).length) {
+        for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+        for (const [k, v] of Object.entries(d.projects)) {
+          PROJECTS[k] = {
+            name: v.name || 'Script',
+            script: v.script || '',
+            bengaliScript: v.bengaliScript || '',
+            bengaliLines: v.bengaliLines || parseAltScript(v.bengaliScript || ''),
+            scores: _migrateScores(v.scores),
+            prompts: _migratePrompts(v.prompts || {}),
+            batches: v.batches || [],
+            usedSets: _migrateUsedSets(v.usedSets),
+            setRatings: _migrateSetRatings(v.setRatings || {}),
+            ratingBatches: v.ratingBatches || [],
+            myRatings: _migrateMyRatings(v.myRatings || {}),
+            covered: _migrateCovered(v.covered || {})
+          };
+        }
+        const activePid = (d.active && PROJECTS[d.active]) ? d.active : Object.keys(PROJECTS)[0];
+        if (d.prefix !== undefined) ST.prefix = d.prefix;
+        if (d.suffix !== undefined) ST.suffix = d.suffix;
+        if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
+        saveGlobalCset();
+        activateProject(activePid);
+      } else {
+        // Single project import format
+        const pid = ACTIVE_PID || uid();
+        const bnScript = d.bengaliScript || '';
+        PROJECTS[pid] = {
+          name: PROJECTS[pid]?.name || 'Script 1',
+          script: d.script || '',
+          bengaliScript: bnScript,
+          bengaliLines: d.bengaliLines || parseAltScript(bnScript),
+          scores: _migrateScores(d.scores),
+          prompts: _migratePrompts(d.prompts || {}),
+          batches: d.batches || [],
+          usedSets: _migrateUsedSets(d.usedSets),
+          setRatings: _migrateSetRatings(d.setRatings || {}),
+          ratingBatches: d.ratingBatches || [],
+          myRatings: _migrateMyRatings(d.myRatings || {}),
+          covered: _migrateCovered(d.covered || {})
+        };
+        if (d.prefix !== undefined) ST.prefix = d.prefix;
+        if (d.suffix !== undefined) ST.suffix = d.suffix;
+        if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
+        saveGlobalCset();
+        activateProject(pid);
+      }
+
       save(true);
-      renderHeatmap(); renderStats(); renderCards(true);
-      renderLibraryView(); renderBatchTabs(); updateLibBadge(); syncCsetUI();
-      renderRatingTabs(); renderRatingPanel(); updateSratingHint(); updateAllPromptChips();
-  
-      toast('📤 Imported');
-
-
-    } catch(err) { console.error('Import error:', err); toast('❌ Invalid file'); }
+      toast('📤 Backup imported successfully');
+    } catch(err) {
+      console.error('Import error:', err);
+      toast('❌ Invalid JSON file');
+    }
   };
   r.readAsText(file);
 }
+
 
 
 function syncCsetUI(){
