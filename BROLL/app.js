@@ -252,8 +252,16 @@ function _mergeProject(cloudProj, localProj) {
   };
 }
 
+let _isInitialCloudLoaded = false;
+let _userMadeLocalEdit = false;
+let _lastUserEditTime = 0;
+
 function pushToFirebase(immediate = false) {
   if (!_fbRef) return;
+  if (!_isInitialCloudLoaded) {
+    console.log('Firebase push skipped: initial cloud state not loaded yet.');
+    return;
+  }
 
   if (_isApplyingRemote) {
     _hasPendingLocalChange = true;
@@ -272,7 +280,6 @@ function pushToFirebase(immediate = false) {
       return;
     }
 
-    // Build local payload first
     try {
       const ta = _el('script-textarea');
       const savedScript = ta && ta.value !== undefined && ta.value !== null
@@ -294,19 +301,12 @@ function pushToFirebase(immediate = false) {
     const now = Date.now();
     const localProjects = JSON.parse(JSON.stringify(PROJECTS));
 
-    // READ current cloud state first, then MERGE local changes on top, then WRITE
     _fbRef.once('value').then(snap => {
       const cloudData = snap.val();
-
       let mergedProjects = localProjects;
-
-      // If cloud has data from another device that's newer, merge carefully
       if (cloudData && cloudData.projects && cloudData.lastUpdatedBy !== CLIENT_ID) {
         mergedProjects = {};
-        const allPids = new Set([
-          ...Object.keys(cloudData.projects),
-          ...Object.keys(localProjects)
-        ]);
+        const allPids = new Set([...Object.keys(cloudData.projects), ...Object.keys(localProjects)]);
         allPids.forEach(pid => {
           mergedProjects[pid] = _mergeProject(cloudData.projects[pid], localProjects[pid]);
         });
@@ -326,6 +326,7 @@ function pushToFirebase(immediate = false) {
       _lastFirebaseSaveTime = Date.now();
       _lastRemoteUpdatedAt = now;
       _lastSavedStatus = 'synced';
+      _userMadeLocalEdit = false;
       _fbRetryCount = 0;
       updateSavedTimeDisplay();
       if (_hasPendingLocalChange) {
@@ -348,26 +349,23 @@ function pushToFirebase(immediate = false) {
   if (immediate) {
     doPush();
   } else {
-    _fbSyncTimer = setTimeout(doPush, 2000);
+    _fbSyncTimer = setTimeout(doPush, 1500);
   }
 }
 
-function applyRemoteData(data) {
-  if (!data || !data.projects || typeof data.projects !== 'object') return;
+function applyRemoteData(data, isInitial = false) {
+  if (!data || !data.projects || typeof data.projects !== 'object' || Object.keys(data.projects).length === 0) return;
 
-  // A local change is "newer" if it was saved to localStorage more recently than the remote timestamp
   const remoteUpdatedAt = data.updatedAt || 0;
-  if (_lastLocalSaveTime > 0 && _lastLocalSaveTime > remoteUpdatedAt && data.lastUpdatedBy !== CLIENT_ID) {
-    // Our local state is newer — push it instead of applying remote
-    console.log('Local state newer than remote, pushing local instead of applying remote.');
+
+  if (!isInitial && _userMadeLocalEdit && _lastUserEditTime > remoteUpdatedAt && data.lastUpdatedBy !== CLIENT_ID) {
+    console.log('Local user edits newer than remote, pushing local merge.');
     pushToFirebase(true);
     return;
   }
 
   setApplyingRemote(true);
   try {
-
-    // 1. Sync projects dictionary
     for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
     for (const [k, v] of Object.entries(data.projects)) {
       PROJECTS[k] = {
@@ -386,19 +384,15 @@ function applyRemoteData(data) {
       };
     }
 
-    // 2. Sync active project ID (keep current active script if valid so user doesn't get kicked)
     const savedActivePid = localStorage.getItem('br_last_active_pid');
     if (savedActivePid && PROJECTS[savedActivePid]) {
       ACTIVE_PID = savedActivePid;
-    } else if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
-      // keep current script tab active
     } else if (data.active && PROJECTS[data.active]) {
       ACTIVE_PID = data.active;
     } else {
       ACTIVE_PID = Object.keys(PROJECTS)[0] || null;
     }
 
-    // 3. Sync global prefix/suffix/labelEnabled
     if (data.globalCset) {
       ST.prefix = data.globalCset.prefix || '';
       ST.suffix = data.globalCset.suffix || '';
@@ -409,36 +403,36 @@ function applyRemoteData(data) {
       syncCsetUI();
     }
 
-    // 4. Update localStorage cache
     try {
       localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
       if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
     } catch {}
 
-    // 5. Update active project working state
     if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
       const proj = PROJECTS[ACTIVE_PID];
-      ST.scores            = _migrateScores(proj.scores);
-      ST.prompts           = _migratePrompts(proj.prompts);
-      ST.batches           = proj.batches       || [];
-      ST.usedSets          = _migrateUsedSets(proj.usedSets);
-      ST.setRatings        = _migrateSetRatings(proj.setRatings);
-      ST.ratingBatches     = proj.ratingBatches || [];
-      ST.myRatings         = _migrateMyRatings(proj.myRatings);
-      ST.covered           = _migrateCovered(proj.covered || {});
+      ST.scores            = JSON.parse(JSON.stringify(_migrateScores(proj.scores)));
+      ST.prompts           = JSON.parse(JSON.stringify(_migratePrompts(proj.prompts)));
+      ST.batches           = JSON.parse(JSON.stringify(proj.batches || []));
+      ST.usedSets          = JSON.parse(JSON.stringify(_migrateUsedSets(proj.usedSets)));
+      ST.setRatings        = JSON.parse(JSON.stringify(_migrateSetRatings(proj.setRatings)));
+      ST.ratingBatches     = JSON.parse(JSON.stringify(proj.ratingBatches || []));
+      ST.myRatings         = JSON.parse(JSON.stringify(_migrateMyRatings(proj.myRatings)));
+      ST.covered           = JSON.parse(JSON.stringify(_migrateCovered(proj.covered || {})));
       ST.bengaliScript     = proj.bengaliScript || '';
-      ST.bengaliLines      = proj.bengaliLines || parseAltScript(proj.bengaliScript || '');
+      ST.bengaliLines      = JSON.parse(JSON.stringify(proj.bengaliLines || parseAltScript(proj.bengaliScript || '')));
       ST.brolls            = parseScript(proj.script || '');
 
       const ta = _el('script-textarea');
       if (ta && document.activeElement !== ta) {
         ta.value = proj.script || '';
       }
+      const bnTa = _el('script-bengali-textarea');
+      if (bnTa && document.activeElement !== bnTa) {
+        bnTa.value = proj.bengaliScript || '';
+      }
       if (ST.brolls.length) collapseInput();
     }
 
-
-    // 6. Re-render UI
     renderProjectTabs();
     renderHeatmap();
     renderStats();
@@ -450,21 +444,20 @@ function applyRemoteData(data) {
     renderRatingTabs();
     renderRatingPanel();
     updateSratingHint();
+    renderBackupsListUI();
 
     _lastRemoteUpdatedAt = remoteUpdatedAt;
     _lastFirebaseSaveTime = remoteUpdatedAt || Date.now();
     _lastSavedStatus = 'synced';
+    _userMadeLocalEdit = false;
     updateSavedTimeDisplay();
-    toast('☁️ Synced from Cloud');
+    toast(isInitial ? '☁️ Loaded latest from Cloud' : '☁️ Synced from Cloud');
   } catch (err) {
     console.error('Error applying remote data:', err);
   } finally {
     setApplyingRemote(false);
   }
 }
-
-
-
 
 function initFirebaseSync() {
   if (typeof firebase === 'undefined') {
@@ -479,52 +472,52 @@ function initFirebaseSync() {
     _fbDb = firebase.database();
     _fbRef = _fbDb.ref('broll_app_data');
 
-    // Monitor connection state — do NOT mark as "synced" just because connected
     _fbDb.ref('.info/connected').on('value', snap => {
       _fbConnected = !!snap.val();
       if (!_fbConnected) {
         _lastSavedStatus = 'offline';
         updateSavedTimeDisplay();
-      } else if (_lastSavedStatus === 'offline') {
-        // Reconnected — push any pending changes immediately
-        _lastSavedStatus = 'syncing';
-        updateSavedTimeDisplay();
-        pushToFirebase(true);
+      } else {
+        if (_userMadeLocalEdit && _isInitialCloudLoaded) {
+          pushToFirebase(true);
+        }
       }
     });
 
-    // Listen for remote updates (real-time listener)
-    let isInitialRead = true;
-    _fbRef.on('value', snap => {
+    _fbRef.once('value').then(snap => {
       const data = snap.val();
-      if (!data || !data.projects || Object.keys(data.projects).length === 0) {
-        console.log('Firebase database empty, pushing local state...');
-        pushToFirebase(true);
-        isInitialRead = false;
-        return;
+      if (data && data.projects && Object.keys(data.projects).length > 0) {
+        applyRemoteData(data, true);
+        _isInitialCloudLoaded = true;
+        console.log('✅ Loaded latest cloud database version.');
+      } else {
+        _isInitialCloudLoaded = true;
+        if (Object.keys(PROJECTS).length > 0) {
+          pushToFirebase(true);
+        }
       }
-      if (isInitialRead) {
-        isInitialRead = false;
-        applyRemoteData(data);
-        return;
-      }
-      // Skip updates we ourselves pushed
-      if (data.lastUpdatedBy === CLIENT_ID) {
-        return;
-      }
-      applyRemoteData(data);
+    }).catch(err => {
+      console.warn('Initial cloud read error:', err);
+      _isInitialCloudLoaded = true;
     });
 
-    // Multi-device: check for newer cloud data when tab becomes visible / gains focus
+    _fbRef.on('value', snap => {
+      if (!_isInitialCloudLoaded) return;
+      const data = snap.val();
+      if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
+      if (data.lastUpdatedBy === CLIENT_ID) return;
+
+      applyRemoteData(data, false);
+    });
+
     const checkFreshRemote = () => {
       if (!_fbRef || _isApplyingRemote) return;
       _fbRef.once('value').then(snap => {
         const data = snap.val();
         if (!data || !data.updatedAt) return;
-        // Only apply if remote is genuinely newer and from a different device
         if (data.lastUpdatedBy === CLIENT_ID) return;
         if (data.updatedAt > (_lastRemoteUpdatedAt || 0)) {
-          applyRemoteData(data);
+          applyRemoteData(data, false);
         }
       }).catch(() => {});
     };
@@ -628,14 +621,20 @@ function saveProjects(immediate = false) {
   try {
     localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
     if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
-    _lastLocalSaveTime = Date.now(); // track when we last saved locally
+    _lastLocalSaveTime = Date.now();
+    _lastUserEditTime = Date.now();
+    _userMadeLocalEdit = true;
   } catch {}
   saveGlobalCset();
   pushToFirebase(immediate); // then push to Firebase
   maybeAutoBackup();
 }
 
-function save(immediate = false) { saveProjects(immediate); }
+function save(immediate = false) {
+  _userMadeLocalEdit = true;
+  _lastUserEditTime = Date.now();
+  saveProjects(immediate);
+}
 
 
 
@@ -3864,39 +3863,63 @@ function setText(id,v){const e=_el(id);if(e)e.textContent=v;}
 function setStyle(id,p,v){const e=_el(id);if(e)e.style[p]=v;}
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-/* ── 10 Rolling Local Backups System ────────────────────────── */
+/* ── 10 Rolling Complete Tracker Backups System ────────────────── */
+const TRACKER_BACKUPS_KEY = 'br_tracker_backups';
 let _workingStateBeforePreview = null;
 
-function createProjectBackup(reason = 'Manual Save') {
-  if (!ACTIVE_PID || !PROJECTS[ACTIVE_PID]) return;
-  const pid = ACTIVE_PID;
-  const proj = PROJECTS[pid];
-  if (!proj) return;
+function createProjectBackup(reason = 'Manual Backup') {
+  // 1. Flush active project state first so snapshot is 100% up-to-date
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    const ta = _el('script-textarea');
+    const bnTa = _el('script-bengali-textarea');
+    PROJECTS[ACTIVE_PID].script = ta && ta.value !== undefined && ta.value !== null ? ta.value : (PROJECTS[ACTIVE_PID].script || '');
+    PROJECTS[ACTIVE_PID].bengaliScript = bnTa && bnTa.value !== undefined && bnTa.value !== null ? bnTa.value : (PROJECTS[ACTIVE_PID].bengaliScript || ST.bengaliScript || '');
+    PROJECTS[ACTIVE_PID].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+    PROJECTS[ACTIVE_PID].scores = JSON.parse(JSON.stringify(ST.scores || {}));
+    PROJECTS[ACTIVE_PID].prompts = JSON.parse(JSON.stringify(ST.prompts || {}));
+    PROJECTS[ACTIVE_PID].batches = JSON.parse(JSON.stringify(ST.batches || []));
+    PROJECTS[ACTIVE_PID].usedSets = JSON.parse(JSON.stringify(ST.usedSets || {}));
+    PROJECTS[ACTIVE_PID].setRatings = JSON.parse(JSON.stringify(ST.setRatings || {}));
+    PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+    PROJECTS[ACTIVE_PID].myRatings = JSON.parse(JSON.stringify(ST.myRatings || {}));
+    PROJECTS[ACTIVE_PID].covered = JSON.parse(JSON.stringify(ST.covered || {}));
+  }
 
   let list = [];
   try {
-    list = JSON.parse(localStorage.getItem('br_backups_' + pid) || '[]');
+    list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]');
   } catch {}
 
   const now = Date.now();
+  const scriptCount = Object.keys(PROJECTS).length;
+  let totalBrolls = 0;
+  let totalPrompts = 0;
+  let totalRatings = 0;
+
+  for (const p of Object.values(PROJECTS)) {
+    totalBrolls += parseScript(p.script || '').length;
+    totalPrompts += Object.values(p.prompts || {}).reduce((acc, arr) => acc + (arr?.length || 0), 0);
+    totalRatings += Object.values(p.setRatings || {}).reduce((acc, obj) => acc + Object.keys(obj || {}).length, 0);
+  }
+
   const backup = {
-    id: 'bk_' + now.toString(36) + Math.random().toString(36).slice(2, 5),
-    pid,
-    name: proj.name || 'Script',
+    id: 'bk_' + now.toString(36) + Math.random().toString(36).slice(2, 6),
     reason,
     date: now,
     dateStr: new Date(now).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-    brollsCount: ST.brolls.length,
-    scoresCount: Object.keys(ST.scores || {}).length,
-    promptsCount: Object.values(ST.prompts || {}).reduce((acc, arr) => acc + (arr?.length || 0), 0),
-    ratingsCount: Object.values(ST.setRatings || {}).reduce((acc, obj) => acc + Object.keys(obj || {}).length, 0),
-    data: JSON.parse(JSON.stringify(proj))
+    activePid: ACTIVE_PID,
+    scriptsCount: scriptCount,
+    totalBrolls,
+    totalPrompts,
+    totalRatings,
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false }
   };
 
   list.unshift(backup);
   if (list.length > 10) list = list.slice(0, 10);
   try {
-    localStorage.setItem('br_backups_' + pid, JSON.stringify(list));
+    localStorage.setItem(TRACKER_BACKUPS_KEY, JSON.stringify(list));
   } catch {}
   renderBackupsListUI();
 }
@@ -3904,19 +3927,14 @@ function createProjectBackup(reason = 'Manual Save') {
 function renderBackupsListUI() {
   const container = _el('backups-list-container');
   if (!container) return;
-  const pid = ACTIVE_PID;
-  if (!pid) {
-    container.innerHTML = '<span style="font-size:11px;color:var(--text-3);">No active script</span>';
-    return;
-  }
 
   let list = [];
   try {
-    list = JSON.parse(localStorage.getItem('br_backups_' + pid) || '[]');
+    list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]');
   } catch {}
 
   if (!list.length) {
-    container.innerHTML = '<span style="font-size:11px;color:var(--text-3);padding:6px 0;">No backups created yet. Click "＋ Save Backup Now" to create one.</span>';
+    container.innerHTML = '<span style="font-size:11px;color:var(--text-3);padding:6px 0;">No backups created yet. Click "＋ Save Backup Now" above to save one.</span>';
     return;
   }
 
@@ -3930,45 +3948,90 @@ function renderBackupsListUI() {
           <span>🕒 ${escHtml(b.dateStr)}</span>
           <span class="backup-tag">${escHtml(b.reason || 'Backup')}</span>
         </div>
-        <div class="backup-card-sub">${b.brollsCount} B-rolls · ${b.scoresCount} scored · ${b.promptsCount} prompts · ${b.ratingsCount} ratings</div>
+        <div class="backup-card-sub">${b.scriptsCount} Script${b.scriptsCount !== 1 ? 's' : ''} · ${b.totalBrolls} B-rolls · ${b.totalPrompts} prompts · ${b.totalRatings} ratings</div>
       </div>
       <div class="backup-card-actions">
-        <button class="hbtn primary btn-preview-backup" style="font-size:10.5px;padding:3px 8px;">👁️ Load &amp; Preview</button>
+        <button class="hbtn primary btn-preview-backup" style="font-size:10px;padding:3px 7px;" title="Load and inspect this backup">👁️ Preview</button>
+        <button class="hbtn btn-dl-backup" style="font-size:10px;padding:3px 7px;" title="Download JSON backup">📥</button>
         <button class="hbtn danger btn-del-backup" style="font-size:10px;padding:3px 6px;" title="Delete backup">🗑</button>
       </div>
     `;
 
     card.querySelector('.btn-preview-backup').addEventListener('click', () => previewBackup(b.id));
+    card.querySelector('.btn-dl-backup').addEventListener('click', () => downloadBackupJSON(b.id));
     card.querySelector('.btn-del-backup').addEventListener('click', () => deleteBackup(b.id));
     container.appendChild(card);
   });
 }
 
-function deleteBackup(backupId) {
-  const pid = ACTIVE_PID;
-  if (!pid) return;
+function downloadBackupJSON(backupId) {
   let list = [];
-  try { list = JSON.parse(localStorage.getItem('br_backups_' + pid) || '[]'); } catch {}
+  try { list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]'); } catch {}
+  const backup = list.find(b => b.id === backupId);
+  if (!backup) { toast('⚠️ Backup not found'); return; }
+
+  const d = {
+    v: 7,
+    date: new Date(backup.date).toISOString(),
+    active: backup.activePid,
+    projects: backup.projects,
+    prefix: backup.globalCset?.prefix || '',
+    suffix: backup.globalCset?.suffix || '',
+    labelEnabled: backup.globalCset?.labelEnabled !== false
+  };
+  const json = JSON.stringify(d, null, 2);
+  const filename = `broll-backup-${new Date(backup.date).toISOString().slice(0, 10)}-${backup.id}.json`;
+  try {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch {
+    const a = document.createElement('a');
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+    a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+  toast(`📥 Downloaded backup (${backup.dateStr})`);
+}
+
+function deleteBackup(backupId) {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]'); } catch {}
   list = list.filter(b => b.id !== backupId);
-  try { localStorage.setItem('br_backups_' + pid, JSON.stringify(list)); } catch {}
+  try { localStorage.setItem(TRACKER_BACKUPS_KEY, JSON.stringify(list)); } catch {}
   renderBackupsListUI();
   toast('🗑 Backup deleted');
 }
 
 function previewBackup(backupId) {
-  const pid = ACTIVE_PID;
-  if (!pid) return;
   let list = [];
-  try { list = JSON.parse(localStorage.getItem('br_backups_' + pid) || '[]'); } catch {}
+  try { list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]'); } catch {}
   const backup = list.find(b => b.id === backupId);
   if (!backup) { toast('⚠️ Backup not found'); return; }
 
   // Save current working state to revert if cancelled
-  _workingStateBeforePreview = JSON.parse(JSON.stringify(PROJECTS[pid]));
+  _workingStateBeforePreview = {
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    activePid: ACTIVE_PID,
+    globalCset: { prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled }
+  };
 
   // Temporarily load backup state
-  PROJECTS[pid] = JSON.parse(JSON.stringify(backup.data));
-  activateProject(pid);
+  for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+  for (const [k, v] of Object.entries(backup.projects)) {
+    PROJECTS[k] = JSON.parse(JSON.stringify(v));
+  }
+  if (backup.globalCset) {
+    ST.prefix = backup.globalCset.prefix || '';
+    ST.suffix = backup.globalCset.suffix || '';
+    ST.labelEnabled = backup.globalCset.labelEnabled !== false;
+    syncCsetUI();
+  }
+
+  const targetPid = (backup.activePid && PROJECTS[backup.activePid]) ? backup.activePid : Object.keys(PROJECTS)[0];
+  activateProject(targetPid);
   switchBottomTab('p');
 
   // Inject floating preview banner
@@ -3980,8 +4043,8 @@ function previewBackup(backupId) {
   banner.className = 'backup-preview-banner';
   banner.innerHTML = `
     <div class="bpb-left">
-      <span class="bpb-title">⏮ Previewing Backup: <strong>${escHtml(backup.dateStr)}</strong></span>
-      <span class="bpb-sub">Inspect cards and ratings. Click Confirm to make this backup the latest save, or Cancel.</span>
+      <span class="bpb-title">⏮ Previewing Backup: <strong>${escHtml(backup.dateStr)}</strong> (${escHtml(backup.reason || 'Snapshot')})</span>
+      <span class="bpb-sub">Inspect cards and data. Confirm to make this backup the latest save, or Cancel to revert.</span>
     </div>
     <div class="bpb-actions">
       <button class="hbtn primary" id="btn-confirm-restore-backup">✔ Confirm as Latest Save</button>
@@ -3992,6 +4055,8 @@ function previewBackup(backupId) {
   banner.querySelector('#btn-confirm-restore-backup').addEventListener('click', () => {
     _workingStateBeforePreview = null;
     banner.remove();
+    _userMadeLocalEdit = true;
+    _lastUserEditTime = Date.now();
     save(true);
     createProjectBackup('Restored Backup');
     toast(`✅ Restored backup from ${backup.dateStr} as latest save!`);
@@ -3999,17 +4064,28 @@ function previewBackup(backupId) {
 
   banner.querySelector('#btn-cancel-restore-backup').addEventListener('click', () => {
     if (_workingStateBeforePreview) {
-      PROJECTS[pid] = JSON.parse(JSON.stringify(_workingStateBeforePreview));
+      for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+      for (const [k, v] of Object.entries(_workingStateBeforePreview.projects)) {
+        PROJECTS[k] = JSON.parse(JSON.stringify(v));
+      }
+      if (_workingStateBeforePreview.globalCset) {
+        ST.prefix = _workingStateBeforePreview.globalCset.prefix || '';
+        ST.suffix = _workingStateBeforePreview.globalCset.suffix || '';
+        ST.labelEnabled = _workingStateBeforePreview.globalCset.labelEnabled !== false;
+        syncCsetUI();
+      }
+      const prevPid = _workingStateBeforePreview.activePid;
       _workingStateBeforePreview = null;
-      activateProject(pid);
+      activateProject(prevPid);
     }
     banner.remove();
-    toast('↩ Cancelled preview, returned to current save.');
+    toast('↩ Cancelled preview, returned to current state.');
   });
 
   const appEl = _el('app');
   if (appEl) appEl.insertBefore(banner, appEl.firstChild);
 }
+
 
 /* ── Settings Center Sync ──────────────────────────────────── */
 function syncSettingsUI() {
