@@ -15,7 +15,7 @@
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="style.css?v=20260824_37" />
+  <link rel="stylesheet" href="style.css?v=20260825_01" />
 </head>
 
 
@@ -127,9 +127,16 @@
           <span class="it-chevron">▲</span>
         </div>
         <div id="input-body">
+          <div class="script-input-tabs">
+            <button class="script-input-tab active" id="tab-script-en" data-lang="en">🇬🇧 English Script</button>
+            <button class="script-input-tab" id="tab-script-bn" data-lang="bn">🇧🇩 Bengali Script</button>
+          </div>
           <textarea id="script-textarea"
             placeholder="1 First line of script&#10;2 Second line&#10;3 And so on..."
             aria-label="Script input" rows="6" spellcheck="false"></textarea>
+          <textarea id="script-bengali-textarea" class="hidden"
+            placeholder="1 প্রথম দৃশ্য / বাংলা লাইন&#10;2 দ্বিতীয় দৃশ্য&#10;3 ইত্যাদি..."
+            aria-label="Bengali script input" rows="6" spellcheck="false"></textarea>
           <div class="input-actions">
             <button class="hbtn primary" id="btn-load">▶ Load Script</button>
             <span class="inp-hint"><kbd>Ctrl+Enter</kbd> to load</span>
@@ -360,6 +367,58 @@
         </div>
       </section>
 
+      <!-- Bengali & Second Language Settings -->
+      <section class="settings-group-card">
+        <div class="settings-card-hdr">
+          <span>🇧🇩 Bengali &amp; Second Language</span>
+        </div>
+        <div class="settings-card-body">
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <div class="settings-row-title">Show Bengali Script</div>
+              <div class="settings-row-sub">Display Bengali script line directly below English line on cards</div>
+            </div>
+            <input type="checkbox" class="settings-switch" id="setting-show-bengali" checked />
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Rating Shortcuts Settings -->
+      <section class="settings-group-card">
+        <div class="settings-card-hdr">
+          <span>⚡ Real Rating Quick-Rate Shortcuts</span>
+        </div>
+        <div class="settings-card-body">
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <div class="settings-row-title">Tier 1 Quick Rate (1s Hold / Single Right-Click)</div>
+              <div class="settings-row-sub">Default rating applied on 1-second touch hold or single right-click</div>
+            </div>
+            <input type="number" class="settings-input-num" id="setting-qr-tier1" min="0" max="10" step="0.5" value="5" />
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <div class="settings-row-title">Tier 2 Quick Rate (2.5s Hold / Double Right-Click)</div>
+              <div class="settings-row-sub">Higher rating applied on 2.5-second touch hold or double right-click</div>
+            </div>
+            <input type="number" class="settings-input-num" id="setting-qr-tier2" min="0" max="10" step="0.5" value="9" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Local Project Backups (Last 10) -->
+      <section class="settings-group-card" id="settings-backups-section">
+        <div class="settings-card-hdr">
+          <span>💾 Project Backups (Last 10)</span>
+          <button class="hbtn" id="btn-create-manual-backup" style="font-size:10.5px;padding:3px 8px;">＋ Save Backup Now</button>
+        </div>
+        <div class="settings-card-body">
+          <div id="backups-list-container" class="backups-list-container">
+            <!-- Dynamically populated 10 backups -->
+          </div>
+        </div>
+      </section>
+
       <!-- Cloud Sync & Data Management -->
       <section class="settings-group-card">
         <div class="settings-card-hdr">
@@ -393,6 +452,7 @@
       </section>
 
     </div>
+
 
   </main>
 </div>
@@ -452,7 +512,7 @@
 <!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="app.js?v=20260824_37"></script>
+<script src="app.js?v=20260825_01"></script>
 </body>
 </html>
 
