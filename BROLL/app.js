@@ -128,7 +128,7 @@ function setApplyingRemote(val) {
   }
 }
 
-let _lastSavedStatus = 'synced';
+let _lastSavedStatus = 'loading';
 let _lastRemoteUpdatedAt = 0;
 
 function updateSavedTimeDisplay() {
@@ -137,6 +137,12 @@ function updateSavedTimeDisplay() {
   const pill = _el('sync-status');
   if (!dot || !txt) return;
 
+  if (_lastSavedStatus === 'loading') {
+    dot.className = 'sync-dot syncing';
+    txt.textContent = 'Loading…';
+    if (pill) pill.title = 'Fetching latest data from Cloud…';
+    return;
+  }
   if (_lastSavedStatus === 'syncing') {
     dot.className = 'sync-dot syncing';
     txt.textContent = 'Saving…';
@@ -255,13 +261,10 @@ function _mergeProject(cloudProj, localProj) {
 let _isInitialCloudLoaded = false;
 let _userMadeLocalEdit = false;
 let _lastUserEditTime = 0;
+let _latestCloudData = null;
 
 function pushToFirebase(immediate = false) {
   if (!_fbRef) return;
-  if (!_isInitialCloudLoaded) {
-    console.log('Firebase push skipped: initial cloud state not loaded yet.');
-    return;
-  }
 
   if (_isApplyingRemote) {
     _hasPendingLocalChange = true;
@@ -273,6 +276,7 @@ function pushToFirebase(immediate = false) {
   updateSavedTimeDisplay();
 
   const doPush = () => {
+    if (!_fbRef) return;
     if (_isApplyingRemote) {
       _hasPendingLocalChange = true;
       _lastSavedStatus = 'synced';
@@ -295,61 +299,66 @@ function pushToFirebase(immediate = false) {
         PROJECTS[ACTIVE_PID].script = savedScript;
         PROJECTS[ACTIVE_PID].bengaliScript = savedBnScript;
         PROJECTS[ACTIVE_PID].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+        PROJECTS[ACTIVE_PID].scores = JSON.parse(JSON.stringify(ST.scores || {}));
+        PROJECTS[ACTIVE_PID].prompts = JSON.parse(JSON.stringify(ST.prompts || {}));
+        PROJECTS[ACTIVE_PID].batches = JSON.parse(JSON.stringify(ST.batches || []));
+        PROJECTS[ACTIVE_PID].usedSets = JSON.parse(JSON.stringify(ST.usedSets || {}));
+        PROJECTS[ACTIVE_PID].setRatings = JSON.parse(JSON.stringify(ST.setRatings || {}));
+        PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+        PROJECTS[ACTIVE_PID].myRatings = JSON.parse(JSON.stringify(ST.myRatings || {}));
+        PROJECTS[ACTIVE_PID].covered = JSON.parse(JSON.stringify(ST.covered || {}));
       }
     } catch {}
 
     const now = Date.now();
     const localProjects = JSON.parse(JSON.stringify(PROJECTS));
 
-    _fbRef.once('value').then(snap => {
-      const cloudData = snap.val();
-      let mergedProjects = localProjects;
-      if (cloudData && cloudData.projects && cloudData.lastUpdatedBy !== CLIENT_ID) {
-        mergedProjects = {};
-        const allPids = new Set([...Object.keys(cloudData.projects), ...Object.keys(localProjects)]);
-        allPids.forEach(pid => {
-          mergedProjects[pid] = _mergeProject(cloudData.projects[pid], localProjects[pid]);
-        });
-      }
+    let mergedProjects = localProjects;
+    if (_latestCloudData && _latestCloudData.projects && _latestCloudData.lastUpdatedBy !== CLIENT_ID) {
+      mergedProjects = {};
+      const allPids = new Set([...Object.keys(_latestCloudData.projects), ...Object.keys(localProjects)]);
+      allPids.forEach(pid => {
+        mergedProjects[pid] = _mergeProject(_latestCloudData.projects[pid], localProjects[pid]);
+      });
+    }
 
-      const payload = {
-        active: ACTIVE_PID,
-        projects: mergedProjects,
-        globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
-        lastUpdatedBy: CLIENT_ID,
-        updatedAt: now
-      };
+    const payload = {
+      active: ACTIVE_PID,
+      projects: mergedProjects,
+      globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
+      lastUpdatedBy: CLIENT_ID,
+      updatedAt: now
+    };
 
-      return _fbRef.set(payload);
-    })
-    .then(() => {
-      _lastFirebaseSaveTime = Date.now();
-      _lastRemoteUpdatedAt = now;
-      _lastSavedStatus = 'synced';
-      _userMadeLocalEdit = false;
-      _fbRetryCount = 0;
-      updateSavedTimeDisplay();
-      if (_hasPendingLocalChange) {
-        _hasPendingLocalChange = false;
-        pushToFirebase(true);
-      }
-    })
-    .catch(err => {
-      console.warn('Firebase push failed:', err);
-      _lastSavedStatus = 'error';
-      updateSavedTimeDisplay();
-      if (_fbRetryCount < 5) {
-        _fbRetryCount++;
-        if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
-        _fbRetryTimer = setTimeout(() => pushToFirebase(true), Math.min(1000 * Math.pow(2, _fbRetryCount), 30000));
-      }
-    });
+    _fbRef.set(payload)
+      .then(() => {
+        _lastFirebaseSaveTime = Date.now();
+        _lastRemoteUpdatedAt = now;
+        _lastSavedStatus = 'synced';
+        _userMadeLocalEdit = false;
+        _fbRetryCount = 0;
+        updateSavedTimeDisplay();
+        if (_hasPendingLocalChange) {
+          _hasPendingLocalChange = false;
+          pushToFirebase(true);
+        }
+      })
+      .catch(err => {
+        console.warn('Firebase push failed:', err);
+        _lastSavedStatus = 'error';
+        updateSavedTimeDisplay();
+        if (_fbRetryCount < 5) {
+          _fbRetryCount++;
+          if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
+          _fbRetryTimer = setTimeout(() => pushToFirebase(true), Math.min(1000 * Math.pow(2, _fbRetryCount), 30000));
+        }
+      });
   };
 
   if (immediate) {
     doPush();
   } else {
-    _fbSyncTimer = setTimeout(doPush, 1500);
+    _fbSyncTimer = setTimeout(doPush, 1000);
   }
 }
 
@@ -466,11 +475,25 @@ function initFirebaseSync() {
     return;
   }
   try {
+    _lastSavedStatus = 'loading';
+    updateSavedTimeDisplay();
+
     if (!firebase.apps || !firebase.apps.length) {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
     _fbDb = firebase.database();
     _fbRef = _fbDb.ref('broll_app_data');
+
+    // Release loading status safety timeout if offline / slow
+    setTimeout(() => {
+      if (!_isInitialCloudLoaded) {
+        _isInitialCloudLoaded = true;
+        if (_lastSavedStatus === 'loading') {
+          _lastSavedStatus = 'synced';
+          updateSavedTimeDisplay();
+        }
+      }
+    }, 3000);
 
     _fbDb.ref('.info/connected').on('value', snap => {
       _fbConnected = !!snap.val();
@@ -478,33 +501,40 @@ function initFirebaseSync() {
         _lastSavedStatus = 'offline';
         updateSavedTimeDisplay();
       } else {
-        if (_userMadeLocalEdit && _isInitialCloudLoaded) {
+        if (!_isInitialCloudLoaded) {
+          _lastSavedStatus = 'loading';
+          updateSavedTimeDisplay();
+        } else if (_userMadeLocalEdit) {
           pushToFirebase(true);
         }
       }
     });
 
-    _fbRef.once('value').then(snap => {
-      const data = snap.val();
-      if (data && data.projects && Object.keys(data.projects).length > 0) {
-        applyRemoteData(data, true);
-        _isInitialCloudLoaded = true;
-        console.log('✅ Loaded latest cloud database version.');
-      } else {
-        _isInitialCloudLoaded = true;
-        if (Object.keys(PROJECTS).length > 0) {
-          pushToFirebase(true);
-        }
-      }
-    }).catch(err => {
-      console.warn('Initial cloud read error:', err);
-      _isInitialCloudLoaded = true;
-    });
-
+    let isInitialRead = true;
     _fbRef.on('value', snap => {
-      if (!_isInitialCloudLoaded) return;
       const data = snap.val();
-      if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
+      _latestCloudData = data;
+
+      if (isInitialRead) {
+        isInitialRead = false;
+        _isInitialCloudLoaded = true;
+
+        if (data && data.projects && Object.keys(data.projects).length > 0) {
+          // Absolute priority: Always load server data on entry
+          applyRemoteData(data, true);
+          console.log('✅ Loaded latest cloud database version on entry.');
+        } else {
+          // Cloud empty: seed from local only if present
+          if (Object.keys(PROJECTS).length > 0) {
+            pushToFirebase(true);
+          } else {
+            _lastSavedStatus = 'synced';
+            updateSavedTimeDisplay();
+          }
+        }
+        return;
+      }
+
       if (data.lastUpdatedBy === CLIENT_ID) return;
 
       applyRemoteData(data, false);
@@ -515,6 +545,7 @@ function initFirebaseSync() {
       _fbRef.once('value').then(snap => {
         const data = snap.val();
         if (!data || !data.updatedAt) return;
+        _latestCloudData = data;
         if (data.lastUpdatedBy === CLIENT_ID) return;
         if (data.updatedAt > (_lastRemoteUpdatedAt || 0)) {
           applyRemoteData(data, false);
@@ -527,7 +558,6 @@ function initFirebaseSync() {
     });
     window.addEventListener('focus', checkFreshRemote);
 
-    // Click on sync status pill to manual force sync
     _el('sync-status')?.addEventListener('click', () => {
       toast('🔄 Force syncing with Cloud…');
       pushToFirebase(true);
