@@ -1970,13 +1970,16 @@ function parseScript(text) {
 /* ── Prompt Batch Parsing ───────────────────────────────────── */
 function parsePromptBatch(text) {
   const result = {};
-  for (const sec of text.split(/(?=(?:BROLL|B-ROLL|CLIP)?\s*#?\d+(?:\.\d+)?\s*:)/i)) {
-    const numM = sec.match(/^(?:BROLL|B-ROLL|CLIP)?\s*#?(\d+(?:\.\d+)?)\s*:/i); if (!numM) continue;
+  for (const sec of text.split(/(?=(?:BROLL|B-ROLL|CLIP)\s*#?\d+(?:\.\d+)?\s*:|(?<=\n)\s*#\d+(?:\.\d+)?\s*:)/i)) {
+    const numM = sec.match(/^(?:(?:BROLL|B-ROLL|CLIP)\s*#?|#)(\d+(?:\.\d+)?)\s*:/i); if (!numM) continue;
     const num = parseFloat(numM[1]);
     const vpIdx = sec.search(/VIDEO\s+PROMPT\s*:/i); if (vpIdx === -1) continue;
-    const chunks = sec.slice(vpIdx).split(/(?:ALT|SET)\s+\d+\s*:/i).slice(1);
+    const chunks = sec.slice(vpIdx).split(/(?:ALT|SET|PROMPT)\s*#?\d+\s*:/i).slice(1);
     if (!result[num]) result[num] = [];
-    for (const c of chunks) { const t = c.trim(); if (t) result[num].push(t); }
+    for (const c of chunks) {
+      const t = c.replace(/^[\s—\-]+|[\s—\-]+$/g, '').trim();
+      if (t) result[num].push(t);
+    }
   }
   return result;
 }
