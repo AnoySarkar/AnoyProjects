@@ -223,10 +223,36 @@ function handleSyncStatusClick() {
 function confirmSavePendingImport() {
   if (!_pendingImportSnapshot) return;
   const info = _pendingImportInfo;
+  // Clear pending state FIRST so pushToFirebase guard is lifted
   _pendingImportSnapshot = null;
   _pendingImportInfo = null;
 
-  save(true);
+  // Flush current ST state fully into PROJECTS
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    try {
+      const ta = _el('script-textarea');
+      const bnTa = _el('script-bengali-textarea');
+      PROJECTS[ACTIVE_PID].script        = (ta  && ta.value  != null) ? ta.value  : (PROJECTS[ACTIVE_PID].script  || '');
+      PROJECTS[ACTIVE_PID].bengaliScript = (bnTa && bnTa.value != null) ? bnTa.value : (PROJECTS[ACTIVE_PID].bengaliScript || '');
+      PROJECTS[ACTIVE_PID].bengaliLines  = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+      PROJECTS[ACTIVE_PID].scores        = JSON.parse(JSON.stringify(ST.scores       || {}));
+      PROJECTS[ACTIVE_PID].prompts       = JSON.parse(JSON.stringify(ST.prompts      || {}));
+      PROJECTS[ACTIVE_PID].batches       = JSON.parse(JSON.stringify(ST.batches      || []));
+      PROJECTS[ACTIVE_PID].usedSets      = JSON.parse(JSON.stringify(ST.usedSets     || {}));
+      PROJECTS[ACTIVE_PID].setRatings    = JSON.parse(JSON.stringify(ST.setRatings   || {}));
+      PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches|| []));
+      PROJECTS[ACTIVE_PID].myRatings     = JSON.parse(JSON.stringify(ST.myRatings    || {}));
+      PROJECTS[ACTIVE_PID].covered       = JSON.parse(JSON.stringify(ST.covered      || {}));
+    } catch {}
+  }
+
+  // Save to localStorage first
+  try {
+    localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+    _lastLocalSaveTime = Date.now();
+    _userMadeLocalEdit = false;
+  } catch {}
 
   if (_fbRef) {
     const now = Date.now();
@@ -243,20 +269,24 @@ function confirmSavePendingImport() {
     _fbRef.set(payload)
       .then(() => {
         _lastFirebaseSaveTime = Date.now();
-        _lastRemoteUpdatedAt = now;
-        _lastSavedStatus = 'synced';
-        _userMadeLocalEdit = false;
+        _lastRemoteUpdatedAt  = now;
+        _latestCloudData      = payload;
+        _lastSavedStatus      = 'synced';
+        _userMadeLocalEdit    = false;
+        _fbRetryCount         = 0;
         updateSavedTimeDisplay();
-        toast(`☁️ Successfully saved ${info?.label || 'import'} to Cloud!`);
+        toast(`☁️ Saved ${info?.label || 'import'} to Cloud!`);
       })
       .catch(err => {
-        console.warn('Fast push failed, triggering retry push:', err);
+        console.warn('Direct import push failed, retrying:', err);
+        _lastSavedStatus = 'error';
+        updateSavedTimeDisplay();
         pushToFirebase(true);
       });
   } else {
     _lastSavedStatus = 'synced';
     updateSavedTimeDisplay();
-    toast(`💾 Saved ${info?.label || 'import'} locally!`);
+    toast(`💾 Saved ${info?.label || 'import'} locally (no cloud connection).`);
   }
 }
 
@@ -276,18 +306,18 @@ function rejectPendingImport() {
 
   // Restore ST for active project
   const st = snapshot.st;
-  ST.scores = JSON.parse(JSON.stringify(st.scores));
-  ST.prompts = JSON.parse(JSON.stringify(st.prompts));
-  ST.batches = JSON.parse(JSON.stringify(st.batches));
-  ST.usedSets = JSON.parse(JSON.stringify(st.usedSets));
-  ST.setRatings = JSON.parse(JSON.stringify(st.setRatings));
+  ST.scores        = JSON.parse(JSON.stringify(st.scores));
+  ST.prompts       = JSON.parse(JSON.stringify(st.prompts));
+  ST.batches       = JSON.parse(JSON.stringify(st.batches));
+  ST.usedSets      = JSON.parse(JSON.stringify(st.usedSets));
+  ST.setRatings    = JSON.parse(JSON.stringify(st.setRatings));
   ST.ratingBatches = JSON.parse(JSON.stringify(st.ratingBatches));
-  ST.myRatings = JSON.parse(JSON.stringify(st.myRatings));
-  ST.covered = JSON.parse(JSON.stringify(st.covered));
-  ST.activeBatch = st.activeBatch;
+  ST.myRatings     = JSON.parse(JSON.stringify(st.myRatings));
+  ST.covered       = JSON.parse(JSON.stringify(st.covered));
+  ST.activeBatch   = st.activeBatch;
   ST.activeRatingBatch = st.activeRatingBatch;
 
-  // Save reverted state locally
+  // Save reverted state to localStorage
   try {
     localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
     if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
@@ -309,7 +339,7 @@ function rejectPendingImport() {
   _lastSavedStatus = 'synced';
   updateSavedTimeDisplay();
 
-  toast(`✕ Rejected ${info?.label || 'import'} and reverted to previous state.`);
+  toast(`✕ Rejected — reverted ${info?.label || 'import'} to previous state.`);
 }
 
 /* ── Deep merge helpers ─────────────────────────────────────── */
@@ -606,6 +636,118 @@ function applyRemoteData(data, isInitial = false) {
   }
 }
 
+/* ── Force Load from Cloud ────────────────────────────────── */
+function forceLoadFromCloud() {
+  const btn = _el('btn-force-load-cloud');
+  if (!_fbRef) {
+    toast('⚠️ No cloud connection yet — please wait.');
+    return;
+  }
+  if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
+  _lastSavedStatus = 'loading';
+  updateSavedTimeDisplay();
+
+  _fbRef.once('value').then(snap => {
+    const data = snap.val();
+    if (!data || !data.projects || Object.keys(data.projects).length === 0) {
+      toast('☁️ Cloud is empty — nothing to load.');
+      _lastSavedStatus = 'synced';
+      updateSavedTimeDisplay();
+      if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; }
+      return;
+    }
+    _latestCloudData = data;
+    applyRemoteData(data, true);
+    if (btn) {
+      btn.textContent = '✔ Loaded!';
+      setTimeout(() => { if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; } }, 1200);
+    }
+    toast('☁️ Pulled and loaded latest data from Cloud!');
+  }).catch(err => {
+    console.error('Force load failed:', err);
+    toast('❌ Failed to load from Cloud.');
+    _lastSavedStatus = 'offline';
+    updateSavedTimeDisplay();
+    if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; }
+  });
+}
+
+/* ── Force Save to Cloud ──────────────────────────────────── */
+function forceSaveToCloud() {
+  const btn = _el('btn-force-save-cloud');
+  if (!_fbRef) {
+    toast('⚠️ No cloud connection — data saved locally only.');
+    return;
+  }
+
+  // Clear any pending import state
+  _pendingImportSnapshot = null;
+  _pendingImportInfo = null;
+
+  // 1. Immediately flush active project state into PROJECTS
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    try {
+      const ta = _el('script-textarea');
+      const bnTa = _el('script-bengali-textarea');
+      PROJECTS[ACTIVE_PID].script        = (ta   && ta.value   != null) ? ta.value   : (PROJECTS[ACTIVE_PID].script  || '');
+      PROJECTS[ACTIVE_PID].bengaliScript = (bnTa && bnTa.value != null) ? bnTa.value : (PROJECTS[ACTIVE_PID].bengaliScript || '');
+      PROJECTS[ACTIVE_PID].bengaliLines  = JSON.parse(JSON.stringify(ST.bengaliLines  || {}));
+      PROJECTS[ACTIVE_PID].scores        = JSON.parse(JSON.stringify(ST.scores        || {}));
+      PROJECTS[ACTIVE_PID].prompts       = JSON.parse(JSON.stringify(ST.prompts       || {}));
+      PROJECTS[ACTIVE_PID].batches       = JSON.parse(JSON.stringify(ST.batches       || []));
+      PROJECTS[ACTIVE_PID].usedSets      = JSON.parse(JSON.stringify(ST.usedSets      || {}));
+      PROJECTS[ACTIVE_PID].setRatings    = JSON.parse(JSON.stringify(ST.setRatings    || {}));
+      PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+      PROJECTS[ACTIVE_PID].myRatings     = JSON.parse(JSON.stringify(ST.myRatings     || {}));
+      PROJECTS[ACTIVE_PID].covered       = JSON.parse(JSON.stringify(ST.covered       || {}));
+    } catch {}
+  }
+
+  // 2. Save locally
+  try {
+    localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+    _lastLocalSaveTime = Date.now();
+  } catch {}
+
+  const now = Date.now();
+  const payload = {
+    active: ACTIVE_PID,
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
+    lastUpdatedBy: CLIENT_ID,
+    updatedAt: now
+  };
+
+  if (btn) { btn.textContent = '⏳ Saving…'; btn.disabled = true; }
+  _lastSavedStatus = 'syncing';
+  updateSavedTimeDisplay();
+
+  // 3. Actually save to Firebase first
+  _fbRef.set(payload)
+    .then(() => {
+      _lastFirebaseSaveTime = now;
+      _lastRemoteUpdatedAt  = now;
+      _latestCloudData      = payload;
+      _lastSavedStatus      = 'synced';
+      _userMadeLocalEdit    = false;
+      _fbRetryCount         = 0;
+      updateSavedTimeDisplay();
+      if (btn) {
+        btn.textContent = '✔ Saved!';
+        setTimeout(() => { if (btn) { btn.textContent = '⬆ Force Save'; btn.disabled = false; } }, 1200);
+      }
+      toast('☁️ Saved to Cloud as latest version successfully!');
+    })
+    .catch(err => {
+      console.error('Force save failed:', err);
+      _lastSavedStatus = 'offline';
+      updateSavedTimeDisplay();
+      if (btn) { btn.textContent = '⬆ Force Save'; btn.disabled = false; }
+      toast('❌ Force save failed. Check connection.');
+    });
+}
+
 function initFirebaseSync() {
   if (typeof firebase === 'undefined') {
     console.warn('Firebase SDK not loaded, using local storage.');
@@ -673,7 +815,9 @@ function initFirebaseSync() {
         return;
       }
 
-      if (data.lastUpdatedBy === CLIENT_ID) return;
+      if (data.lastUpdatedBy === CLIENT_ID) {
+        return;
+      }
 
       applyRemoteData(data, false);
     });
@@ -684,7 +828,9 @@ function initFirebaseSync() {
         const data = snap.val();
         if (!data || !data.updatedAt) return;
         _latestCloudData = data;
-        if (data.lastUpdatedBy === CLIENT_ID) return;
+        if (data.lastUpdatedBy === CLIENT_ID) {
+          return;
+        }
         if (data.updatedAt > (_lastRemoteUpdatedAt || 0)) {
           applyRemoteData(data, false);
         }
@@ -695,8 +841,6 @@ function initFirebaseSync() {
       if (document.visibilityState === 'visible') checkFreshRemote();
     });
     window.addEventListener('focus', checkFreshRemote);
-
-    _el('sync-status')?.addEventListener('click', handleSyncStatusClick);
 
   } catch (err) {
     console.error('Firebase initialization error:', err);
@@ -3976,12 +4120,29 @@ function exportData(){
 function importJSON(file){
   const r = new FileReader();
   r.onload = ev => {
+    // Step 1: Parse JSON — isolated catch so only a real parse failure shows "Invalid JSON"
+    let d;
     try {
-      const d = JSON.parse(ev.target.result);
-      createProjectBackup('Before Import JSON');
+      d = JSON.parse(ev.target.result);
+    } catch(err) {
+      console.error('JSON parse error:', err);
+      toast('❌ Invalid JSON file');
+      return;
+    }
 
-      // If full multi-project export
+    // Step 2: Validate structure
+    if (!d || typeof d !== 'object') {
+      toast('❌ Invalid JSON file');
+      return;
+    }
+
+    // Step 3: Pre-import backup (swallow errors — don't let backup issues abort the import)
+    try { createProjectBackup('Before Import JSON'); } catch {}
+
+    // Step 4: Load data into PROJECTS
+    try {
       if (d.projects && typeof d.projects === 'object' && Object.keys(d.projects).length) {
+        // Full multi-project export
         for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
         for (const [k, v] of Object.entries(d.projects)) {
           PROJECTS[k] = {
@@ -4029,16 +4190,61 @@ function importJSON(file){
         saveGlobalCset();
         activateProject(pid);
       }
-
-      save(true);
-      toast('📤 Backup imported successfully');
     } catch(err) {
-      console.error('Import error:', err);
-      toast('❌ Invalid JSON file');
+      console.error('Import load error:', err);
+      toast('❌ Error loading import data. Check console.');
+      return;
+    }
+
+    // Step 5: Save locally
+    try {
+      localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+      if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+      _lastLocalSaveTime = Date.now();
+      _userMadeLocalEdit = false;
+    } catch {}
+
+    toast('📤 Backup imported successfully');
+
+    // Step 6: Direct Firebase push (bypasses debounce and pending guard entirely)
+    if (_fbRef) {
+      const now = Date.now();
+      const payload = {
+        active: ACTIVE_PID,
+        projects: JSON.parse(JSON.stringify(PROJECTS)),
+        globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
+        lastUpdatedBy: CLIENT_ID,
+        updatedAt: now
+      };
+      _lastSavedStatus = 'syncing';
+      updateSavedTimeDisplay();
+
+      _fbRef.set(payload)
+        .then(() => {
+          _lastFirebaseSaveTime = Date.now();
+          _lastRemoteUpdatedAt  = now;
+          _latestCloudData      = payload;
+          _lastSavedStatus      = 'synced';
+          _userMadeLocalEdit    = false;
+          _fbRetryCount         = 0;
+          updateSavedTimeDisplay();
+          toast('☁️ Import saved to Cloud!');
+        })
+        .catch(err => {
+          console.warn('Import direct push failed, retrying via pipeline:', err);
+          _lastSavedStatus = 'offline';
+          updateSavedTimeDisplay();
+          pushToFirebase(true);
+        });
+    } else {
+      // No Firebase — just mark as locally saved
+      _lastSavedStatus = 'synced';
+      updateSavedTimeDisplay();
     }
   };
   r.readAsText(file);
 }
+
 
 
 
@@ -4445,6 +4651,13 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   scrollToLastScoredBroll();
   initFirebaseSync();
+
+  // Attach sync pill click ALWAYS (not just when Firebase succeeds)
+  _el('sync-status')?.addEventListener('click', handleSyncStatusClick);
+
+  // ── Force Cloud Action Buttons ───────────────────────────
+  _el('btn-force-load-cloud')?.addEventListener('click', forceLoadFromCloud);
+  _el('btn-force-save-cloud')?.addEventListener('click', forceSaveToCloud);
 
 
   let rT; window.addEventListener('resize',()=>{clearTimeout(rT);rT=setTimeout(renderHeatmap,120);});

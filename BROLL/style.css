@@ -143,6 +143,46 @@ input,textarea { font-family:inherit }
 @keyframes syncPulse { 0% { opacity:0.3; transform:scale(0.8) } 100% { opacity:1; transform:scale(1.2) } }
 @keyframes pendingPillGlow { 0% { box-shadow: 0 0 3px rgba(245, 158, 11, 0.3); } 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.7); } }
 
+/* ── Force Cloud Action Pills ──────────────────────────────── */
+.force-load-pill {
+  background: rgba(34,197,94,0.12) !important;
+  border-color: rgba(34,197,94,0.38) !important;
+  color: #22c55e !important;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s;
+}
+.force-load-pill:hover:not(:disabled) {
+  background: rgba(34,197,94,0.24) !important;
+  border-color: #22c55e !important;
+  color: #4ade80 !important;
+}
+.force-load-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.force-save-pill {
+  background: rgba(124,109,250,0.12) !important;
+  border-color: rgba(124,109,250,0.38) !important;
+  color: #a594ff !important;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s;
+}
+.force-save-pill:hover:not(:disabled) {
+  background: rgba(124,109,250,0.24) !important;
+  border-color: var(--accent) !important;
+  color: #c4b5fd !important;
+}
+.force-save-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+
 .hdr-actions { display:flex; gap:2px; flex-shrink:0; margin-left:auto; align-items:center }
 
 
