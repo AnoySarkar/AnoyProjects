@@ -10,13 +10,32 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="B-Roll Tracker" />
+
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="apple-touch-icon" href="icon-192.png" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="style.css?v=20260827_13" />
+  <link rel="stylesheet" href="style.css?v=20260823_20" />
 </head>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -34,55 +53,93 @@
   <!-- ══ STICKY TOP ══════════════════════════════════════════ -->
   <div id="sticky-top">
 
-    <!-- Project / Script Tabs Row -->
-    <div id="project-bar-wrap">
-      <div id="project-bar" role="tablist" aria-label="Scripts"></div>
-      <div id="project-bar-right">
-        <button class="hpill force-load-pill" id="btn-force-load-cloud" title="Pull and load latest data from Cloud">⬇ Load Latest</button>
-        <button class="hpill force-save-pill" id="btn-force-save-cloud" title="Force save current state to Cloud as latest">⬆ Force Save</button>
-        <div class="hpill sync-pill" id="sync-status" title="Cloud sync status — click to force sync" style="cursor:pointer">
-          <span class="sync-dot" id="sync-dot"></span>
-          <span class="sync-text" id="sync-text">Cloud</span>
-        </div>
-        <button class="hpill lock-pill locked" id="rating-lock-btn" title="Main rating lock (click to toggle)">
-          <span class="lock-icon" id="lock-icon">🔒</span>
-          <span class="lock-text" id="lock-text">Locked</span>
-        </button>
-      </div>
-    </div>
+    <!-- Project / Script Tabs -->
+    <div id="project-bar" role="tablist" aria-label="Scripts"></div>
 
-    <!-- Compact Toolbar -->
-    <div id="top-toolbar">
-      <div class="tb-group tb-left">
-        <button class="tb-btn" id="tb-filter-toggle" title="Toggle Filter Bar">🔍</button>
-        <button class="tb-btn" id="tb-needs-work" title="Needs Work (&lt;9)">⚡</button>
-        <button class="tb-btn" id="tb-compact-toggle" title="Toggle Compact View (Hide Prompts)">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">
-            <rect x="3" y="4" width="18" height="6" rx="1.5"></rect>
-            <rect x="3" y="14" width="18" height="6" rx="1.5"></rect>
-          </svg>
-        </button>
-        <button class="tb-btn" id="hm-view-toggle" title="Toggle compressed/scrollable overview">⇔</button>
+    <!-- Header -->
+    <header id="top-header">
+      <div class="logo">
+        <div class="logo-icon" aria-hidden="true">B</div>
+        <span class="logo-name">B-Roll Tracker</span>
       </div>
-      <div class="tb-group tb-right">
-        <button class="tb-btn undo-btn disabled" id="btn-undo" disabled title="Undo (Ctrl+Z)">↩</button>
-        <button class="tb-btn redo-btn disabled" id="btn-redo" disabled title="Redo (Ctrl+Y)">↪</button>
+
+
+      <div class="hpill sync-pill" id="sync-status" title="Firebase Cloud Sync: Connecting..." style="cursor:pointer">
+        <span class="sync-dot" id="sync-dot"></span>
+        <span class="sync-text" id="sync-text">Cloud</span>
+      </div>
+
+      <button class="hpill lock-pill locked" id="rating-lock-btn" title="Main rating lock (click to toggle)">
+        <span class="lock-icon" id="lock-icon">🔒</span>
+        <span class="lock-text" id="lock-text">Locked</span>
+      </button>
+
+
+      <div class="hdr-stats">
+        <div class="hpill"><span class="hpill-v" id="st-total">0</span><span class="hpill-l">clips</span></div>
+        <div class="hpill c-accent"><span class="hpill-v" id="st-scored">0/0</span><span class="hpill-l">scored</span></div>
+        <div class="hpill c-green"><span class="hpill-v" id="st-green">0</span><span class="hpill-l">≥9</span></div>
+        <div class="hpill"><span class="hpill-v" id="st-avg">—</span><span class="hpill-l">avg</span></div>
+      </div>
+
+      <div class="hdr-actions">
+        <button class="hbtn undo-btn disabled" id="btn-undo" disabled title="Undo (Ctrl+Z)">↩</button>
+        <button class="hbtn redo-btn disabled" id="btn-redo" disabled title="Redo (Ctrl+Y)">↪</button>
         <div class="ur-sep"></div>
-        <button class="tb-btn" id="btn-reset"  title="Reset all scores">↺</button>
-        <button class="tb-btn" id="btn-import" title="Import JSON">📤</button>
-        <button class="tb-btn" id="btn-export" title="Export JSON">📥</button>
-        <button class="tb-btn danger" id="btn-clear" title="Clear this script">🗑</button>
+        <button class="hbtn" id="btn-reset"  title="Reset all ticks for this script">↺ <span>Reset</span></button>
+        <button class="hbtn" id="btn-export" title="Export JSON">📥 <span>Export</span></button>
+        <button class="hbtn" id="btn-import" title="Import JSON">📤 <span>Import</span></button>
+        <button class="hbtn danger" id="btn-clear" title="Clear this script">🗑 <span>Clear</span></button>
+      </div>
+    </header>
+
+    <!-- Unified Linked Overview Panel (Top: Main, Bottom: Real) -->
+    <div id="heatmap-panel">
+      <div class="hm-header">
+        <span class="hm-label">📊 Overview Bar</span>
+        <button class="hm-view-toggle" id="hm-view-toggle" title="Toggle between compressed and scrollable view">⇔</button>
+        <span class="hm-legend">
+          <span class="hm-leg-item"><span class="hm-leg-dot top"></span> Top: Main</span>
+          <span class="hm-leg-item"><span class="hm-leg-dot bot"></span> Bottom: Real</span>
+        </span>
+        <span class="hm-sub" id="hm-hint">load a script to begin</span>
+      </div>
+
+      <!-- Linked 2-Tier Bar Grid -->
+      <div id="heatmap-grid" class="hm-linked-grid" role="list"></div>
+
+      <!-- Stats Rows -->
+      <div class="hm-dual-progress">
+        <div class="hm-progress hm-prog-main">
+          <span class="hm-prog-tag">Main</span>
+          <span class="hm-prog-label">Scored</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-s" style="background:linear-gradient(90deg,#6c6dfa,#a594ff);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-s-pct">0%</span>
+          <span class="hm-prog-label" style="margin-left:6px">≥9</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-g" style="background:linear-gradient(90deg,#2a7a2a,#00922e);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-g-pct">0%</span>
+        </div>
+
+        <div class="hm-progress hm-prog-real">
+          <span class="hm-prog-tag">Real</span>
+          <span class="hm-prog-label">Rated</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-s" style="background:linear-gradient(90deg,#6c6dfa,#a594ff);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-real-s-pct">0%</span>
+          <span class="hm-prog-label" style="margin-left:6px">≥9 / Covered</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-g" style="background:linear-gradient(90deg,#2a7a2a,#00922e);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-real-g-pct">0%</span>
+          <span class="hm-prog-label" style="margin-left:6px">Retry(0)</span>
+          <div class="hm-prog-track"><div class="hm-prog-fill" id="prog-real-z" style="background:linear-gradient(90deg,#7e22ce,#c084fc);width:0%"></div></div>
+          <span class="hm-prog-pct" id="prog-real-z-pct">0%</span>
+        </div>
       </div>
     </div>
 
-    <!-- Overview Bar Grid -->
-    <div id="heatmap-panel">
-      <div id="heatmap-grid" class="hm-linked-grid" role="list"></div>
-    </div>
 
-    <!-- Filter Bar (toggled by F button) -->
+
+    <!-- Filter Bar with Main vs Real Target Toggle -->
     <div id="filter-bar" class="hidden" role="search">
-      <div class="fb-target-grp">
+      <div class="fb-target-grp" title="Toggle filtering between Main Rating and Real Rating">
         <button class="fb-target-btn active" id="fb-target-main" data-target="main">🎯 Main</button>
         <button class="fb-target-btn" id="fb-target-real" data-target="real">✏ Real</button>
       </div>
@@ -95,11 +152,11 @@
         <button class="chip"        data-filter="perfect"  id="chip-10">10 🏆</button>
       </div>
       <div class="fb-sep"></div>
-      <div class="fb-input-wrap">
+      <div class="fb-input-wrap" title="Filter below score">
         <span>below</span>
         <input type="number" id="fb-below" min="0" max="10" step="0.5" />
       </div>
-      <div class="fb-input-wrap">
+      <div class="fb-input-wrap" title="Filter above score">
         <span>above</span>
         <input type="number" id="fb-above" min="0" max="10" step="0.5" />
       </div>
@@ -110,351 +167,251 @@
         <button class="sort-btn"        data-sort="desc" title="High first">↓</button>
       </div>
     </div>
-
-  </div><!-- /sticky-top -->
+  </div>
+  <!-- /sticky-top -->
 
 
   <!-- ══ MAIN CONTENT ════════════════════════════════════════ -->
   <main id="main-content">
 
-    <!-- TAB P: Prompts + Script -->
-    <div class="tab-panel active" id="tab-panel-p">
-      <section id="input-section">
-        <div id="input-toggle" role="button" tabindex="0"
-             onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
-          <div class="it-left">
-            <span>📋 Script</span>
-            <span class="it-badge" id="it-badge">empty</span>
-          </div>
-          <span class="it-chevron">▲</span>
+    <!-- Script Input -->
+    <section id="input-section">
+      <div id="input-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <div class="it-left">
+          <span>📋 Script</span>
+          <span class="it-badge" id="it-badge">empty</span>
         </div>
-        <div id="input-body">
-          <div class="script-input-tabs">
-            <button class="script-input-tab active" id="tab-script-en" data-lang="en">🇬🇧 English Script</button>
-            <button class="script-input-tab" id="tab-script-bn" data-lang="bn">🇧🇩 Bengali Script</button>
-          </div>
-          <textarea id="script-textarea"
-            placeholder="1 First line of script&#10;2 Second line&#10;3 And so on..."
-            aria-label="Script input" rows="6" spellcheck="false"></textarea>
-          <textarea id="script-bengali-textarea" class="hidden"
-            placeholder="1 প্রথম দৃশ্য / বাংলা লাইন&#10;2 দ্বিতীয় দৃশ্য&#10;3 ইত্যাদি..."
-            aria-label="Bengali script input" rows="6" spellcheck="false"></textarea>
-          <div class="input-actions">
-            <button class="hbtn primary" id="btn-load">▶ Load Script</button>
-            <span class="inp-hint"><kbd>Ctrl+Enter</kbd> to load</span>
-          </div>
-        </div>
-      </section>
-      <div id="cards-container" role="list"></div>
-      <div id="no-results" role="status">
-        <p>🔍 No clips match. <a onclick="document.getElementById('chip-all').click()">Show all</a></p>
+        <span class="it-chevron">▲</span>
       </div>
-      <div id="empty-state" role="status">
-        <div class="empty-icon">📋</div>
-        <h2 class="empty-title">No script loaded</h2>
-        <p class="empty-sub">Paste a numbered script above and press <strong>Load Script</strong>.</p>
+      <div id="input-body">
+        <textarea id="script-textarea"
+          placeholder="1 First line of script&#10;2 Second line&#10;3 And so on..."
+          aria-label="Script input" rows="6" spellcheck="false"></textarea>
+        <div class="input-actions">
+          <button class="hbtn primary" id="btn-load">▶ Load Script</button>
+          <span class="inp-hint"><kbd>Ctrl+Enter</kbd> to load</span>
+        </div>
       </div>
+    </section>
+
+    <!-- B-Roll Cards -->
+    <div id="cards-container" role="list"></div>
+    <div id="no-results" role="status">
+      <p>🔍 No clips match. <a onclick="document.getElementById('chip-all').click()">Show all</a></p>
+    </div>
+    <div id="empty-state" role="status">
+      <div class="empty-icon">📋</div>
+      <h2 class="empty-title">No script loaded</h2>
+
+      <p class="empty-sub">Paste a numbered script above and press <strong>Load Script</strong>.</p>
     </div>
 
-    <!-- TAB L: Prompt Library -->
-    <div class="tab-panel hidden" id="tab-panel-l">
-      <section id="library-section">
-        <div id="library-toggle" role="button" tabindex="0"
-             onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
-          <div class="lib-title">
-            <span>📹 Prompt Library</span>
-            <span class="lib-badge" id="lib-badge">0</span>
-          </div>
-          <span class="it-chevron">▼</span>
+    <!-- ══ COPY SETTINGS ═══════════════════════════════════════ -->
+    <section id="cset-section">
+      <div id="cset-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <span>⚙️ Copy Settings</span>
+        <span class="cset-hint" id="cset-hint">off</span>
+        <span style="flex:1"></span>
+        <span class="it-chevron">▼</span>
+      </div>
+      <div id="cset-body">
+        <div class="cset-opts" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:8px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-1);">
+            <input type="checkbox" id="cset-label-toggle" checked style="accent-color:var(--accent);width:15px;height:15px;cursor:pointer;">
+            <span>Add B-roll & Set tag (e.g. <code>14S6</code>) on copy</span>
+          </label>
+          <span style="font-size:9.5px;color:var(--text-3);">Added before prefix text on same line</span>
         </div>
-        <div id="library-body">
-          <div id="batch-tab-bar" role="tablist"></div>
-          <div id="batch-content-area">
-            <div id="batch-panel-new" role="tabpanel">
-              <textarea id="prompt-textarea"
-                placeholder="Paste BROLL blocks here…"
-                aria-label="Prompt batch input" rows="7" spellcheck="false"></textarea>
-              <div class="lib-actions">
-                <button class="hbtn primary" id="btn-import-prompts">📥 Import</button>
-                <button class="hbtn" id="btn-paste-prompt">📋 Paste</button>
-                <button class="hbtn" id="btn-clear-prompt-input">✕ Clear</button>
-                <button class="hbtn danger" id="btn-clear-prompts" style="margin-left:auto">🗑 All Prompts</button>
+        <div class="cset-flow">
+          <div class="cset-side">
+            <div class="cset-side-hdr">
+              <div>
+                <div class="cset-side-label">📥 PREFIX</div>
+                <div class="cset-side-sub">added before prompt</div>
               </div>
+              <button class="hbtn" id="cset-clear-pre">Clear</button>
             </div>
-            <div id="batch-panel-detail" class="hidden" role="tabpanel"></div>
+            <textarea id="cset-prefix" placeholder="Text before…" rows="3"></textarea>
           </div>
-        </div>
-      </section>
-    </div>
-
-    <!-- TAB R: Set Ratings -->
-    <div class="tab-panel hidden" id="tab-panel-r">
-      <section id="srating-section">
-        <div id="srating-toggle" role="button" tabindex="0"
-             onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
-          <span>⭐ Set Ratings</span>
-          <span class="srating-hint" id="srating-hint">0 ratings</span>
-          <span style="flex:1"></span>
-          <span class="it-chevron">▼</span>
-        </div>
-        <div id="srating-body">
-          <div id="srating-tab-bar" role="tablist"></div>
-          <div id="srating-content-area">
-            <div id="srating-panel-new" role="tabpanel">
-              <div class="srating-inner">
-                <div class="srating-format-hint">Format per line: <code>BROLL : SET : SCORE : why text</code></div>
-                <textarea id="srating-textarea"
-                  placeholder="1 : 2 : 9.5 : Great cinematic push&#10;3 : 1 : 8 : Good but slightly shaky"
-                  rows="5" spellcheck="false"></textarea>
-                <div class="srating-actions">
-                  <button class="hbtn primary" id="btn-apply-ratings">⭐ Apply Ratings</button>
-                  <button class="hbtn" id="btn-paste-ratings">📋 Paste</button>
-                  <button class="hbtn" id="btn-clear-rating-input">✕ Clear Input</button>
-                  <button class="hbtn danger" id="btn-clear-all-ratings" style="margin-left:auto">🗑 All Ratings</button>
-                </div>
-                <div class="srating-summary" id="srating-summary"></div>
+          <div class="cset-mid">
+            <span class="cset-arrow">↓</span>
+            <div class="cset-mid-pill">PROMPT</div>
+            <span class="cset-arrow">↓</span>
+          </div>
+          <div class="cset-side">
+            <div class="cset-side-hdr">
+              <div>
+                <div class="cset-side-label">📤 SUFFIX</div>
+                <div class="cset-side-sub">added after prompt</div>
               </div>
+              <button class="hbtn" id="cset-clear-suf">Clear</button>
             </div>
-            <div id="srating-panel-detail" class="hidden" role="tabpanel"></div>
+            <textarea id="cset-suffix" placeholder="Text after…" rows="3"></textarea>
           </div>
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
 
-    <!-- TAB F: Filter & Copy Lines -->
-    <div class="tab-panel hidden" id="tab-panel-f">
-      <section id="line-copy-section">
-        <div id="line-copy-toggle" role="button" tabindex="0"
-             onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
-          <span>📋 Filter &amp; Copy Lines</span>
-          <span class="line-copy-hint" id="line-copy-hint">0 lines</span>
-          <span style="flex:1"></span>
-          <span class="it-chevron">▼</span>
-        </div>
-        <div id="line-copy-body">
-          <div class="lc-controls-row">
-            <div class="lc-ctrl-grp">
-              <span class="lc-ctrl-label">Target:</span>
-              <div class="fb-target-grp" id="lc-target-grp">
-                <button class="fb-target-btn active" id="lc-target-main" data-target="main">🎯 Main</button>
-                <button class="fb-target-btn" id="lc-target-real" data-target="real">✏ Real</button>
-              </div>
+    <!-- ══ LINE COPY / EXPORT ════════════════════════════════ -->
+    <section id="line-copy-section" class="collapsed">
+      <div id="line-copy-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <span>📋 Filter & Copy Lines</span>
+        <span class="line-copy-hint" id="line-copy-hint">0 lines</span>
+        <span style="flex:1"></span>
+        <span class="it-chevron">▼</span>
+      </div>
+      <div id="line-copy-body">
+        <div class="lc-controls-row">
+          <div class="lc-ctrl-grp">
+            <span class="lc-ctrl-label">Target:</span>
+            <div class="fb-target-grp" id="lc-target-grp">
+              <button class="fb-target-btn active" id="lc-target-main" data-target="main">🎯 Main</button>
+              <button class="fb-target-btn" id="lc-target-real" data-target="real">✏ Real</button>
             </div>
-            <div class="lc-ctrl-grp">
-              <span class="lc-ctrl-label">Min:</span>
-              <input class="lc-input" id="lc-min-score" type="number" step="0.5" min="0" max="10" placeholder="0" value="0" />
-            </div>
-            <div class="lc-ctrl-grp">
-              <span class="lc-ctrl-label">Max:</span>
-              <input class="lc-input" id="lc-max-score" type="number" step="0.5" min="0" max="10" placeholder="8.9" value="8.9" />
-            </div>
-            <div class="lc-ctrl-grp">
-              <label class="lc-checkbox-label">
-                <input type="checkbox" id="lc-include-unscored" checked /> Unscored/Unrated
-              </label>
-            </div>
-            <div class="lc-ctrl-grp">
-              <label class="lc-checkbox-label">
-                <input type="checkbox" id="lc-skip-real-9" checked /> Skip Real ≥9/Done
-              </label>
-            </div>
-            <div class="lc-ctrl-grp">
-              <label class="lc-checkbox-label">
-                <input type="checkbox" id="lc-include-num" checked /> Number prefix
-              </label>
-            </div>
-            <div class="lc-ctrl-grp">
-              <label class="lc-checkbox-label">
-                <input type="checkbox" id="lc-line-gap" checked /> Line gap
-              </label>
-            </div>
-            <button class="hbtn primary" id="btn-copy-filtered-lines">📋 Copy Lines</button>
-            <button class="hbtn accent" id="btn-copy-needs-work-lines">⚡ Needs Work</button>
           </div>
-          <div class="lc-preview-wrap">
-            <div class="lc-preview-hdr">
-              <span id="lc-count-badge">0 lines matching filter</span>
-              <span class="lc-preview-hint">Live preview</span>
-            </div>
-            <textarea id="lc-preview-textarea" readonly rows="7" placeholder="Filtered lines will appear here..."></textarea>
+          <div class="lc-ctrl-grp">
+            <span class="lc-ctrl-label">Min:</span>
+            <input class="lc-input" id="lc-min-score" type="number" step="0.5" min="0" max="10" placeholder="0" value="0" />
           </div>
-        </div>
-      </section>
-    </div>
-
-    <!-- TAB S: Settings & Preferences -->
-    <div class="tab-panel hidden" id="tab-panel-s">
-
-      <!-- Copy Formatting Settings -->
-      <section id="cset-section">
-        <div class="settings-card-hdr">
-          <span>⚙️ Prompt Copy Settings</span>
-          <span class="cset-hint" id="cset-hint">off</span>
-        </div>
-        <div id="cset-body">
-          <div class="cset-opts" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:8px;background:var(--bg-3);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap;gap:6px;">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;font-weight:600;color:var(--text-1);">
-              <input type="checkbox" id="cset-label-toggle" checked style="accent-color:var(--accent);width:15px;height:15px;cursor:pointer;">
-              <span>Add B-roll &amp; Set tag (e.g. <code>14S6</code>) on copy</span>
+          <div class="lc-ctrl-grp">
+            <span class="lc-ctrl-label">Max:</span>
+            <input class="lc-input" id="lc-max-score" type="number" step="0.5" min="0" max="10" placeholder="8.9" value="8.9" />
+          </div>
+          <div class="lc-ctrl-grp">
+            <label class="lc-checkbox-label">
+              <input type="checkbox" id="lc-include-unscored" checked /> Unscored/Unrated
             </label>
-            <span style="font-size:9.5px;color:var(--text-3);">Added before prefix text on same line</span>
           </div>
-          <div class="cset-flow">
-            <div class="cset-side">
-              <div class="cset-side-hdr">
-                <div>
-                  <div class="cset-side-label">📥 PREFIX</div>
-                  <div class="cset-side-sub">added before prompt</div>
-                </div>
-                <button class="hbtn" id="cset-clear-pre">Clear</button>
+          <div class="lc-ctrl-grp">
+            <label class="lc-checkbox-label" title="Skip/exclude any line if its Real Rating is 9+ or marked Done">
+              <input type="checkbox" id="lc-skip-real-9" checked /> Skip Real ≥ 9 / Done
+            </label>
+          </div>
+          <div class="lc-ctrl-grp">
+            <label class="lc-checkbox-label">
+              <input type="checkbox" id="lc-include-num" checked /> Number prefix (1 ...)
+            </label>
+          </div>
+          <div class="lc-ctrl-grp">
+            <label class="lc-checkbox-label">
+              <input type="checkbox" id="lc-line-gap" checked /> Line gap
+            </label>
+          </div>
+          <button class="hbtn primary" id="btn-copy-filtered-lines">📋 Copy Lines</button>
+        </div>
+
+
+        <div class="lc-preview-wrap">
+          <div class="lc-preview-hdr">
+            <span id="lc-count-badge">0 lines matching filter</span>
+            <span class="lc-preview-hint">Live formatted preview</span>
+          </div>
+          <textarea id="lc-preview-textarea" readonly rows="7" placeholder="Filtered lines will appear here..."></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ SET RATINGS ════════════════════════════════════════ -->
+    <section id="srating-section" class="collapsed">
+      <div id="srating-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <span>⭐ Set Ratings</span>
+        <span class="srating-hint" id="srating-hint">0 ratings</span>
+
+        <span style="flex:1"></span>
+        <span class="it-chevron">▼</span>
+      </div>
+      <div id="srating-body">
+        <!-- Rating Tabs -->
+        <div id="srating-tab-bar" role="tablist"></div>
+
+        <!-- Tab Panels -->
+        <div id="srating-content-area">
+          <div id="srating-panel-new" role="tabpanel">
+            <div class="srating-inner">
+              <div class="srating-format-hint">Format per line: <code>BROLL : SET : SCORE : why text</code></div>
+              <textarea id="srating-textarea"
+                placeholder="1 : 2 : 9.5 : Great cinematic push&#10;3 : 1 : 8 : Good but slightly shaky"
+                rows="5" spellcheck="false"></textarea>
+              <div class="srating-actions">
+                <button class="hbtn primary" id="btn-apply-ratings">⭐ Apply Ratings</button>
+                <button class="hbtn" id="btn-paste-ratings">📋 Paste</button>
+                <button class="hbtn" id="btn-clear-rating-input">✕ Clear Input</button>
+                <button class="hbtn danger" id="btn-clear-all-ratings" style="margin-left:auto">🗑 All Ratings</button>
               </div>
-              <textarea id="cset-prefix" placeholder="Text before…" rows="3"></textarea>
-            </div>
-            <div class="cset-mid">
-              <span class="cset-arrow">↓</span>
-              <div class="cset-mid-pill">PROMPT</div>
-              <span class="cset-arrow">↓</span>
-            </div>
-            <div class="cset-side">
-              <div class="cset-side-hdr">
-                <div>
-                  <div class="cset-side-label">📤 SUFFIX</div>
-                  <div class="cset-side-sub">added after prompt</div>
-                </div>
-                <button class="hbtn" id="cset-clear-suf">Clear</button>
-              </div>
-              <textarea id="cset-suffix" placeholder="Text after…" rows="3"></textarea>
+              <div class="srating-summary" id="srating-summary"></div>
             </div>
           </div>
+          <div id="srating-panel-detail" class="hidden" role="tabpanel"></div>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <!-- View & Interface Settings -->
-      <section class="settings-group-card">
-        <div class="settings-card-hdr">
-          <span>🎛️ Interface &amp; View Controls</span>
+    <!-- ══ MY RATING DATABASE ════════════════════════════════ -->
+    <section id="mydb-section" class="collapsed">
+      <div id="mydb-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <span>🧠 My Rating Database</span>
+        <span class="mydb-badge-pill" id="mydb-badge">0</span>
+        <span style="flex:1"></span>
+        <span class="it-chevron">▼</span>
+      </div>
+      <div id="mydb-body">
+        <div class="mydb-filter-bar">
+          <div class="mydb-filter-group">
+            <label class="mydb-filter-label">Above</label>
+            <input class="mydb-filter-input" id="mydb-filter-above" type="number" step="0.1" placeholder="e.g. 9" />
+          </div>
+          <div class="mydb-filter-group">
+            <label class="mydb-filter-label">Below</label>
+            <input class="mydb-filter-input" id="mydb-filter-below" type="number" step="0.1" placeholder="e.g. 10" />
+          </div>
+          <input class="mydb-filter-keyword-input" id="mydb-filter-keyword" type="text" placeholder="🔍 Search comment or prompt…" />
+          <button class="hbtn" id="mydb-filter-clear">Clear</button>
+          <button class="hbtn danger" id="btn-clear-myratings" style="margin-left:auto">🗑 Clear All</button>
         </div>
-        <div class="settings-card-body">
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Compact Card View</div>
-              <div class="settings-row-sub">Hide prompt copy boxes on cards for dense view</div>
-            </div>
-            <input type="checkbox" class="settings-switch" id="setting-compact-view" />
-          </div>
+        <div id="mydb-view"></div>
+      </div>
+    </section>
 
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Overview Bar Scrollable Mode</div>
-              <div class="settings-row-sub">Allow overview bar to scroll horizontally instead of full compressed width</div>
-            </div>
-            <input type="checkbox" class="settings-switch" id="setting-overview-scroll" />
-          </div>
-
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Score Slider Mistouch Lock</div>
-              <div class="settings-row-sub">Keep main score sliders locked to prevent accidental slide on touch</div>
-            </div>
-            <input type="checkbox" class="settings-switch" id="setting-slider-lock" checked />
-          </div>
-
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Auto-Done on 9+ Real Rating</div>
-              <div class="settings-row-sub">Automatically check the Done (✔) mark when real rating is 9 or above</div>
-            </div>
-            <input type="checkbox" class="settings-switch" id="setting-autodone-9" checked />
-          </div>
+    <!-- ══ VIDEO PROMPT LIBRARY ════════════════════════════════ -->
+    <section id="library-section">
+      <div id="library-toggle" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')this.click()">
+        <div class="lib-title">
+          <span>📹 Prompt Library</span>
+          <span class="lib-badge" id="lib-badge">0</span>
         </div>
-      </section>
+        <span class="it-chevron">▼</span>
+      </div>
 
-      <!-- Bengali & Second Language Settings -->
-      <section class="settings-group-card">
-        <div class="settings-card-hdr">
-          <span>🇧🇩 Bengali &amp; Second Language</span>
-        </div>
-        <div class="settings-card-body">
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Show Bengali Script</div>
-              <div class="settings-row-sub">Display Bengali script line directly below English line on cards</div>
+      <div id="library-body">
+        <!-- Batch Tabs -->
+        <div id="batch-tab-bar" role="tablist"></div>
+
+        <!-- Tab Panels -->
+        <div id="batch-content-area">
+          <div id="batch-panel-new" role="tabpanel">
+            <textarea id="prompt-textarea"
+              placeholder="Paste BROLL blocks here…"
+              aria-label="Prompt batch input" rows="7" spellcheck="false"></textarea>
+            <div class="lib-actions">
+              <button class="hbtn primary" id="btn-import-prompts">📥 Import</button>
+              <button class="hbtn" id="btn-paste-prompt">📋 Paste</button>
+              <button class="hbtn" id="btn-clear-prompt-input">✕ Clear</button>
+              <button class="hbtn danger" id="btn-clear-prompts" style="margin-left:auto">🗑 All Prompts</button>
             </div>
-            <input type="checkbox" class="settings-switch" id="setting-show-bengali" checked />
           </div>
+          <div id="batch-panel-detail" class="hidden" role="tabpanel"></div>
         </div>
-      </section>
 
-      <!-- Quick Rating Shortcuts Settings -->
-      <section class="settings-group-card">
-        <div class="settings-card-hdr">
-          <span>⚡ Real Rating Quick-Rate Shortcuts</span>
-        </div>
-        <div class="settings-card-body">
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Tier 1 Quick Rate (1s Hold / Single Right-Click)</div>
-              <div class="settings-row-sub">Default rating applied on 1-second touch hold or single right-click</div>
-            </div>
-            <input type="number" class="settings-input-num" id="setting-qr-tier1" min="0" max="10" step="0.5" value="5" />
-          </div>
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Tier 2 Quick Rate (2s Hold / Double Right-Click)</div>
-              <div class="settings-row-sub">Higher rating applied on 2-second touch hold or double right-click</div>
-            </div>
-            <input type="number" class="settings-input-num" id="setting-qr-tier2" min="0" max="10" step="0.5" value="9" />
-          </div>
-        </div>
-      </section>
-
-      <!-- Local Project Backups (Last 10) -->
-      <section class="settings-group-card" id="settings-backups-section">
-        <div class="settings-card-hdr">
-          <span>💾 Project Backups (Last 10)</span>
-          <button class="hbtn" id="btn-create-manual-backup" style="font-size:10.5px;padding:3px 8px;">＋ Save Backup Now</button>
-        </div>
-        <div class="settings-card-body">
-          <div id="backups-list-container" class="backups-list-container">
-            <!-- Dynamically populated 10 backups -->
-          </div>
-        </div>
-      </section>
-
-      <!-- Cloud Sync & Data Management -->
-      <section class="settings-group-card">
-        <div class="settings-card-hdr">
-          <span>☁️ Cloud Sync &amp; Backup</span>
-        </div>
-        <div class="settings-card-body">
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Firebase Cloud Backup</div>
-              <div class="settings-row-sub">Real-time sync across devices with smart merge</div>
-            </div>
-            <button class="hbtn primary" id="setting-force-sync">☁️ Force Sync Now</button>
-          </div>
-
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Backup &amp; Export JSON</div>
-              <div class="settings-row-sub">Save complete copy of all scripts, ratings, and prompt batches</div>
-            </div>
-            <button class="hbtn" id="setting-export-json">📥 Download Backup</button>
-          </div>
-
-          <div class="settings-row">
-            <div class="settings-row-info">
-              <div class="settings-row-title">Restore from JSON</div>
-              <div class="settings-row-sub">Load a previously exported B-roll Tracker file</div>
-            </div>
-            <button class="hbtn" id="setting-import-json">📤 Restore Backup</button>
-          </div>
-        </div>
-      </section>
-
-    </div>
-
+        <!-- Prompts view -->
+        <div id="library-view"></div>
+      </div>
+    </section>
 
   </main>
 </div>
@@ -487,36 +444,33 @@
   <button id="jump-bottom" aria-label="Scroll to bottom" title="Scroll to bottom">↓</button>
 </div>
 
-<!-- ══ BOTTOM TAB BAR ══════════════════════════════════════ -->
-<nav id="bottom-tab-bar">
-  <button class="btab active" data-tab="p" title="Prompts &amp; Script">
-    <span class="btab-icon">🎬</span>
-    <span class="btab-label">Prompts</span>
-  </button>
-  <button class="btab" data-tab="l" title="Prompt Library">
-    <span class="btab-icon">📚</span>
-    <span class="btab-label">Library</span>
-  </button>
-  <button class="btab" data-tab="r" title="Set Ratings">
-    <span class="btab-icon">⭐</span>
-    <span class="btab-label">Ratings</span>
-  </button>
-  <button class="btab" data-tab="f" title="Filter &amp; Copy">
-    <span class="btab-icon">📑</span>
-    <span class="btab-label">Lines</span>
-  </button>
-  <button class="btab" data-tab="s" title="Copy Settings">
-    <span class="btab-icon">⚙️</span>
-    <span class="btab-label">Settings</span>
-  </button>
-</nav>
 
-<!-- Firebase SDKs -->
+<!-- Firebase SDKs for Cloud Sync -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="app.js?v=20260827_13"></script>
+
+<script src="app.js?v=20260823_20"></script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
