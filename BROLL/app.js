@@ -1359,38 +1359,38 @@ function parseSetRatings(text) {
   for (const line of text.split('\n')) {
     const l = line.trim(); if (!l) continue;
 
-    // Format 1: 14S6: 9.5 (why) or 14S6 : 9.5 : why or 14S6 - 9.5 - why
-    let m = l.match(/^#?(\d+)\s*[Ss]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
+    // Format 1: 14S6: 9.5 (why) or 1.5S6 : 9.5 : why or 1.2S6 - 9.5 - why
+    let m = l.match(/^#?(\d+(?:\.\d+)?)\s*[Ss]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
     if (m) {
       const score = parseFloat(m[3]);
       if (!isNaN(score) && score >= 0 && score <= 10) {
         let why = (m[4] || '').trim();
         if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
-        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        results.push({ brollNum: parseFloat(m[1]), rawSetNum: parseInt(m[2]), score, why });
         continue;
       }
     }
 
-    // Format 2: 1 : 6 : 9.5 : why or 1 : 6 - 9.5 - why or 1.6 : 9.5 : why
-    m = l.match(/^#?(\d+)\s*[:\.]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
+    // Format 2: 1.5 : 6 : 9.5 : why or 1 : 6 - 9.5 - why
+    m = l.match(/^#?(\d+(?:\.\d+)?)\s*[:\s]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
     if (m) {
       const score = parseFloat(m[3]);
       if (!isNaN(score) && score >= 0 && score <= 10) {
         let why = (m[4] || '').trim();
         if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
-        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        results.push({ brollNum: parseFloat(m[1]), rawSetNum: parseInt(m[2]), score, why });
         continue;
       }
     }
 
-    // Format 3: B-roll 1 Set 6: 9.5 (why) or BROLL 1 ALT 6: 9.5 (why)
-    m = l.match(/^(?:broll|b-roll|clip)?\s*#?(\d+)\s*(?:set|alt|prompt|s)?\s*#?(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/i);
+    // Format 3: B-roll 1.5 Set 6: 9.5 (why) or BROLL 1.2 ALT 6: 9.5 (why)
+    m = l.match(/^(?:broll|b-roll|clip)?\s*#?(\d+(?:\.\d+)?)\s*(?:set|alt|prompt|s)?\s*#?(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/i);
     if (m) {
       const score = parseFloat(m[3]);
       if (!isNaN(score) && score >= 0 && score <= 10) {
         let why = (m[4] || '').trim();
         if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
-        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        results.push({ brollNum: parseFloat(m[1]), rawSetNum: parseInt(m[2]), score, why });
         continue;
       }
     }
@@ -1450,7 +1450,7 @@ function applySetRatings(text, parsed, ratingsByBroll, brollsInBatch, tabLabel) 
   const batchId = uid();
 
   for (const [brollNumStr, items] of Object.entries(ratingsByBroll)) {
-    const brollNum = parseInt(brollNumStr);
+    const brollNum = parseFloat(brollNumStr);
     if (!ST.setRatings[brollNum]) ST.setRatings[brollNum] = {};
 
     const prompts = ST.prompts[brollNum] || [];
@@ -1488,7 +1488,7 @@ function applySetRatings(text, parsed, ratingsByBroll, brollsInBatch, tabLabel) 
 
   const setsByBroll = {};
   for (const [brollNumStr, items] of Object.entries(ratingsByBroll)) {
-    const brollNum = parseInt(brollNumStr);
+    const brollNum = parseFloat(brollNumStr);
     setsByBroll[brollNum] = items.map(x => x.setIdx);
   }
 
@@ -1960,7 +1960,7 @@ function updateCsetHint() {
 function parseScript(text) {
   return text.split('\n').map(l => l.trim()).filter(Boolean)
     .reduce((a, l) => {
-      const m = l.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
+      const m = l.match(/^#?(?:broll|b-roll|clip)?\s*(\d+(?:\.\d+)?)\s*[:\.\-–]?\s*(.+)/i) || l.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
       if (m) a.push({ num: parseFloat(m[1]), line: m[2].trim() });
       return a;
     }, [])
@@ -1970,9 +1970,9 @@ function parseScript(text) {
 /* ── Prompt Batch Parsing ───────────────────────────────────── */
 function parsePromptBatch(text) {
   const result = {};
-  for (const sec of text.split(/(?=BROLL\s+\d+\s*:)/i)) {
-    const numM = sec.match(/^BROLL\s+(\d+)\s*:/i); if (!numM) continue;
-    const num = parseInt(numM[1]);
+  for (const sec of text.split(/(?=(?:BROLL|B-ROLL|CLIP)?\s*#?\d+(?:\.\d+)?\s*:)/i)) {
+    const numM = sec.match(/^(?:BROLL|B-ROLL|CLIP)?\s*#?(\d+(?:\.\d+)?)\s*:/i); if (!numM) continue;
+    const num = parseFloat(numM[1]);
     const vpIdx = sec.search(/VIDEO\s+PROMPT\s*:/i); if (vpIdx === -1) continue;
     const chunks = sec.slice(vpIdx).split(/(?:ALT|SET)\s+\d+\s*:/i).slice(1);
     if (!result[num]) result[num] = [];
@@ -2511,7 +2511,7 @@ function buildPromptChip(num, i, entry, idPrefix = '') {
     }
   });
 
-  // Mobile / Touchscreen: Hold 1.0s = Tier 1 (5), Hold 2.5s = Tier 2 (9)
+  // Mobile / Touchscreen: Hold 1.0s = Tier 1 (5), Hold 2.0s = Tier 2 (9)
   let _lpTimer1 = null;
   let _lpTimer2 = null;
   let _touchStartX = 0, _touchStartY = 0;
@@ -2534,15 +2534,15 @@ function buildPromptChip(num, i, entry, idPrefix = '') {
       setTimeout(() => myBtn?.classList.remove('longpress-flash'), 400);
     }, 1000);
 
-    // 2.5 seconds hold -> Tier 2
+    // 2.0 seconds hold -> Tier 2
     _lpTimer2 = setTimeout(() => {
       _lpTimer2 = null;
       if (navigator.vibrate) try { navigator.vibrate([60, 40, 60]); } catch {}
       myBtn.classList.add('longpress-flash-tier2');
       saveMyRating(num, i, t2, '');
-      toast(`⚡ 2.5s Hold: Quick rated #${num} Set ${i + 1}: ${t2}`);
+      toast(`⚡ 2s Hold: Quick rated #${num} Set ${i + 1}: ${t2}`);
       setTimeout(() => myBtn?.classList.remove('longpress-flash-tier2'), 600);
-    }, 2500);
+    }, 2000);
   }, { passive: true });
 
   const cancelTouch = (e) => {
