@@ -106,6 +106,7 @@ let _lastFirebaseSaveTime = 0;     // timestamp of last successful firebase writ
 let _fbConnected = false;
 let _fbRetryTimer = null;
 let _fbRetryCount = 0;
+let _isForceSaving = false;  // when true, blocks normal pushToFirebase debounce
 
 function setApplyingRemote(val) {
   _isApplyingRemote = !!val;
@@ -429,6 +430,9 @@ let _latestCloudData = null;
 function pushToFirebase(immediate = false) {
   if (!_fbRef) return;
 
+  // Block normal saves while a Force Save is in progress
+  if (_isForceSaving) return;
+
   // Pause automatic background push while reviewing a pending import
   if (_pendingImportSnapshot) {
     return;
@@ -680,11 +684,19 @@ function forceSaveToCloud() {
     return;
   }
 
-  // Clear any pending import state
+  // Already in progress — ignore double-click
+  if (_isForceSaving) return;
+
+  // ── BLOCK normal auto-saves immediately ────────────────────
+  _isForceSaving = true;
+  if (_fbSyncTimer) { clearTimeout(_fbSyncTimer); _fbSyncTimer = null; }
+  if (_fbRetryTimer) { clearTimeout(_fbRetryTimer); _fbRetryTimer = null; }
+
+  // Clear pending import state
   _pendingImportSnapshot = null;
   _pendingImportInfo = null;
 
-  // 1. Immediately flush active project state into PROJECTS
+  // 1. Flush active project state into PROJECTS (exact screen state)
   if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
     try {
       const ta = _el('script-textarea');
@@ -703,13 +715,14 @@ function forceSaveToCloud() {
     } catch {}
   }
 
-  // 2. Save locally
+  // 2. Save to localStorage immediately
   try {
     localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
     if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
     _lastLocalSaveTime = Date.now();
   } catch {}
 
+  // 3. Build payload — NO merge with cloud, raw current state wins
   const now = Date.now();
   const payload = {
     active: ACTIVE_PID,
@@ -719,28 +732,55 @@ function forceSaveToCloud() {
     updatedAt: now
   };
 
-  if (btn) { btn.textContent = '⏳ Saving…'; btn.disabled = true; }
-  _lastSavedStatus = 'syncing';
-  updateSavedTimeDisplay();
+  // ── Do NOT set _lastSavedStatus = 'syncing' here — that causes
+  //    the sync pill to also show "Saving…". Instead update only the button.
+  if (btn) { btn.textContent = '⏳ 0%'; btn.disabled = true; }
 
-  // 3. Actually save to Firebase first
+  // Fake % progress counter (Firebase doesn't emit upload progress)
+  let _pct = 0;
+  const _pctTimer = setInterval(() => {
+    if (_pct < 88) {
+      _pct += _pct < 40 ? 8 : _pct < 70 ? 4 : 1;
+      if (btn && _isForceSaving) btn.textContent = `⏳ ${Math.min(_pct, 88)}%`;
+    }
+  }, 400);
+
+  // Hard timeout — release lock after 90s max so it never gets permanently stuck
+  const _forceTimeout = setTimeout(() => {
+    clearInterval(_pctTimer);
+    if (_isForceSaving) {
+      _isForceSaving = false;
+      if (btn) { btn.textContent = '⬆ Force Save'; btn.disabled = false; }
+      toast('⏱ Force save timed out — data saved locally. Try again.');
+      _lastSavedStatus = 'offline';
+      updateSavedTimeDisplay();
+    }
+  }, 90000);
+
+  // 4. Push to Firebase — direct set, no retry merge
   _fbRef.set(payload)
     .then(() => {
+      clearInterval(_pctTimer);
+      clearTimeout(_forceTimeout);
       _lastFirebaseSaveTime = now;
       _lastRemoteUpdatedAt  = now;
       _latestCloudData      = payload;
       _lastSavedStatus      = 'synced';
       _userMadeLocalEdit    = false;
       _fbRetryCount         = 0;
+      _isForceSaving        = false;   // ← release normal saves
       updateSavedTimeDisplay();
       if (btn) {
-        btn.textContent = '✔ Saved!';
-        setTimeout(() => { if (btn) { btn.textContent = '⬆ Force Save'; btn.disabled = false; } }, 1200);
+        btn.textContent = '✔ 100%';
+        setTimeout(() => { if (btn) { btn.textContent = '⬆ Force Save'; btn.disabled = false; } }, 1500);
       }
-      toast('☁️ Saved to Cloud as latest version successfully!');
+      toast('☁️ Force saved to Cloud successfully!');
     })
     .catch(err => {
+      clearInterval(_pctTimer);
+      clearTimeout(_forceTimeout);
       console.error('Force save failed:', err);
+      _isForceSaving = false;          // ← release even on failure
       _lastSavedStatus = 'offline';
       updateSavedTimeDisplay();
       if (btn) { btn.textContent = '⬆ Force Save'; btn.disabled = false; }
@@ -4216,25 +4256,58 @@ function importJSON(file){
         lastUpdatedBy: CLIENT_ID,
         updatedAt: now
       };
+
+      // Block regular auto-saves during import push
+      _isForceSaving = true;
+      if (_fbSyncTimer) { clearTimeout(_fbSyncTimer); _fbSyncTimer = null; }
+
+      // Update sync pill once — show "Saving" in pill during push
       _lastSavedStatus = 'syncing';
       updateSavedTimeDisplay();
 
+      // Progress on sync pill text (fake %, Firebase has no upload progress API)
+      let _ipct = 0;
+      const _ipctTimer = setInterval(() => {
+        if (_ipct < 88) {
+          _ipct += _ipct < 40 ? 8 : _ipct < 70 ? 4 : 1;
+          const txt = _el('sync-text');
+          if (txt && _isForceSaving) txt.textContent = `Saving ${Math.min(_ipct, 88)}%`;
+        }
+      }, 400);
+
+      // Hard timeout — 90s max so import push never stays stuck
+      const _importTimeout = setTimeout(() => {
+        clearInterval(_ipctTimer);
+        if (_isForceSaving) {
+          _isForceSaving = false;
+          _lastSavedStatus = 'offline';
+          updateSavedTimeDisplay();
+          toast('⏱ Import cloud save timed out — data is saved locally only.');
+        }
+      }, 90000);
+
       _fbRef.set(payload)
         .then(() => {
+          clearInterval(_ipctTimer);
+          clearTimeout(_importTimeout);
           _lastFirebaseSaveTime = Date.now();
           _lastRemoteUpdatedAt  = now;
           _latestCloudData      = payload;
           _lastSavedStatus      = 'synced';
           _userMadeLocalEdit    = false;
           _fbRetryCount         = 0;
+          _isForceSaving        = false;
           updateSavedTimeDisplay();
           toast('☁️ Import saved to Cloud!');
         })
         .catch(err => {
-          console.warn('Import direct push failed, retrying via pipeline:', err);
+          clearInterval(_ipctTimer);
+          clearTimeout(_importTimeout);
+          console.warn('Import direct push failed:', err);
+          _isForceSaving = false;
           _lastSavedStatus = 'offline';
           updateSavedTimeDisplay();
-          pushToFirebase(true);
+          toast('⚠️ Import saved locally — cloud upload failed. Tap Force Save to retry.');
         });
     } else {
       // No Firebase — just mark as locally saved
