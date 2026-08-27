@@ -130,12 +130,25 @@ function setApplyingRemote(val) {
 
 let _lastSavedStatus = 'loading';
 let _lastRemoteUpdatedAt = 0;
+let _pendingImportSnapshot = null;
+let _pendingImportInfo = null;
 
 function updateSavedTimeDisplay() {
   const dot = _el('sync-dot');
   const txt = _el('sync-text');
   const pill = _el('sync-status');
   if (!dot || !txt) return;
+
+  if (_pendingImportSnapshot && _pendingImportInfo) {
+    dot.className = 'sync-dot pending-import';
+    txt.textContent = 'Save Import?';
+    if (pill) {
+      pill.classList.add('pending-import-pill');
+      pill.title = `⚠️ Unconfirmed Import (${_pendingImportInfo.label})\nClick to Save to Cloud or Reject & Revert`;
+    }
+    return;
+  }
+  if (pill) pill.classList.remove('pending-import-pill');
 
   if (_lastSavedStatus === 'loading') {
     dot.className = 'sync-dot syncing';
@@ -177,6 +190,126 @@ function updateSyncUI(status, text) {
   // Do NOT reset _lastFirebaseSaveTime here (connection events are not saves)
   _lastSavedStatus = status;
   updateSavedTimeDisplay();
+}
+
+function handleSyncStatusClick() {
+  if (_pendingImportSnapshot && _pendingImportInfo) {
+    const info = _pendingImportInfo;
+    const typeLabel = info.type === 'prompts' ? 'Prompts' : 'Ratings';
+    showModal(
+      `💾 Save or Reject Import (${info.label})`,
+      `<div style="font-size:12.5px;line-height:1.5">
+         <p style="margin-bottom:8px;color:var(--text-1);">You have imported <b>${info.count} ${typeLabel}</b> for <b>${info.label}</b> currently in review.</p>
+         <p style="margin-bottom:8px;color:var(--text-2);">• <b>Save to Cloud</b>: Directly saves and pushes this import to Firebase Cloud.<br/>• <b>Reject & Revert</b>: Cancels the import and restores the previous state.</p>
+       </div>`,
+      () => {
+        confirmSavePendingImport();
+      },
+      () => {
+        rejectPendingImport();
+      },
+      '✔ Save to Cloud',
+      '✕ Reject & Revert',
+      'primary'
+    );
+    return;
+  }
+
+  // Normal status click: manual force sync
+  toast('🔄 Force syncing with Cloud…');
+  pushToFirebase(true);
+}
+
+function confirmSavePendingImport() {
+  if (!_pendingImportSnapshot) return;
+  const info = _pendingImportInfo;
+  _pendingImportSnapshot = null;
+  _pendingImportInfo = null;
+
+  save(true);
+
+  if (_fbRef) {
+    const now = Date.now();
+    const payload = {
+      active: ACTIVE_PID,
+      projects: JSON.parse(JSON.stringify(PROJECTS)),
+      globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
+      lastUpdatedBy: CLIENT_ID,
+      updatedAt: now
+    };
+    _lastSavedStatus = 'syncing';
+    updateSavedTimeDisplay();
+
+    _fbRef.set(payload)
+      .then(() => {
+        _lastFirebaseSaveTime = Date.now();
+        _lastRemoteUpdatedAt = now;
+        _lastSavedStatus = 'synced';
+        _userMadeLocalEdit = false;
+        updateSavedTimeDisplay();
+        toast(`☁️ Successfully saved ${info?.label || 'import'} to Cloud!`);
+      })
+      .catch(err => {
+        console.warn('Fast push failed, triggering retry push:', err);
+        pushToFirebase(true);
+      });
+  } else {
+    _lastSavedStatus = 'synced';
+    updateSavedTimeDisplay();
+    toast(`💾 Saved ${info?.label || 'import'} locally!`);
+  }
+}
+
+function rejectPendingImport() {
+  if (!_pendingImportSnapshot) return;
+  const snapshot = _pendingImportSnapshot;
+  const info = _pendingImportInfo;
+  _pendingImportSnapshot = null;
+  _pendingImportInfo = null;
+
+  // Restore PROJECTS
+  for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+  for (const [k, v] of Object.entries(snapshot.projects)) {
+    PROJECTS[k] = JSON.parse(JSON.stringify(v));
+  }
+  ACTIVE_PID = snapshot.activePid;
+
+  // Restore ST for active project
+  const st = snapshot.st;
+  ST.scores = JSON.parse(JSON.stringify(st.scores));
+  ST.prompts = JSON.parse(JSON.stringify(st.prompts));
+  ST.batches = JSON.parse(JSON.stringify(st.batches));
+  ST.usedSets = JSON.parse(JSON.stringify(st.usedSets));
+  ST.setRatings = JSON.parse(JSON.stringify(st.setRatings));
+  ST.ratingBatches = JSON.parse(JSON.stringify(st.ratingBatches));
+  ST.myRatings = JSON.parse(JSON.stringify(st.myRatings));
+  ST.covered = JSON.parse(JSON.stringify(st.covered));
+  ST.activeBatch = st.activeBatch;
+  ST.activeRatingBatch = st.activeRatingBatch;
+
+  // Save reverted state locally
+  try {
+    localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+  } catch {}
+
+  // Re-render UI
+  renderProjectTabs();
+  renderHeatmap();
+  renderStats();
+  renderCards(false);
+  updateAllPromptChips();
+  renderBatchTabs();
+  renderBatchPanel();
+  updateLibBadge();
+  renderRatingTabs();
+  renderRatingPanel();
+  updateSratingHint();
+
+  _lastSavedStatus = 'synced';
+  updateSavedTimeDisplay();
+
+  toast(`✕ Rejected ${info?.label || 'import'} and reverted to previous state.`);
 }
 
 /* ── Deep merge helpers ─────────────────────────────────────── */
@@ -265,6 +398,11 @@ let _latestCloudData = null;
 
 function pushToFirebase(immediate = false) {
   if (!_fbRef) return;
+
+  // Pause automatic background push while reviewing a pending import
+  if (_pendingImportSnapshot) {
+    return;
+  }
 
   if (_isApplyingRemote) {
     _hasPendingLocalChange = true;
@@ -558,10 +696,7 @@ function initFirebaseSync() {
     });
     window.addEventListener('focus', checkFreshRemote);
 
-    _el('sync-status')?.addEventListener('click', () => {
-      toast('🔄 Force syncing with Cloud…');
-      pushToFirebase(true);
-    });
+    _el('sync-status')?.addEventListener('click', handleSyncStatusClick);
 
   } catch (err) {
     console.error('Firebase initialization error:', err);
@@ -1474,6 +1609,30 @@ function requestApplySetRatings(text) {
 
 function applySetRatings(text, parsed, ratingsByBroll, brollsInBatch, tabLabel) {
   createProjectBackup(`Before Rating Import ${tabLabel}`);
+  
+  _pendingImportSnapshot = {
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    st: {
+      scores: JSON.parse(JSON.stringify(ST.scores)),
+      prompts: JSON.parse(JSON.stringify(ST.prompts)),
+      batches: JSON.parse(JSON.stringify(ST.batches)),
+      usedSets: JSON.parse(JSON.stringify(ST.usedSets)),
+      setRatings: JSON.parse(JSON.stringify(ST.setRatings || {})),
+      ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches || [])),
+      myRatings: JSON.parse(JSON.stringify(ST.myRatings || {})),
+      covered: JSON.parse(JSON.stringify(ST.covered || {})),
+      activeBatch: ST.activeBatch,
+      activeRatingBatch: ST.activeRatingBatch
+    },
+    activePid: ACTIVE_PID
+  };
+  _pendingImportInfo = {
+    type: 'ratings',
+    label: tabLabel,
+    count: parsed.length,
+    time: Date.now()
+  };
+
   if (!ST.setRatings) ST.setRatings = {};
   if (!ST.ratingBatches) ST.ratingBatches = [];
 
@@ -1537,13 +1696,19 @@ function applySetRatings(text, parsed, ratingsByBroll, brollsInBatch, tabLabel) 
   const ta = _el('srating-textarea');
   if (ta) ta.value = '';
 
-  save(true);
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    PROJECTS[ACTIVE_PID].setRatings = JSON.parse(JSON.stringify(ST.setRatings || {}));
+    PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+  }
+
+  _lastSavedStatus = 'pending_import';
+  updateSavedTimeDisplay();
   updateAllPromptChips();
   updateSratingHint();
   renderRatingTabs();
   renderRatingPanel();
 
-  toast(`⭐ Applied ${parsed.length} ratings for B-roll ${tabLabel}`);
+  toast(`⭐ Applied ${parsed.length} ratings for ${tabLabel}. Click "Save Import?" to save to Cloud or reject.`);
 }
 
 
@@ -2060,6 +2225,30 @@ function requestImportPrompts(text) {
 
 function applyImportPrompts(parsed, text, brollNums, total, tabLabel) {
   createProjectBackup(`Before Prompt Import ${tabLabel}`);
+  
+  _pendingImportSnapshot = {
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    st: {
+      scores: JSON.parse(JSON.stringify(ST.scores)),
+      prompts: JSON.parse(JSON.stringify(ST.prompts)),
+      batches: JSON.parse(JSON.stringify(ST.batches)),
+      usedSets: JSON.parse(JSON.stringify(ST.usedSets)),
+      setRatings: JSON.parse(JSON.stringify(ST.setRatings || {})),
+      ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches || [])),
+      myRatings: JSON.parse(JSON.stringify(ST.myRatings || {})),
+      covered: JSON.parse(JSON.stringify(ST.covered || {})),
+      activeBatch: ST.activeBatch,
+      activeRatingBatch: ST.activeRatingBatch
+    },
+    activePid: ACTIVE_PID
+  };
+  _pendingImportInfo = {
+    type: 'prompts',
+    label: tabLabel,
+    count: total,
+    time: Date.now()
+  };
+
   const batchId = uid();
   const rawBlocks = [];
 
@@ -2095,14 +2284,20 @@ function applyImportPrompts(parsed, text, brollNums, total, tabLabel) {
   const ta = _el('prompt-textarea');
   if (ta) ta.value = '';
 
-  save(true);
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    PROJECTS[ACTIVE_PID].prompts = JSON.parse(JSON.stringify(ST.prompts || {}));
+    PROJECTS[ACTIVE_PID].batches = JSON.parse(JSON.stringify(ST.batches || []));
+  }
+
+  _lastSavedStatus = 'pending_import';
+  updateSavedTimeDisplay();
   renderBatchTabs();
   renderBatchPanel();
   updateAllPromptChips();
   renderLibraryView();
   updateLibBadge();
 
-  toast(`✅ Imported ${total} prompts across ${brollNums.length} B-rolls`);
+  toast(`✅ Imported ${total} prompts across ${brollNums.length} B-rolls. Click "Save Import?" to save to Cloud or reject.`);
 }
 
 
