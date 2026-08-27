@@ -58,6 +58,11 @@ const ST = {
   activeRatingBatch: 'new',
   myRatings:         {},   // { [brollNum]: { [setIdx]: { score, comment, date } } }
   covered:           {},   // { [brollNum]: true } -> marked as covered with other clip (9+ in Real Overview)
+  showBengali:       localStorage.getItem('br_show_bengali') !== 'false',
+  bengaliScript:     '',
+  bengaliLines:      {},   // { [brollNum]: "বাংলা লাইন..." }
+  quickRateTier1:    parseFloat(localStorage.getItem('br_qr_tier1')) || 5,
+  quickRateTier2:    parseFloat(localStorage.getItem('br_qr_tier2')) || 9,
   prefix:            '',
   suffix:            '',
   labelEnabled:      true, // Prepend "14S6" label to copied prompts
@@ -71,6 +76,7 @@ const ST = {
   csetOpen:          false,
   overviewScroll:    false, // false = auto-compressed full view, true = horizontal scrollable
 };
+
 
 
 
@@ -94,93 +100,279 @@ let _fbRef = null;
 let _fbSyncTimer = null;
 let _isApplyingRemote = false;
 let _remoteTimer = null;
+let _hasPendingLocalChange = false; // track if a save was blocked during remote apply
+let _lastLocalSaveTime = 0;        // timestamp of last successful local write
+let _lastFirebaseSaveTime = 0;     // timestamp of last successful firebase write
+let _fbConnected = false;
+let _fbRetryTimer = null;
+let _fbRetryCount = 0;
 
 function setApplyingRemote(val) {
   _isApplyingRemote = !!val;
   if (_remoteTimer) clearTimeout(_remoteTimer);
   if (val) {
-    _remoteTimer = setTimeout(() => { _isApplyingRemote = false; }, 800);
+    // Safety: always release after 1.5 seconds max, then flush any pending save
+    _remoteTimer = setTimeout(() => {
+      _isApplyingRemote = false;
+      if (_hasPendingLocalChange) {
+        _hasPendingLocalChange = false;
+        pushToFirebase(true);
+      }
+    }, 1500);
+  } else {
+    // Released early — flush pending save immediately
+    if (_hasPendingLocalChange) {
+      _hasPendingLocalChange = false;
+      pushToFirebase(true);
+    }
   }
 }
 
-function updateSyncUI(status, text) {
+let _lastSavedStatus = 'synced';
+let _lastRemoteUpdatedAt = 0;
+
+function updateSavedTimeDisplay() {
   const dot = _el('sync-dot');
   const txt = _el('sync-text');
   const pill = _el('sync-status');
   if (!dot || !txt) return;
 
+  if (_lastSavedStatus === 'syncing') {
+    dot.className = 'sync-dot syncing';
+    txt.textContent = 'Saving…';
+    if (pill) pill.title = 'Uploading changes to Firebase…';
+    return;
+  }
+  if (_lastSavedStatus === 'offline') {
+    dot.className = 'sync-dot offline';
+    txt.textContent = _fbConnected ? 'Save Error' : 'Offline';
+    if (pill) pill.title = 'Not saved to cloud. Click to retry.';
+    return;
+  }
+
   dot.className = 'sync-dot';
-  if (status === 'syncing') {
-    dot.classList.add('syncing');
-    txt.textContent = text || 'Syncing…';
-    if (pill) pill.title = 'Uploading changes to Firebase Cloud…';
-  } else if (status === 'offline') {
-    dot.classList.add('offline');
-    txt.textContent = text || 'Offline';
-    if (pill) pill.title = 'Offline or cloud disconnected. Local storage is active.';
+  if (_lastFirebaseSaveTime > 0) {
+    const diff = Math.max(0, Math.floor((Date.now() - _lastFirebaseSaveTime) / 1000));
+    let timeStr = 'Saved just now';
+    if (diff >= 5 && diff < 60) timeStr = `Saved ${diff}s ago`;
+    else if (diff >= 60 && diff < 3600) timeStr = `Saved ${Math.floor(diff / 60)}m ago`;
+    else if (diff >= 3600) timeStr = `Saved ${Math.floor(diff / 3600)}h ago`;
+    txt.textContent = timeStr;
+    if (pill) pill.title = `Cloud synced — ${timeStr}\nClick to force sync now`;
   } else {
-    txt.textContent = text || 'Cloud';
-    if (pill) pill.title = 'Firebase Cloud Sync: Connected & synced across devices.';
+    txt.textContent = 'Cloud';
+    if (pill) pill.title = 'Click to sync';
   }
 }
 
+setInterval(updateSavedTimeDisplay, 1000);
+
+function updateSyncUI(status, text) {
+  // Do NOT reset _lastFirebaseSaveTime here (connection events are not saves)
+  _lastSavedStatus = status;
+  updateSavedTimeDisplay();
+}
+
+/* ── Deep merge helpers ─────────────────────────────────────── */
+// Merges two rating objects: keeps all entries, prefers the one with newer 'date'
+function _mergeMyRatings(cloud, local) {
+  const result = {};
+  const allNums = new Set([...Object.keys(cloud || {}), ...Object.keys(local || {})]);
+  allNums.forEach(num => {
+    const cSets = cloud?.[num] || {};
+    const lSets = local?.[num] || {};
+    const allIdxs = new Set([...Object.keys(cSets), ...Object.keys(lSets)]);
+    result[num] = {};
+    allIdxs.forEach(idx => {
+      const c = cSets[idx], l = lSets[idx];
+      if (!c) { result[num][idx] = l; }
+      else if (!l) { result[num][idx] = c; }
+      else {
+        // Both exist — prefer whichever has a newer date
+        result[num][idx] = ((l.date || 0) >= (c.date || 0)) ? l : c;
+      }
+    });
+    if (!Object.keys(result[num]).length) delete result[num];
+  });
+  return result;
+}
+
+// Merges scores: for each num, prefer whichever is non-null; if both exist, keep local (user just changed it)
+function _mergeScores(cloud, local) {
+  return { ...(cloud || {}), ...(local || {}) };
+}
+
+// Merges covered: union — if either device marked it done, keep it done; local can also unmark
+function _mergeCovered(cloud, local) {
+  return { ...(cloud || {}), ...(local || {}) };
+}
+
+// Merges prompts: keep all prompts from both devices; local wins for same num
+function _mergePrompts(cloud, local) {
+  const result = { ...(cloud || {}) };
+  Object.entries(local || {}).forEach(([num, lPrompts]) => {
+    if (!result[num] || !result[num].length) {
+      result[num] = lPrompts;
+    } else {
+      // Merge by batchId: keep all batches, local prompts for matching batchId win
+      const cPrompts = result[num] || [];
+      const localBatchIds = new Set(lPrompts.map(p => p.batchId).filter(Boolean));
+      const cloudOnlyPrompts = cPrompts.filter(p => p.batchId && !localBatchIds.has(p.batchId));
+      result[num] = [...cloudOnlyPrompts, ...lPrompts];
+    }
+  });
+  return result;
+}
+
+// Merges batches arrays: union by id
+function _mergeBatches(cloud, local) {
+  const map = new Map();
+  (cloud || []).forEach(b => map.set(b.id, b));
+  (local || []).forEach(b => map.set(b.id, b)); // local wins on conflict
+  return Array.from(map.values());
+}
+
+// Full project-level merge: local changes applied on top of cloud state
+function _mergeProject(cloudProj, localProj) {
+  if (!cloudProj) return localProj;
+  if (!localProj) return cloudProj;
+  return {
+    name:          localProj.name || cloudProj.name || 'Script',
+    script:        localProj.script !== undefined ? localProj.script : (cloudProj.script || ''),
+    bengaliScript: localProj.bengaliScript !== undefined ? localProj.bengaliScript : (cloudProj.bengaliScript || ''),
+    bengaliLines:  localProj.bengaliLines || cloudProj.bengaliLines || parseAltScript(localProj.bengaliScript || cloudProj.bengaliScript || ''),
+    scores:        _mergeScores(cloudProj.scores, localProj.scores),
+    myRatings:     _mergeMyRatings(cloudProj.myRatings, localProj.myRatings),
+    covered:       _mergeCovered(cloudProj.covered, localProj.covered),
+    prompts:       _mergePrompts(cloudProj.prompts, localProj.prompts),
+    batches:       _mergeBatches(cloudProj.batches, localProj.batches),
+    usedSets:      { ...(cloudProj.usedSets || {}), ...(localProj.usedSets || {}) },
+    setRatings:    { ...(cloudProj.setRatings || {}), ...(localProj.setRatings || {}) },
+    ratingBatches: _mergeBatches(cloudProj.ratingBatches, localProj.ratingBatches),
+  };
+}
+
+let _isInitialCloudLoaded = false;
+let _userMadeLocalEdit = false;
+let _lastUserEditTime = 0;
+
 function pushToFirebase(immediate = false) {
-  if (!_fbRef || _isApplyingRemote) return;
+  if (!_fbRef) return;
+  if (!_isInitialCloudLoaded) {
+    console.log('Firebase push skipped: initial cloud state not loaded yet.');
+    return;
+  }
+
+  if (_isApplyingRemote) {
+    _hasPendingLocalChange = true;
+    return;
+  }
 
   if (_fbSyncTimer) clearTimeout(_fbSyncTimer);
-  updateSyncUI('syncing', 'Syncing…');
+  _lastSavedStatus = 'syncing';
+  updateSavedTimeDisplay();
 
   const doPush = () => {
+    if (_isApplyingRemote) {
+      _hasPendingLocalChange = true;
+      _lastSavedStatus = 'synced';
+      updateSavedTimeDisplay();
+      return;
+    }
+
     try {
       const ta = _el('script-textarea');
       const savedScript = ta && ta.value !== undefined && ta.value !== null
         ? ta.value
         : (PROJECTS[ACTIVE_PID]?.script || '');
 
+      const bnTa = _el('script-bengali-textarea');
+      const savedBnScript = bnTa && bnTa.value !== undefined && bnTa.value !== null
+        ? bnTa.value
+        : (PROJECTS[ACTIVE_PID]?.bengaliScript || ST.bengaliScript || '');
+
       if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
         PROJECTS[ACTIVE_PID].script = savedScript;
+        PROJECTS[ACTIVE_PID].bengaliScript = savedBnScript;
+        PROJECTS[ACTIVE_PID].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+      }
+    } catch {}
+
+    const now = Date.now();
+    const localProjects = JSON.parse(JSON.stringify(PROJECTS));
+
+    _fbRef.once('value').then(snap => {
+      const cloudData = snap.val();
+      let mergedProjects = localProjects;
+      if (cloudData && cloudData.projects && cloudData.lastUpdatedBy !== CLIENT_ID) {
+        mergedProjects = {};
+        const allPids = new Set([...Object.keys(cloudData.projects), ...Object.keys(localProjects)]);
+        allPids.forEach(pid => {
+          mergedProjects[pid] = _mergeProject(cloudData.projects[pid], localProjects[pid]);
+        });
       }
 
       const payload = {
         active: ACTIVE_PID,
-        projects: JSON.parse(JSON.stringify(PROJECTS)),
+        projects: mergedProjects,
         globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
         lastUpdatedBy: CLIENT_ID,
-        updatedAt: Date.now()
+        updatedAt: now
       };
 
-      _fbRef.set(payload)
-        .then(() => {
-          updateSyncUI('synced', 'Cloud');
-        })
-        .catch(err => {
-          console.error('Firebase save error:', err);
-          updateSyncUI('offline', 'Sync Error');
-        });
-    } catch (err) {
-      console.error('Firebase push preparation error:', err);
-      updateSyncUI('offline', 'Sync Error');
-    }
+      return _fbRef.set(payload);
+    })
+    .then(() => {
+      _lastFirebaseSaveTime = Date.now();
+      _lastRemoteUpdatedAt = now;
+      _lastSavedStatus = 'synced';
+      _userMadeLocalEdit = false;
+      _fbRetryCount = 0;
+      updateSavedTimeDisplay();
+      if (_hasPendingLocalChange) {
+        _hasPendingLocalChange = false;
+        pushToFirebase(true);
+      }
+    })
+    .catch(err => {
+      console.warn('Firebase push failed:', err);
+      _lastSavedStatus = 'error';
+      updateSavedTimeDisplay();
+      if (_fbRetryCount < 5) {
+        _fbRetryCount++;
+        if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
+        _fbRetryTimer = setTimeout(() => pushToFirebase(true), Math.min(1000 * Math.pow(2, _fbRetryCount), 30000));
+      }
+    });
   };
 
   if (immediate) {
     doPush();
   } else {
-    _fbSyncTimer = setTimeout(doPush, 100);
+    _fbSyncTimer = setTimeout(doPush, 1500);
   }
 }
 
-function applyRemoteData(data) {
-  if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
+function applyRemoteData(data, isInitial = false) {
+  if (!data || !data.projects || typeof data.projects !== 'object' || Object.keys(data.projects).length === 0) return;
+
+  const remoteUpdatedAt = data.updatedAt || 0;
+
+  if (!isInitial && _userMadeLocalEdit && _lastUserEditTime > remoteUpdatedAt && data.lastUpdatedBy !== CLIENT_ID) {
+    console.log('Local user edits newer than remote, pushing local merge.');
+    pushToFirebase(true);
+    return;
+  }
+
   setApplyingRemote(true);
   try {
-
-    // 1. Sync projects dictionary
     for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
     for (const [k, v] of Object.entries(data.projects)) {
       PROJECTS[k] = {
         name: v.name || 'Script',
         script: v.script || '',
+        bengaliScript: v.bengaliScript || '',
+        bengaliLines: v.bengaliLines || parseAltScript(v.bengaliScript || ''),
         scores: _migrateScores(v.scores),
         prompts: _migratePrompts(v.prompts || {}),
         batches: v.batches || [],
@@ -192,16 +384,15 @@ function applyRemoteData(data) {
       };
     }
 
-    // 2. Sync active project ID (keep current active script if valid so user doesn't get kicked)
-    if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
-      // keep current script tab active
+    const savedActivePid = localStorage.getItem('br_last_active_pid');
+    if (savedActivePid && PROJECTS[savedActivePid]) {
+      ACTIVE_PID = savedActivePid;
     } else if (data.active && PROJECTS[data.active]) {
       ACTIVE_PID = data.active;
     } else {
       ACTIVE_PID = Object.keys(PROJECTS)[0] || null;
     }
 
-    // 3. Sync global prefix/suffix/labelEnabled
     if (data.globalCset) {
       ST.prefix = data.globalCset.prefix || '';
       ST.suffix = data.globalCset.suffix || '';
@@ -212,33 +403,36 @@ function applyRemoteData(data) {
       syncCsetUI();
     }
 
-    // 4. Update localStorage cache
     try {
       localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+      if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
     } catch {}
 
-    // 5. Update active project working state
     if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
       const proj = PROJECTS[ACTIVE_PID];
-      ST.scores            = _migrateScores(proj.scores);
-      ST.prompts           = _migratePrompts(proj.prompts);
-      ST.batches           = proj.batches       || [];
-      ST.usedSets          = _migrateUsedSets(proj.usedSets);
-      ST.setRatings        = _migrateSetRatings(proj.setRatings);
-      ST.ratingBatches     = proj.ratingBatches || [];
-      ST.myRatings         = _migrateMyRatings(proj.myRatings);
-      ST.covered           = _migrateCovered(proj.covered || {});
+      ST.scores            = JSON.parse(JSON.stringify(_migrateScores(proj.scores)));
+      ST.prompts           = JSON.parse(JSON.stringify(_migratePrompts(proj.prompts)));
+      ST.batches           = JSON.parse(JSON.stringify(proj.batches || []));
+      ST.usedSets          = JSON.parse(JSON.stringify(_migrateUsedSets(proj.usedSets)));
+      ST.setRatings        = JSON.parse(JSON.stringify(_migrateSetRatings(proj.setRatings)));
+      ST.ratingBatches     = JSON.parse(JSON.stringify(proj.ratingBatches || []));
+      ST.myRatings         = JSON.parse(JSON.stringify(_migrateMyRatings(proj.myRatings)));
+      ST.covered           = JSON.parse(JSON.stringify(_migrateCovered(proj.covered || {})));
+      ST.bengaliScript     = proj.bengaliScript || '';
+      ST.bengaliLines      = JSON.parse(JSON.stringify(proj.bengaliLines || parseAltScript(proj.bengaliScript || '')));
       ST.brolls            = parseScript(proj.script || '');
 
       const ta = _el('script-textarea');
       if (ta && document.activeElement !== ta) {
         ta.value = proj.script || '';
       }
+      const bnTa = _el('script-bengali-textarea');
+      if (bnTa && document.activeElement !== bnTa) {
+        bnTa.value = proj.bengaliScript || '';
+      }
       if (ST.brolls.length) collapseInput();
     }
 
-
-    // 6. Re-render UI
     renderProjectTabs();
     renderHeatmap();
     renderStats();
@@ -246,23 +440,24 @@ function applyRemoteData(data) {
     updateAllPromptChips();
     renderBatchTabs();
     renderBatchPanel();
-    renderLibraryView();
     updateLibBadge();
     renderRatingTabs();
     renderRatingPanel();
     updateSratingHint();
-    renderMyDatabase();
-    updateSyncUI('synced', 'Cloud');
-    toast('☁️ Synced from Cloud');
+    renderBackupsListUI();
+
+    _lastRemoteUpdatedAt = remoteUpdatedAt;
+    _lastFirebaseSaveTime = remoteUpdatedAt || Date.now();
+    _lastSavedStatus = 'synced';
+    _userMadeLocalEdit = false;
+    updateSavedTimeDisplay();
+    toast(isInitial ? '☁️ Loaded latest from Cloud' : '☁️ Synced from Cloud');
   } catch (err) {
     console.error('Error applying remote data:', err);
   } finally {
     setApplyingRemote(false);
   }
 }
-
-
-
 
 function initFirebaseSync() {
   if (typeof firebase === 'undefined') {
@@ -277,42 +472,64 @@ function initFirebaseSync() {
     _fbDb = firebase.database();
     _fbRef = _fbDb.ref('broll_app_data');
 
-    // Monitor connection state
     _fbDb.ref('.info/connected').on('value', snap => {
-      const connected = !!snap.val();
-      if (!connected) {
-        updateSyncUI('offline', 'Offline');
+      _fbConnected = !!snap.val();
+      if (!_fbConnected) {
+        _lastSavedStatus = 'offline';
+        updateSavedTimeDisplay();
       } else {
-        updateSyncUI('synced', 'Cloud');
+        if (_userMadeLocalEdit && _isInitialCloudLoaded) {
+          pushToFirebase(true);
+        }
       }
     });
 
-    // Listen for remote updates
-    let isInitialRead = true;
-    _fbRef.on('value', snap => {
+    _fbRef.once('value').then(snap => {
       const data = snap.val();
-      if (!data || !data.projects || Object.keys(data.projects).length === 0) {
-        // Cloud is empty, push current local state to initialize it
-        console.log('Firebase database empty, pushing local state...');
-        pushToFirebase(true);
-        isInitialRead = false;
-        return;
+      if (data && data.projects && Object.keys(data.projects).length > 0) {
+        applyRemoteData(data, true);
+        _isInitialCloudLoaded = true;
+        console.log('✅ Loaded latest cloud database version.');
+      } else {
+        _isInitialCloudLoaded = true;
+        if (Object.keys(PROJECTS).length > 0) {
+          pushToFirebase(true);
+        }
       }
-      if (isInitialRead) {
-        isInitialRead = false;
-        applyRemoteData(data);
-        return;
-      }
-      // If change originated from this client tab, skip
-      if (data.lastUpdatedBy === CLIENT_ID) {
-        return;
-      }
-      applyRemoteData(data);
+    }).catch(err => {
+      console.warn('Initial cloud read error:', err);
+      _isInitialCloudLoaded = true;
     });
+
+    _fbRef.on('value', snap => {
+      if (!_isInitialCloudLoaded) return;
+      const data = snap.val();
+      if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
+      if (data.lastUpdatedBy === CLIENT_ID) return;
+
+      applyRemoteData(data, false);
+    });
+
+    const checkFreshRemote = () => {
+      if (!_fbRef || _isApplyingRemote) return;
+      _fbRef.once('value').then(snap => {
+        const data = snap.val();
+        if (!data || !data.updatedAt) return;
+        if (data.lastUpdatedBy === CLIENT_ID) return;
+        if (data.updatedAt > (_lastRemoteUpdatedAt || 0)) {
+          applyRemoteData(data, false);
+        }
+      }).catch(() => {});
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkFreshRemote();
+    });
+    window.addEventListener('focus', checkFreshRemote);
 
     // Click on sync status pill to manual force sync
     _el('sync-status')?.addEventListener('click', () => {
-      toast('🔄 Syncing with Cloud…');
+      toast('🔄 Force syncing with Cloud…');
       pushToFirebase(true);
     });
 
@@ -321,6 +538,7 @@ function initFirebaseSync() {
     updateSyncUI('offline', 'Local Only');
   }
 }
+
 
 /* ── Global Prefix / Suffix (shared across all scripts) ─────── */
 const GLOBAL_CSET_KEY = 'br_global_cset';
@@ -334,7 +552,7 @@ function loadGlobalCset() {
     if (d) {
       ST.prefix = d.prefix || '';
       ST.suffix = d.suffix || '';
-      ST.labelEnabled = (d.labelEnabled !== false); // default true
+      ST.labelEnabled = (d.labelEnabled !== false);
       return;
     }
   } catch {}
@@ -346,19 +564,49 @@ let   ACTIVE_PID = null;
 const PROJ_KEY   = 'br_v6_proj';
 
 function _projData(name) {
-  return { name: name||'Script 1', script:'', scores:{}, prompts:{}, batches:[], usedSets:{}, setRatings:{}, ratingBatches:[], myRatings:{}, covered:{} };
+  return {
+    name: name||'Script 1',
+    script: '',
+    bengaliScript: '',
+    bengaliLines: {},
+    scores: {},
+    prompts: {},
+    batches: [],
+    usedSets: {},
+    setRatings: {},
+    ratingBatches: [],
+    myRatings: {},
+    covered: {}
+  };
+}
+
+let _lastAutoBackupTime = 0;
+
+function maybeAutoBackup() {
+  const now = Date.now();
+  if (now - _lastAutoBackupTime > 60000) { // Auto backup at most once every 60s
+    _lastAutoBackupTime = now;
+    createProjectBackup('Auto-save');
+  }
 }
 
 function saveProjects(immediate = false) {
   if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
-    // Read script from DOM; fall back to what's already saved (never lose it)
     const ta = _el('script-textarea');
     const savedScript = ta && ta.value !== undefined && ta.value !== null
       ? ta.value
       : (PROJECTS[ACTIVE_PID].script || '');
+
+    const bnTa = _el('script-bengali-textarea');
+    const savedBnScript = bnTa && bnTa.value !== undefined && bnTa.value !== null
+      ? bnTa.value
+      : (PROJECTS[ACTIVE_PID].bengaliScript || ST.bengaliScript || '');
+
     PROJECTS[ACTIVE_PID] = {
       ...PROJECTS[ACTIVE_PID],
       script:        savedScript,
+      bengaliScript: savedBnScript,
+      bengaliLines:  JSON.parse(JSON.stringify(ST.bengaliLines || {})),
       scores:        JSON.parse(JSON.stringify(ST.scores)),
       prompts:       JSON.parse(JSON.stringify(ST.prompts)),
       batches:       JSON.parse(JSON.stringify(ST.batches)),
@@ -369,12 +617,25 @@ function saveProjects(immediate = false) {
       covered:       JSON.parse(JSON.stringify(ST.covered||{})),
     };
   }
-  try { localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS })); } catch {}
+  // Always write to localStorage FIRST (instant, never fails due to network)
+  try {
+    localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+    _lastLocalSaveTime = Date.now();
+    _lastUserEditTime = Date.now();
+    _userMadeLocalEdit = true;
+  } catch {}
   saveGlobalCset();
-  pushToFirebase(immediate); // Sync to Firebase Cloud
+  pushToFirebase(immediate); // then push to Firebase
+  maybeAutoBackup();
 }
 
-function save(immediate = false) { saveProjects(immediate); }
+function save(immediate = false) {
+  _userMadeLocalEdit = true;
+  _lastUserEditTime = Date.now();
+  saveProjects(immediate);
+}
+
 
 
 function _migrateCovered(raw) {
@@ -488,6 +749,8 @@ function loadProjects() {
       for (const [k,v] of Object.entries(raw.projects)) {
         PROJECTS[k] = {
           ...v,
+          bengaliScript: v.bengaliScript || '',
+          bengaliLines:  v.bengaliLines || parseAltScript(v.bengaliScript || ''),
           scores: _migrateScores(v.scores),
           prompts: _migratePrompts(v.prompts),
           usedSets: _migrateUsedSets(v.usedSets),
@@ -496,7 +759,12 @@ function loadProjects() {
           covered: _migrateCovered(v.covered)
         };
       }
-      ACTIVE_PID = (raw.active && PROJECTS[raw.active]) ? raw.active : Object.keys(PROJECTS)[0];
+      const lastActive = localStorage.getItem('br_last_active_pid');
+      if (lastActive && PROJECTS[lastActive]) {
+        ACTIVE_PID = lastActive;
+      } else {
+        ACTIVE_PID = (raw.active && PROJECTS[raw.active]) ? raw.active : Object.keys(PROJECTS)[0];
+      }
       // Migrate old per-project prefix/suffix to global store (first time only)
       if (!localStorage.getItem(GLOBAL_CSET_KEY)) {
         const proj = PROJECTS[ACTIVE_PID]||{};
@@ -519,8 +787,9 @@ function loadProjects() {
     const us  = JSON.parse(localStorage.getItem('br_us5')||'{}');
     const cs  = JSON.parse(localStorage.getItem('br_cs5')||'{}');
     const pid = uid();
-    PROJECTS[pid] = { name:'Script 1', script:sc, scores:s, prompts:pr, batches:ba, usedSets:us, setRatings:{}, ratingBatches:[], myRatings:{} };
+    PROJECTS[pid] = { name:'Script 1', script:sc, bengaliScript:'', bengaliLines:{}, scores:s, prompts:pr, batches:ba, usedSets:us, setRatings:{}, ratingBatches:[], myRatings:{} };
     ACTIVE_PID = pid;
+    localStorage.setItem('br_last_active_pid', pid);
     // Migrate prefix/suffix to global
     if (cs.prefix || cs.suffix) {
       ST.prefix = cs.prefix||''; ST.suffix = cs.suffix||'';
@@ -532,69 +801,157 @@ function loadProjects() {
   const pid = uid();
   PROJECTS[pid] = _projData('Script 1');
   ACTIVE_PID = pid;
+  localStorage.setItem('br_last_active_pid', pid);
   saveProjects();
 }
 
 function activateProject(pid) {
   if (!PROJECTS[pid]) return;
-  saveProjects();
-  ACTIVE_PID = pid;
-  const proj = PROJECTS[pid];
-  ST.scores            = proj.scores        || {};
-  ST.prompts           = _migratePrompts(proj.prompts);
-  ST.batches           = proj.batches       || [];
-  ST.usedSets          = proj.usedSets      || {};
-  ST.setRatings        = _migrateSetRatings(proj.setRatings);
-  ST.ratingBatches     = proj.ratingBatches || [];
-  ST.myRatings         = proj.myRatings     || {};
-  ST.covered           = _migrateCovered(proj.covered);
-  ST.activeRatingBatch = 'new';
 
+  // 1. If switching from another project, cleanly save that project first
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID] && ACTIVE_PID !== pid) {
+    const ta = _el('script-textarea');
+    const bnTa = _el('script-bengali-textarea');
+    PROJECTS[ACTIVE_PID].script = ta ? ta.value : (PROJECTS[ACTIVE_PID].script || '');
+    PROJECTS[ACTIVE_PID].bengaliScript = bnTa ? bnTa.value : (PROJECTS[ACTIVE_PID].bengaliScript || ST.bengaliScript || '');
+    PROJECTS[ACTIVE_PID].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+    PROJECTS[ACTIVE_PID].scores = JSON.parse(JSON.stringify(ST.scores || {}));
+    PROJECTS[ACTIVE_PID].prompts = JSON.parse(JSON.stringify(ST.prompts || {}));
+    PROJECTS[ACTIVE_PID].batches = JSON.parse(JSON.stringify(ST.batches || []));
+    PROJECTS[ACTIVE_PID].usedSets = JSON.parse(JSON.stringify(ST.usedSets || {}));
+    PROJECTS[ACTIVE_PID].setRatings = JSON.parse(JSON.stringify(ST.setRatings || {}));
+    PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+    PROJECTS[ACTIVE_PID].myRatings = JSON.parse(JSON.stringify(ST.myRatings || {}));
+    PROJECTS[ACTIVE_PID].covered = JSON.parse(JSON.stringify(ST.covered || {}));
+    try {
+      localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    } catch {}
+  }
+
+  // 2. Set new active PID
+  ACTIVE_PID = pid;
+  localStorage.setItem('br_last_active_pid', pid);
+
+  // 3. Deep-clone the project data to prevent reference bleeding between scripts
+  const proj = PROJECTS[pid];
+  ST.scores            = JSON.parse(JSON.stringify(proj.scores || {}));
+  ST.prompts           = JSON.parse(JSON.stringify(_migratePrompts(proj.prompts)));
+  ST.batches           = JSON.parse(JSON.stringify(proj.batches || []));
+  ST.usedSets          = JSON.parse(JSON.stringify(proj.usedSets || {}));
+  ST.setRatings        = JSON.parse(JSON.stringify(_migrateSetRatings(proj.setRatings)));
+  ST.ratingBatches     = JSON.parse(JSON.stringify(proj.ratingBatches || []));
+  ST.myRatings         = JSON.parse(JSON.stringify(proj.myRatings || {}));
+  ST.covered           = JSON.parse(JSON.stringify(_migrateCovered(proj.covered)));
+  ST.bengaliScript     = proj.bengaliScript || '';
+  ST.bengaliLines      = JSON.parse(JSON.stringify(proj.bengaliLines || parseAltScript(proj.bengaliScript || '')));
+  ST.activeRatingBatch = 'new';
   ST.brolls            = parseScript(proj.script || '');
+
+  // 4. Update UI
   ST.filterTarget = 'main'; ST.filter = 'all'; ST.sortBy = 'num'; ST.activeBatch = 'new';
   _el('fb-target-main')?.classList.add('active');
   _el('fb-target-real')?.classList.remove('active');
-  const ta = _el('script-textarea'); if (ta) ta.value = proj.script||'';
+  const ta = _el('script-textarea'); if (ta) ta.value = proj.script || '';
+  const bnTa = _el('script-bengali-textarea'); if (bnTa) bnTa.value = proj.bengaliScript || '';
   renderFilterChips();
-  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort==='num'));
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === 'num'));
   if (ST.brolls.length) collapseInput(); else expandInput();
-  H.stack=[]; H.pos=-1; refreshUR();
+  H.stack = []; H.pos = -1; refreshUR();
   renderProjectTabs();
   renderHeatmap(); renderStats(); renderCards(true); updateAllPromptChips();
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge(); syncCsetUI();
   updateSratingHint(); renderRatingTabs(); renderRatingPanel();
-  renderMyDatabase();
+  renderBackupsListUI();
+
   updateLineCopyPreview();
   scrollToLastScoredBroll();
 }
 
 
 function createProject() {
-  saveProjects();
-  const pid = uid();
-  const num = Object.keys(PROJECTS).length+1;
-  PROJECTS[pid] = _projData(`Script ${num}`);
-  saveProjects();
-  activateProject(pid);
-  expandInput();
-  setTimeout(()=>_el('script-textarea')?.focus(),50);
-  toast(`✅ Script ${num} created`);
+  const defaultNum = Object.keys(PROJECTS).length + 1;
+  const defaultName = `Script ${defaultNum}`;
+  showModal(
+    'Add New Script',
+    `<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+       <label style="font-size:12px;color:var(--text-2);">Script Name:</label>
+       <input type="text" id="new-script-name-input" class="p-opt-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px;" value="${defaultName}" />
+     </div>`,
+    () => {
+      const inp = _el('new-script-name-input');
+      const chosenName = (inp && inp.value.trim()) ? inp.value.trim() : defaultName;
+      createProjectBackup('Before Create Script');
+
+      // Save current project first
+      saveProjects(true);
+
+      // Create new empty project structure
+      const pid = uid();
+      PROJECTS[pid] = _projData(chosenName);
+
+      // Switch to new project cleanly
+      activateProject(pid);
+
+      // Persist newly created project to local & cloud immediately
+      saveProjects(true);
+
+      expandInput();
+      setTimeout(() => _el('script-textarea')?.focus(), 50);
+      toast(`✅ "${chosenName}" created`);
+    },
+    null,
+    'Create Script',
+    'Cancel',
+    'primary'
+  );
+  setTimeout(() => {
+    const inp = _el('new-script-name-input');
+    if (inp) { inp.focus(); inp.select(); }
+  }, 100);
 }
 
 function deleteProject(pid) {
-  if (Object.keys(PROJECTS).length<=1) { toast('⚠️ Cannot delete the only script'); return; }
-  const name = PROJECTS[pid]?.name||'Script';
+  if (Object.keys(PROJECTS).length <= 1) { toast('⚠️ Cannot delete the only script'); return; }
+  const name = PROJECTS[pid]?.name || 'Script';
+  createProjectBackup(`Before Delete ${name}`);
   delete PROJECTS[pid];
-  saveProjects();
-  if (ACTIVE_PID===pid) { activateProject(Object.keys(PROJECTS)[0]); }
+  saveProjects(true);
+  if (ACTIVE_PID === pid) { activateProject(Object.keys(PROJECTS)[0]); }
   else { renderProjectTabs(); }
   toast(`🗑 Deleted "${name}"`);
 }
 
+function promptRenameProject(pid) {
+  if (!PROJECTS[pid]) return;
+  const old = PROJECTS[pid].name || 'Script';
+  showModal(
+    'Rename Script',
+    `<div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+       <label style="font-size:12px;color:var(--text-2);">Script Name:</label>
+       <input type="text" id="rename-script-input" class="p-opt-input" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px;" value="${escHtml(old)}" />
+     </div>`,
+    () => {
+      const inp = _el('rename-script-input');
+      const newName = (inp && inp.value.trim()) ? inp.value.trim() : old;
+      renameProject(pid, newName);
+    },
+    null,
+    'Save Name',
+    'Cancel',
+    'primary'
+  );
+  setTimeout(() => {
+    const inp = _el('rename-script-input');
+    if (inp) { inp.focus(); inp.select(); }
+  }, 100);
+}
+
 function renameProject(pid, newName) {
-  if (!PROJECTS[pid]||!newName.trim()) return;
+  if (!PROJECTS[pid] || !newName || !newName.trim()) return;
   PROJECTS[pid].name = newName.trim();
-  saveProjects(); renderProjectTabs();
+  saveProjects(true); // Immediate write & Firebase push
+  renderProjectTabs();
+  toast(`✏️ Renamed to "${PROJECTS[pid].name}"`);
 }
 
 function renderProjectTabs() {
@@ -603,66 +960,60 @@ function renderProjectTabs() {
   const pids = Object.keys(PROJECTS);
   pids.forEach(pid => {
     const proj = PROJECTS[pid];
-    const isActive = pid===ACTIVE_PID;
+    const isActive = pid === ACTIVE_PID;
     const tab = document.createElement('div');
-    tab.className = 'proj-tab'+(isActive?' active':'');
-    tab.setAttribute('role','tab');
-    tab.setAttribute('aria-selected', isActive?'true':'false');
+    tab.className = 'proj-tab' + (isActive ? ' active' : '');
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
 
     const nameEl = document.createElement('span');
     nameEl.className = 'proj-tab-name';
     nameEl.textContent = proj.name;
-    nameEl.title = 'Double-click to rename';
+    nameEl.title = 'Double-click or right-click to rename';
     nameEl.addEventListener('dblclick', e => {
       e.stopPropagation();
-      const old = PROJECTS[pid]?.name||'';
-      nameEl.contentEditable='true'; nameEl.focus();
-      const r=document.createRange(); r.selectNodeContents(nameEl);
-      window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
-      const done = () => { nameEl.contentEditable='false'; renameProject(pid, nameEl.textContent||old); };
-      nameEl.addEventListener('blur', done, {once:true});
-      nameEl.addEventListener('keydown', ev => {
-        if (ev.key==='Enter'){ev.preventDefault();nameEl.blur();}
-        if (ev.key==='Escape'){nameEl.textContent=old;nameEl.blur();}
-      });
+      promptRenameProject(pid);
+    });
+    tab.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      promptRenameProject(pid);
     });
     tab.appendChild(nameEl);
 
     /* clip count badge */
-    const cnt = isActive ? ST.brolls.length : parseScript(proj.script||'').length;
-    if (cnt>0) {
-      const badge=document.createElement('span');
-      badge.className='proj-tab-badge'; badge.textContent=cnt;
+    const cnt = isActive ? ST.brolls.length : parseScript(proj.script || '').length;
+    if (cnt > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'proj-tab-badge'; badge.textContent = cnt;
       tab.appendChild(badge);
     }
 
     /* delete button (only if >1 project) */
-    if (pids.length>1) {
-      const del=document.createElement('span');
-      del.className='proj-tab-del'; del.textContent='×';
-      del.title=`Delete "${proj.name}"`;
+    if (pids.length > 1) {
+      const del = document.createElement('span');
+      del.className = 'proj-tab-del'; del.textContent = '×';
+      del.title = `Delete "${proj.name}"`;
       del.addEventListener('click', e => {
         e.stopPropagation();
-        showModal(`Delete "${proj.name}"?`, 'All scores, prompts and batches will be removed.', ()=>deleteProject(pid));
+        showModal(`Delete "${proj.name}"?`, 'All scores, prompts and batches will be removed.', () => deleteProject(pid));
       });
       tab.appendChild(del);
     }
-    if (!isActive) tab.addEventListener('click', ()=>activateProject(pid));
+    if (!isActive) tab.addEventListener('click', () => activateProject(pid));
     bar.appendChild(tab);
   });
 
-  const addBtn=document.createElement('button');
-  addBtn.className='proj-add-btn';
-  addBtn.innerHTML='<span>＋</span><span>New Script</span>';
-  addBtn.title='Create new script';
+  const addBtn = document.createElement('button');
+  addBtn.className = 'proj-add-btn';
+  addBtn.innerHTML = '<span>＋</span>';
+  addBtn.title = 'Create new script';
   addBtn.addEventListener('click', createProject);
   bar.appendChild(addBtn);
-
-  const clrBtn=document.createElement('button');
-  clrBtn.className='proj-clr-btn'; clrBtn.id='btn-clear-copy';
-  clrBtn.textContent='⟲ History'; clrBtn.title='Clear copy history for this script';
-  bar.appendChild(clrBtn);
 }
+
+
+
 
 /* ── Rating Colors for AI Prompt Sets ─────────────────────────── */
 function getRatingColor(score) {
@@ -800,9 +1151,8 @@ function saveMyRating(num, setIdx, score, comment) {
     updateHmCell(num);
     renderStats();
     renderFilterCount();
-    renderMyDatabase();
-    updateMyDbBadge();
     updateLineCopyPreview();
+
   };
 
   record(
@@ -835,9 +1185,8 @@ function deleteMyRating(num, setIdx) {
     updateHmCell(num);
     renderStats();
     renderFilterCount();
-    renderMyDatabase();
-    updateMyDbBadge();
     updateLineCopyPreview();
+
   };
 
   record(
@@ -851,19 +1200,7 @@ function deleteMyRating(num, setIdx) {
 
 
 
-function updateMyDbBadge() {
-  const el = _el('mydb-badge');
-  if (!el) return;
-  let total = 0;
-  for (const sets of Object.values(ST.myRatings || {})) {
-    if (!sets || typeof sets !== 'object') continue;
-    for (const item of Object.values(sets)) {
-      if (item && typeof item === 'object' && item.score !== undefined) total++;
-    }
-  }
-  el.textContent = total;
-  el.classList.toggle('active', total > 0);
-}
+function updateMyDbBadge() { /* removed */ }
 
 
 /* ── My Rating Modal ─────────────────────────────────────────── */
@@ -1015,95 +1352,7 @@ function showMyRatingModal(triggerEl, num, setIdx) {
 }
 
 
-/* ── My Database render ──────────────────────────────────────── */
-let _myDbFilter = { above: null, below: null, keyword: '' };
 
-function renderMyDatabase() {
-  const view = _el('mydb-view');
-  if (!view) return;
-  updateMyDbBadge();
-
-  // Collect all entries
-  const entries = [];
-  for (const [numStr, sets] of Object.entries(ST.myRatings || {})) {
-    if (!sets || typeof sets !== 'object') continue;
-    const num = parseFloat(numStr);
-    if (isNaN(num)) continue;
-    for (const [idxStr, rating] of Object.entries(sets)) {
-      if (!rating || typeof rating !== 'object' || rating.score === undefined) continue;
-      const setIdx = parseInt(idxStr);
-      if (isNaN(setIdx)) continue;
-      const entry = (ST.prompts[num] || [])[setIdx];
-      const broll = ST.brolls.find(b => b.num === num);
-      entries.push({ num, setIdx, rating, entry, broll });
-    }
-  }
-
-
-  // Apply filters
-  const { above, below, keyword } = _myDbFilter;
-  const filtered = entries.filter(({ rating }) => {
-    const s = parseFloat(rating.score);
-    if (above !== null && s < above) return false;
-    if (below !== null && s > below) return false;
-    if (keyword) {
-      const kw = keyword.toLowerCase();
-      const inComment = (rating.comment||'').toLowerCase().includes(kw);
-      const inPrompt = ((ST.prompts[rating.num]||[])[rating.setIdx]?.text||'').toLowerCase().includes(kw);
-      if (!inComment && !inPrompt) return false;
-    }
-    return true;
-  });
-
-  // Sort by score desc
-  filtered.sort((a, b) => parseFloat(b.rating.score) - parseFloat(a.rating.score));
-
-  if (!filtered.length) {
-    view.innerHTML = `<div class="mydb-empty">${entries.length ? '🔍 No entries match your filter.' : '📭 No personal ratings yet. Click ✏ on any prompt chip to rate it.'}</div>`;
-    return;
-  }
-
-  view.innerHTML = '';
-  filtered.forEach(({ num, setIdx, rating, entry, broll }) => {
-    const rColor = getMyRatingColor(rating.score);
-    const promptText = entry?.text || '—';
-    const brollLine = broll?.line || `B-roll #${num}`;
-
-    const row = document.createElement('div');
-    row.className = 'mydb-entry';
-
-    row.innerHTML = `
-      <div class="mydb-entry-hdr">
-        <span class="mydb-score-badge" style="color:${rColor.text};border-color:${rColor.border};background:${rColor.bg}">${rating.score}</span>
-        <span class="mydb-label">#${num} · Set ${setIdx+1}</span>
-        <span class="mydb-comment">${escHtml(rating.comment||'')}</span>
-        <button class="mydb-copy-btn" title="Copy with metadata">📋</button>
-        <button class="mydb-edit-btn" title="Edit rating">✏</button>
-        <button class="mydb-del-btn" title="Delete rating">🗑</button>
-      </div>
-      <div class="mydb-broll-line">📽 ${escHtml(brollLine)}</div>
-      <div class="mydb-prompt">${escHtml(promptText)}</div>
-    `;
-
-    row.querySelector('.mydb-copy-btn').addEventListener('click', () => {
-      const meta = `[#${num} Set ${setIdx+1} | My Rating: ${rating.score}${rating.comment ? ' — ' + rating.comment : ''}]\nB-roll: ${brollLine}\n\n${promptText}`;
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(meta).then(() => toast(`📋 Copied #${num} Set ${setIdx+1} with metadata`)).catch(() => fbCopy(meta, () => toast(`📋 Copied`)));
-      } else { fbCopy(meta, () => toast(`📋 Copied`)); }
-    });
-
-    row.querySelector('.mydb-edit-btn').addEventListener('click', e => {
-      showMyRatingModal(e.target, num, setIdx);
-    });
-
-    row.querySelector('.mydb-del-btn').addEventListener('click', () => {
-      deleteMyRating(num, setIdx);
-      toast(`🗑 Deleted rating for #${num} Set ${setIdx+1}`);
-    });
-
-    view.appendChild(row);
-  });
-}
 
 function parseSetRatings(text) {
   const results = [];
@@ -1149,24 +1398,59 @@ function parseSetRatings(text) {
   return results;
 }
 
-function applySetRatings(text) {
+function requestApplySetRatings(text) {
   const parsed = parseSetRatings(text);
   if (!parsed.length) { toast('⚠️ No valid rating lines found'); return; }
-  if (!ST.setRatings) ST.setRatings = {};
-  if (!ST.ratingBatches) ST.ratingBatches = [];
 
-  const batchId = uid();
-  const brollsInBatch = [];
   const ratingsByBroll = {};
-
   parsed.forEach(item => {
     if (!ratingsByBroll[item.brollNum]) ratingsByBroll[item.brollNum] = [];
     ratingsByBroll[item.brollNum].push(item);
   });
 
+  const brollNums = Object.keys(ratingsByBroll).map(Number).sort((a, b) => a - b);
+  const summaryLines = [];
+
+  for (const num of brollNums) {
+    const items = ratingsByBroll[num];
+    const sets = items.map(x => x.rawSetNum);
+    summaryLines.push(`BROLL ${num} : SET ${sets.join(', ')} : ${items.length} TOTAL`);
+  }
+
+  const summaryText = summaryLines.join('\n');
+  const minN = Math.min(...brollNums), maxN = Math.max(...brollNums);
+  const tabLabel = minN === maxN ? `#${minN}` : `#${minN}–${maxN}`;
+
+  showModal(
+    `⭐ Confirm Rating Import — ${tabLabel}`,
+    `<div style="font-size:12.5px;line-height:1.5">
+       <p style="margin-bottom:8px;color:var(--text-2);">Summary of ratings to be applied:</p>
+       <div class="import-summary-pre">${escHtml(summaryText)}</div>
+       <p style="margin-top:8px;font-size:12px;font-weight:700;color:var(--accent);">TOTAL: ${parsed.length} Ratings across ${brollNums.length} B-rolls</p>
+     </div>`,
+    () => {
+      applySetRatings(text, parsed, ratingsByBroll, brollNums, tabLabel);
+    },
+    () => {
+      const ta = _el('srating-textarea');
+      if (ta) ta.value = '';
+      toast('✕ Rating import cancelled & input cleared');
+    },
+    '✔ Confirm & Apply',
+    '✕ Reject & Clear',
+    'primary'
+  );
+}
+
+function applySetRatings(text, parsed, ratingsByBroll, brollsInBatch, tabLabel) {
+  createProjectBackup(`Before Rating Import ${tabLabel}`);
+  if (!ST.setRatings) ST.setRatings = {};
+  if (!ST.ratingBatches) ST.ratingBatches = [];
+
+  const batchId = uid();
+
   for (const [brollNumStr, items] of Object.entries(ratingsByBroll)) {
     const brollNum = parseInt(brollNumStr);
-    if (!brollsInBatch.includes(brollNum)) brollsInBatch.push(brollNum);
     if (!ST.setRatings[brollNum]) ST.setRatings[brollNum] = {};
 
     const prompts = ST.prompts[brollNum] || [];
@@ -1174,10 +1458,8 @@ function applySetRatings(text) {
     const maxRawSet = Math.max(...items.map(x => x.rawSetNum));
 
     // Intelligent offset for multi-batch ratings:
-    // If incoming ratings are numbered 1..6 (maxRawSet <= 6) and this B-roll has more than 6 prompts (e.g. 12 prompts):
     let offset = 0;
     if (maxRawSet <= 6 && totalPrompts > 6) {
-      // Find first prompt index range of size 6 that is unrated
       for (let i = 0; i < totalPrompts; i += 6) {
         const hasRating = getSetRatingsList(brollNum, i).length > 0;
         if (!hasRating) {
@@ -1185,7 +1467,6 @@ function applySetRatings(text) {
           break;
         }
       }
-      // If all ranges already had some rating, check the start index of the latest prompt batch
       if (offset === 0 && totalPrompts > items.length) {
         const lastBatchId = prompts[totalPrompts - 1]?.batchId;
         const firstIdxOfLastBatch = prompts.findIndex(p => p.batchId === lastBatchId);
@@ -1205,9 +1486,11 @@ function applySetRatings(text) {
     });
   }
 
-  brollsInBatch.sort((a, b) => a - b);
-  const minN = Math.min(...brollsInBatch), maxN = Math.max(...brollsInBatch);
-  const tabLabel = minN === maxN ? `#${minN}` : `#${minN}–${maxN}`;
+  const setsByBroll = {};
+  for (const [brollNumStr, items] of Object.entries(ratingsByBroll)) {
+    const brollNum = parseInt(brollNumStr);
+    setsByBroll[brollNum] = items.map(x => x.setIdx);
+  }
 
   ST.ratingBatches.push({
     id: batchId,
@@ -1215,6 +1498,7 @@ function applySetRatings(text) {
     date: Date.now(),
     raw: text,
     brolls: brollsInBatch,
+    setsByBroll,
     count: parsed.length
   });
 
@@ -1228,41 +1512,10 @@ function applySetRatings(text) {
   updateSratingHint();
   renderRatingTabs();
   renderRatingPanel();
+
   toast(`⭐ Applied ${parsed.length} ratings for B-roll ${tabLabel}`);
-
-  // --- Ratings notification popup ---
-  const IDEAL_BROLLS = 5, IDEAL_SETS = 6, IDEAL_TOTAL = IDEAL_BROLLS * IDEAL_SETS;
-  const brollNums = brollsInBatch;
-
-  let breakdown = brollNums.map(num => {
-    const list = ratingsByBroll[num] || [];
-    const setsSummary = list.map(item => `S${item.setIdx + 1}: <strong>${item.score}</strong>`).join(', ');
-    return `<tr>
-      <td style="padding:3px 12px 3px 0;white-space:nowrap;font-weight:700;color:var(--text-1)">B-roll #${num}</td>
-      <td style="padding:3px 10px 3px 0;color:var(--accent);font-family:var(--mono);font-size:11px">${list.length} rating${list.length !== 1 ? 's' : ''}</td>
-      <td style="padding:3px 0;color:var(--text-2);font-size:11px">${setsSummary}</td>
-    </tr>`;
-  }).join('');
-
-  let matchNote;
-  if (parsed.length === IDEAL_TOTAL && brollsInBatch.length === IDEAL_BROLLS) {
-    matchNote = `<p style="color:#4ade80;margin-top:8px">✅ Perfect — ${IDEAL_BROLLS} B-rolls × ${IDEAL_SETS} sets = ${IDEAL_TOTAL} ratings</p>`;
-  } else {
-    const diff = parsed.length - IDEAL_TOTAL;
-    const sign = diff > 0 ? '+' : '';
-    matchNote = `<p style="color:#fb923c;margin-top:8px">⚠️ Expected ${IDEAL_TOTAL} ratings (${IDEAL_BROLLS}×${IDEAL_SETS}). Got <strong>${parsed.length}</strong> (${sign}${diff})</p>`;
-  }
-
-  showModal(
-    `⭐ Applied Ratings Summary — ${tabLabel}`,
-    `<div style="font-size:13px;line-height:1.5">
-      <p style="margin-bottom:6px"><strong>${parsed.length}</strong> rating${parsed.length !== 1 ? 's' : ''} applied across <strong>${brollsInBatch.length}</strong> B-roll${brollsInBatch.length !== 1 ? 's' : ''}</p>
-      <table style="border-collapse:collapse;margin-top:6px;width:100%">${breakdown}</table>
-      ${matchNote}
-    </div>`,
-    () => {} // OK just closes
-  );
 }
+
 
 
 
@@ -1337,93 +1590,72 @@ function renderRatingTabs() {
   });
 }
 
+/* ── Batch Sets Helper (100% Precise) ───────────────────────── */
+function getBatchSetsForBroll(batch, num) {
+  if (!batch) return null;
+  // 1. If batch has setsByBroll
+  if (batch.setsByBroll && Array.isArray(batch.setsByBroll[num]) && batch.setsByBroll[num].length > 0) {
+    return batch.setsByBroll[num];
+  }
+  // 2. Check ST.setRatings[num] for items with r.batchId === batch.id
+  const sets = ST.setRatings[num] || {};
+  const matched = Object.keys(sets)
+    .map(Number)
+    .filter(idx => getSetRatingsList(num, idx).some(r => r.batchId === batch.id));
+  if (matched.length > 0) return matched.sort((a, b) => a - b);
+
+  // 3. Parse batch.raw if available
+  if (batch.raw) {
+    try {
+      const parsed = parseSetRatings(batch.raw);
+      const forThisBroll = parsed.filter(x => x.brollNum === num);
+      if (forThisBroll.length > 0) {
+        const rawIndices = forThisBroll.map(x => x.rawSetNum - 1);
+        return Array.from(new Set(rawIndices)).sort((a, b) => a - b);
+      }
+    } catch {}
+  }
+
+  // 4. Default: return first 6 set indices if sets exist
+  const allIndices = Object.keys(sets).map(Number).sort((a, b) => a - b);
+  return allIndices.slice(0, 6);
+}
+
 function switchRatingTab(batchId) {
   ST.activeRatingBatch = batchId;
   renderRatingTabs();
-  renderRatingPanel();
+  if (batchId === 'new') {
+    ST.activeRatingBatchFilter = null;
+    renderRatingPanel();
+    const banner = document.getElementById('batch-filter-banner');
+    if (banner) banner.remove();
+  } else {
+    ST.activeRatingBatchFilter = batchId;
+    switchBottomTab('p');
+    renderCards();
+    const firstCard = document.querySelector('.broll-card');
+    if (firstCard) firstCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toast(`⭐ Opened Rating Batch ${batchId} on Prompts page`);
+  }
+}
+
+/* ── Bottom Tab Switcher (Global) ─────────────────────────── */
+function switchBottomTab(tab) {
+  document.querySelectorAll('.btab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== `tab-panel-${tab}`));
+  scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function renderRatingPanel() {
   const np = _el('srating-panel-new'), dp = _el('srating-panel-detail');
   if (!np || !dp) return;
-  if (ST.activeRatingBatch === 'new') {
-    np.classList.remove('hidden');
-    dp.classList.add('hidden');
-    return;
-  }
-  np.classList.add('hidden');
-  dp.classList.remove('hidden');
-
-  const b = (ST.ratingBatches || []).find(x => x.id === ST.activeRatingBatch);
-  if (!b) {
-    dp.innerHTML = '<p style="color:var(--text-3);font-size:12px;padding:12px">Rating batch not found.</p>';
-    return;
-  }
-  const dt = new Date(b.date);
-
-  dp.innerHTML = `
-    <div class="rdetail-header">
-      <div class="bdh-info">
-        <span class="rdetail-title">${escHtml(b.label)} Ratings</span>
-        <span class="rdetail-meta">${dt.toLocaleString('en-IN')} · ${b.brolls.length} B-rolls · ${b.count || b.brolls.length} ratings</span>
-      </div>
-      <div class="bdh-actions">
-        <button class="hbtn danger" id="btn-del-rbatch">🗑 Delete</button>
-      </div>
-    </div>
-    <div class="rdetail-list" id="rdetail-items"></div>
-  `;
-
-  _el('btn-del-rbatch')?.addEventListener('click', () => showDeleteRatingBatchModal(b.id));
-
-  const listEl = _el('rdetail-items');
-  if (!listEl) return;
-
-  b.brolls.forEach(num => {
-    const sets = ST.setRatings[num] || {};
-    const setIndices = Object.keys(sets).map(Number).sort((a, b) => a - b);
-    if (!setIndices.length) return;
-
-    const grp = document.createElement('div');
-    grp.className = 'rdetail-broll-group';
-
-    const brollHdr = document.createElement('div');
-    brollHdr.className = 'rdetail-broll-hdr';
-    brollHdr.innerHTML = `<span>B-ROLL #${num}</span><span>${setIndices.length} sets rated</span>`;
-    brollHdr.title = 'Click to jump to B-roll card';
-    brollHdr.style.cursor = 'pointer';
-    brollHdr.addEventListener('click', () => _el(`card-${num}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-    grp.appendChild(brollHdr);
-
-    const rowsWrap = document.createElement('div');
-    rowsWrap.className = 'rdetail-broll-rows';
-
-    setIndices.forEach(idx => {
-      const summary = getSetRatingSummary(num, idx);
-      if (!summary) return;
-      const rColor = summary.color || { border: 'var(--border)', text: 'var(--text-1)', bg: 'transparent' };
-      const ratings = summary.ratings;
-      const whySummary = ratings.map((r, i) => ratings.length > 1 ? `[#${i+1}: ${r.score}] ${r.why}` : r.why).join('\n\n');
-
-      const row = document.createElement('div');
-      row.className = 'rdetail-row';
-      row.innerHTML = `
-        <span class="rdetail-set">Set ${idx + 1}${ratings.length > 1 ? ` (${ratings.length})` : ''}</span>
-        <span class="rdetail-score" style="border-color:${rColor.border};color:${rColor.text};background:${rColor.bg}">${summary.avgScore}</span>
-        <span class="rdetail-why" title="${escHtml(whySummary)}">${escHtml(whySummary || '—')}</span>
-        <button class="rdetail-del" title="Remove rating">✕</button>
-      `;
-      row.querySelector('.rdetail-del').addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        deleteSetRating(num, idx);
-      });
-      rowsWrap.appendChild(row);
-    });
-
-    grp.appendChild(rowsWrap);
-    listEl.appendChild(grp);
-  });
+  np.classList.remove('hidden');
+  dp.classList.add('hidden');
 }
+
+
+
+
 
 function showDeleteRatingBatchModal(batchId) {
   const b = (ST.ratingBatches || []).find(x => x.id === batchId); if (!b) return;
@@ -1751,15 +1983,52 @@ function parsePromptBatch(text) {
 
 function uid() { return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
-function importPrompts(text) {
+function requestImportPrompts(text) {
   const parsed = parsePromptBatch(text);
   const keys   = Object.keys(parsed);
   if (!keys.length) { toast('⚠️ No valid BROLL blocks found'); return; }
 
-  let total = 0;
+  const brollNums = keys.map(Number).sort((a, b) => a - b);
+  let totalPrompts = 0;
+  const summaryLines = [];
+
+  for (const num of brollNums) {
+    const alts = parsed[String(num)] || [];
+    const startSet = (ST.prompts[num] || []).length + 1;
+    const setNums = alts.map((_, i) => startSet + i);
+    totalPrompts += alts.length;
+    summaryLines.push(`BROLL ${num} : SET ${setNums.join(', ')} : ${alts.length} TOTAL`);
+  }
+
+  const summaryText = summaryLines.join('\n');
+  const minN = Math.min(...brollNums), maxN = Math.max(...brollNums);
+  const tabLabel = minN === maxN ? `#${minN}` : `#${minN}–${maxN}`;
+
+  showModal(
+    `📥 Confirm Library Import — ${tabLabel}`,
+    `<div style="font-size:12.5px;line-height:1.5">
+       <p style="margin-bottom:8px;color:var(--text-2);">Summary of prompts to be added:</p>
+       <div class="import-summary-pre">${escHtml(summaryText)}</div>
+       <p style="margin-top:8px;font-size:12px;font-weight:700;color:var(--accent);">TOTAL: ${totalPrompts} Prompts across ${brollNums.length} B-rolls</p>
+     </div>`,
+    () => {
+      applyImportPrompts(parsed, text, brollNums, totalPrompts, tabLabel);
+    },
+    () => {
+      const ta = _el('prompt-textarea');
+      if (ta) ta.value = '';
+      toast('✕ Import cancelled & input cleared');
+    },
+    '✔ Confirm & Add',
+    '✕ Reject & Clear',
+    'primary'
+  );
+}
+
+function applyImportPrompts(parsed, text, brollNums, total, tabLabel) {
+  createProjectBackup(`Before Prompt Import ${tabLabel}`);
   const batchId = uid();
   const rawBlocks = [];
-  const brollNums = keys.map(Number).sort((a, b) => a - b);
 
   for (const num of brollNums) {
     const alts = parsed[String(num)] || [];
@@ -1771,7 +2040,6 @@ function importPrompts(text) {
     alts.forEach((t, i) => {
       const setNo = startSet + i;
       ST.prompts[num].push({ text: t, batchId, copied: false });
-      total++;
       blockLines.push(`SET ${setNo}: ${t}`);
     });
 
@@ -1779,8 +2047,6 @@ function importPrompts(text) {
   }
 
   const formattedRaw = rawBlocks.join('\n\n');
-  const minN = Math.min(...brollNums), maxN = Math.max(...brollNums);
-  const tabLabel = minN === maxN ? `#${minN}` : `#${minN}–${maxN}`;
 
   ST.batches.push({
     id: batchId,
@@ -1803,32 +2069,9 @@ function importPrompts(text) {
   renderLibraryView();
   updateLibBadge();
 
-  // --- Import notification popup ---
-  const IDEAL_BROLLS = 5, IDEAL_SETS = 6, IDEAL_TOTAL = IDEAL_BROLLS * IDEAL_SETS;
-  let breakdown = brollNums.map(num => {
-    const setCount = (parsed[String(num)] || []).length;
-    return `<tr><td style="padding:2px 10px 2px 0">B-roll #${num}</td><td>${setCount} set${setCount!==1?'s':''}</td></tr>`;
-  }).join('');
-
-  let matchNote;
-  if (total === IDEAL_TOTAL && brollNums.length === IDEAL_BROLLS) {
-    matchNote = `<p style="color:#4ade80;margin-top:8px">✅ Perfect — ${IDEAL_BROLLS} B-rolls × ${IDEAL_SETS} sets = ${IDEAL_TOTAL} prompts</p>`;
-  } else {
-    const diff = total - IDEAL_TOTAL;
-    const sign = diff > 0 ? '+' : '';
-    matchNote = `<p style="color:#fb923c;margin-top:8px">⚠️ Expected ${IDEAL_TOTAL} prompts (${IDEAL_BROLLS}×${IDEAL_SETS}). Got <strong>${total}</strong> (${sign}${diff})</p>`;
-  }
-
-  showModal(
-    `📥 Import Summary — ${tabLabel}`,
-    `<div style="font-size:13px;line-height:1.5">
-      <p style="margin-bottom:6px"><strong>${total}</strong> prompt${total!==1?'s':''} imported across <strong>${brollNums.length}</strong> B-roll${brollNums.length!==1?'s':''}</p>
-      <table style="border-collapse:collapse;margin-top:4px">${breakdown}</table>
-      ${matchNote}
-    </div>`,
-    () => {} // OK just closes
-  );
+  toast(`✅ Imported ${total} prompts across ${brollNums.length} B-rolls`);
 }
+
 
 
 
@@ -1979,26 +2222,43 @@ function renderBatchTabs() {
   bar.innerHTML = '';
 
   const newTab = document.createElement('button');
+  newTab.type = 'button';
   newTab.className = 'batch-tab' + (ST.activeBatch === 'new' ? ' active' : '');
   newTab.innerHTML = '<span>＋ New Import</span>';
-  newTab.addEventListener('click', () => switchBatchTab('new'));
+  newTab.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchBatchTab('new');
+  });
   bar.appendChild(newTab);
 
   [...ST.batches].reverse().forEach(b => {
     const tab = document.createElement('button');
+    tab.type = 'button';
     tab.className = 'batch-tab' + (ST.activeBatch === b.id ? ' active' : '');
     const lbl = document.createElement('span'); lbl.className = 'btab-label'; lbl.textContent = b.label; tab.appendChild(lbl);
     const del = document.createElement('span'); del.className = 'btab-del'; del.textContent = '×'; del.title = 'Delete batch';
-    del.addEventListener('click', e => { e.stopPropagation(); showDeleteBatchModal(b.id); });
+    del.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); showDeleteBatchModal(b.id); });
     tab.appendChild(del);
-    tab.addEventListener('click', () => switchBatchTab(b.id));
+    tab.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchBatchTab(b.id);
+    });
     bar.appendChild(tab);
   });
 }
 
 function switchBatchTab(batchId) {
-  ST.activeBatch = batchId; renderBatchTabs(); renderBatchPanel();
+  if (ST.activeBatch === batchId && batchId !== 'new') {
+    ST.activeBatch = 'new';
+  } else {
+    ST.activeBatch = batchId;
+  }
+  renderBatchTabs();
+  renderBatchPanel();
 }
+
+
+
 
 function renderBatchPanel() {
   const np = _el('batch-panel-new'), dp = _el('batch-panel-detail'); if (!np || !dp) return;
@@ -2062,92 +2322,26 @@ function updateLibBadge() {
 
 /* ── Library view ───────────────────────────────────────────── */
 function renderLibraryView() {
-  const view = _el('library-view'); if (!view) return;
-  const nums = Object.keys(ST.prompts).map(Number).filter(n=>(ST.prompts[n]||[]).length>0).sort((a,b)=>a-b);
-  if (!nums.length) {
-    view.innerHTML = `<div class="lib-empty"><span style="font-size:28px">📭</span><p>No prompts yet — import a batch above.</p></div>`;
-    return;
-  }
-  const groups = {};
-  nums.forEach(n => {
-    const base = Math.floor((n-1)/10)*10+1, key = `${base}–${base+9}`;
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(n);
-  });
-  view.innerHTML = '';
-  for (const [range, gNums] of Object.entries(groups)) {
-    const grp = document.createElement('div'); grp.className = 'lib-group';
-    const hdr = document.createElement('div'); hdr.className = 'lib-group-hdr';
-    const cnt = gNums.reduce((s,n) => s+(ST.prompts[n]?.length||0), 0);
-    hdr.innerHTML = `<span class="lib-range">B-ROLL ${range}</span><span class="lib-range-count">${cnt} prompts</span>`;
-    grp.appendChild(hdr);
-    gNums.forEach(num => {
-      const row = document.createElement('div'); row.className = 'lib-row'; row.id = `lr-${num}`;
-      const numLbl = document.createElement('span'); numLbl.className = 'lib-num'; numLbl.textContent = `#${num}`;
-      numLbl.addEventListener('click', () => _el(`card-${num}`)?.scrollIntoView({ behavior:'smooth', block:'center' }));
-      row.appendChild(numLbl);
-      const col = document.createElement('div'); col.className = 'lib-chips-col'; col.id = `lc-${num}`;
-      (ST.prompts[num]||[]).forEach((entry, i) => col.appendChild(buildLibChip(num, i, entry)));
-      row.appendChild(col); grp.appendChild(row);
-    });
-    view.appendChild(grp);
-  }
+  const view = _el('library-view');
+  if (view) view.innerHTML = '';
+  updateLibBadge();
 }
 
-function buildLibChip(num, i, entry) {
-  const used = ST.usedSets[num] === i;
-  const chip = document.createElement('div');
-  chip.className = 'lib-chip' + (entry.copied ? ' copied' : '') + (used ? ' is-used' : '');
-  chip.id = `lcp-${num}-${i}`;
-
-  const left = document.createElement('div'); left.className = 'lib-chip-left';
-
-  const numB = document.createElement('span'); numB.className = 'lib-chip-num'; numB.textContent = i+1;
-  left.appendChild(numB);
-  if (entry.copied) { const ck = document.createElement('span'); ck.className = 'lib-chip-check'; ck.textContent = '✓'; left.appendChild(ck); }
-  const pin = document.createElement('span');
-  pin.className = 'lib-chip-pin'; pin.textContent = '📌'; pin.title = 'Marked as used for rating';
-  pin.style.display = used ? '' : 'none';
-  left.appendChild(pin);
-  if (entry.batchId) {
-    const bIdx = ST.batches.findIndex(b => b.id === entry.batchId);
-    if (bIdx !== -1) {
-      const bb = document.createElement('span'); bb.className = 'lib-chip-batch';
-      bb.textContent = `B${bIdx+1}`; bb.title = ST.batches[bIdx].label; left.appendChild(bb);
-    }
-  }
-  chip.appendChild(left);
-
-  const preview = document.createElement('span'); preview.className = 'lib-chip-preview'; preview.textContent = entry.text.slice(0,100)+(entry.text.length>100?'…':'');
-  chip.appendChild(preview);
-
-  const actions = document.createElement('div'); actions.className = 'lib-chip-actions';
-  const copyBtn = document.createElement('button'); copyBtn.className = 'lca-btn copy'; copyBtn.textContent = '📋'; copyBtn.title = 'Copy (with prefix/suffix)';
-  copyBtn.addEventListener('click', e => { e.stopPropagation(); copyPrompt(num, i, copyBtn); });
-  const useBtn = document.createElement('button'); useBtn.className = 'lca-btn use' + (used?' is-used':''); useBtn.textContent = '📌'; useBtn.title = used ? 'Unmark as used' : 'Mark as set used for this rating';
-  useBtn.addEventListener('click', e => { e.stopPropagation(); setUsedSet(num, i); renderLibraryView(); });
-  const delBtn = document.createElement('button'); delBtn.className = 'lca-btn del'; delBtn.textContent = '✕'; delBtn.title = 'Delete this prompt';
-  delBtn.addEventListener('click', e => { e.stopPropagation(); deletePromptEntry(num, i); });
-  actions.appendChild(copyBtn); actions.appendChild(useBtn); actions.appendChild(delBtn);
-  chip.appendChild(actions);
-
-  preview.addEventListener('click', () => copyPrompt(num, i, chip));
-  return chip;
-}
 
 
 /* ── Build single prompt chip (Card & Library) ──────────────── */
-function buildPromptChip(num, i, entry) {
+function buildPromptChip(num, i, entry, idPrefix = '') {
   const chip = document.createElement('button');
   const isCopied = !!entry.copied;
   const isUsed = ST.usedSets[num] === i;
+
 
   const summary = getSetRatingSummary(num, i);
   const rColor = summary ? summary.color : null;
 
   // Base classes
   chip.className = 'p-chip' + (isCopied ? ' copied' : '') + (isUsed ? ' is-used' : '');
-  chip.id = `pc-${num}-${i}`;
+  chip.id = idPrefix ? `${idPrefix}pc-${num}-${i}` : `pc-${num}-${i}`;
 
   // Label span
   const sp = document.createElement('span');
@@ -2210,7 +2404,7 @@ function buildPromptChip(num, i, entry) {
       holdTimer = setTimeout(() => {
         didHoldTrigger = true;
         if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
-        const oldVal = !!entry.copied;
+        const oldVal = !entry.copied;
         const newVal = !oldVal;
         const apply = (val) => {
           entry.copied = val;
@@ -2269,7 +2463,7 @@ function buildPromptChip(num, i, entry) {
   const myR = getMyRating(num, i);
   const myBtn = document.createElement('button');
   myBtn.className = 'myrating-chip-btn' + (myR ? ' has-rating' : '');
-  myBtn.id = `myrb-${num}-${i}`;
+  myBtn.id = idPrefix ? `${idPrefix}myrb-${num}-${i}` : `myrb-${num}-${i}`;
   if (myR) {
     const mc = getMyRatingColor(myR.score);
     myBtn.textContent = myR.score === 0 ? '0 ↺' : myR.score;
@@ -2290,6 +2484,81 @@ function buildPromptChip(num, i, entry) {
     showMyRatingModal(myBtn, num, i);
   });
 
+  // PC Mouse: Single Right-Click = Tier 1 (default 5), Double Right-Click = Tier 2 (default 9)
+  let _rcTimer = null;
+  myBtn.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const t1 = ST.quickRateTier1 ?? 5;
+    const t2 = ST.quickRateTier2 ?? 9;
+
+    if (_rcTimer) {
+      // Double right-click detected!
+      clearTimeout(_rcTimer);
+      _rcTimer = null;
+      saveMyRating(num, i, t2, '');
+      myBtn.classList.add('longpress-flash-tier2');
+      setTimeout(() => myBtn?.classList.remove('longpress-flash-tier2'), 500);
+      toast(`⚡ Double Right-Click: Quick rated #${num} Set ${i + 1}: ${t2}`);
+    } else {
+      _rcTimer = setTimeout(() => {
+        _rcTimer = null;
+        saveMyRating(num, i, t1, '');
+        myBtn.classList.add('longpress-flash');
+        setTimeout(() => myBtn?.classList.remove('longpress-flash'), 400);
+        toast(`⚡ Quick rated #${num} Set ${i + 1}: ${t1}`);
+      }, 300);
+    }
+  });
+
+  // Mobile / Touchscreen: Hold 1.0s = Tier 1 (5), Hold 2.5s = Tier 2 (9)
+  let _lpTimer1 = null;
+  let _lpTimer2 = null;
+  let _touchStartX = 0, _touchStartY = 0;
+
+  myBtn.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    _touchStartX = e.touches[0].clientX;
+    _touchStartY = e.touches[0].clientY;
+
+    const t1 = ST.quickRateTier1 ?? 5;
+    const t2 = ST.quickRateTier2 ?? 9;
+
+    // 1.0 second hold -> Tier 1
+    _lpTimer1 = setTimeout(() => {
+      _lpTimer1 = null;
+      if (navigator.vibrate) try { navigator.vibrate(50); } catch {}
+      myBtn.classList.add('longpress-flash');
+      saveMyRating(num, i, t1, '');
+      toast(`⚡ 1s Hold: Quick rated #${num} Set ${i + 1}: ${t1}`);
+      setTimeout(() => myBtn?.classList.remove('longpress-flash'), 400);
+    }, 1000);
+
+    // 2.5 seconds hold -> Tier 2
+    _lpTimer2 = setTimeout(() => {
+      _lpTimer2 = null;
+      if (navigator.vibrate) try { navigator.vibrate([60, 40, 60]); } catch {}
+      myBtn.classList.add('longpress-flash-tier2');
+      saveMyRating(num, i, t2, '');
+      toast(`⚡ 2.5s Hold: Quick rated #${num} Set ${i + 1}: ${t2}`);
+      setTimeout(() => myBtn?.classList.remove('longpress-flash-tier2'), 600);
+    }, 2500);
+  }, { passive: true });
+
+  const cancelTouch = (e) => {
+    if (e && e.touches && e.touches.length === 1) {
+      const dx = Math.abs(e.touches[0].clientX - _touchStartX);
+      const dy = Math.abs(e.touches[0].clientY - _touchStartY);
+      if (dx < 10 && dy < 10) return;
+    }
+    if (_lpTimer1) { clearTimeout(_lpTimer1); _lpTimer1 = null; }
+    if (_lpTimer2) { clearTimeout(_lpTimer2); _lpTimer2 = null; }
+  };
+
+  myBtn.addEventListener('touchend', cancelTouch);
+  myBtn.addEventListener('touchcancel', cancelTouch);
+  myBtn.addEventListener('touchmove', cancelTouch, { passive: true });
+
   wrapper.appendChild(myBtn);
   return wrapper;
 }
@@ -2299,20 +2568,57 @@ function buildPromptChip(num, i, entry) {
 
 
 
+
+
+function buildPromptChipsElement(num, prompts, allowedSetIndices = null, idPrefix = '') {
+  if (!prompts || !prompts.length) return null;
+  const filtered = prompts
+    .map((entry, i) => ({ entry, i }))
+    .filter(x => !allowedSetIndices || allowedSetIndices.includes(x.i));
+
+  if (!filtered.length) return null;
+
+  const prow = document.createElement('div');
+  prow.className = 'c-prompts';
+  prow.id = idPrefix ? `${idPrefix}cp-${num}` : `cp-${num}`;
+
+  // Group prompts by batchId
+  const batchMap = new Map();
+  filtered.forEach(({ entry, i }) => {
+    const bId = entry.batchId || 'default';
+    if (!batchMap.has(bId)) batchMap.set(bId, []);
+    batchMap.get(bId).push({ entry, i });
+  });
+
+  batchMap.forEach((items, bId) => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'p-batch-group';
+    groupEl.dataset.batchId = bId;
+
+    items.forEach(({ entry, i }) => {
+      groupEl.appendChild(buildPromptChip(num, i, entry, idPrefix));
+    });
+
+    prow.appendChild(groupEl);
+  });
+
+  return prow;
+}
+
+
+
 function updateCardPrompts(num) {
   const card = _el(`card-${num}`); if (!card) return;
   const existingPr = _el(`cp-${num}`);
   const mid = card.querySelector('.c-mid');
   const prompts = ST.prompts[num] || [];
 
+  const activeRBatch = ST.activeRatingBatchFilter ? (ST.ratingBatches || []).find(x => x.id === ST.activeRatingBatchFilter) : null;
+  const allowedSets = activeRBatch ? getBatchSetsForBroll(activeRBatch, num) : null;
+
   if (existingPr) existingPr.remove();
-  if (!prompts.length) return;
-
-  const prow = document.createElement('div'); prow.className = 'c-prompts'; prow.id = `cp-${num}`;
-  prompts.forEach((entry, i) => prow.appendChild(buildPromptChip(num, i, entry)));
-
-
-  mid.appendChild(prow);
+  const prow = buildPromptChipsElement(num, prompts, allowedSets);
+  if (prow) mid.appendChild(prow);
 
   // Also refresh the Done button in the right column
   const doneBtn = _el(`done-btn-${num}`);
@@ -2325,6 +2631,8 @@ function updateCardPrompts(num) {
       : `Mark B-roll #${num} as Done (9+ in Overview)`;
   }
 }
+
+
 
 
 
@@ -2379,6 +2687,8 @@ function getLineRealRating(num) {
 function passes(b) {
   const target = ST.filterTarget || 'main';
   const f = ST.filter;
+
+
 
   if (target === 'main') {
     const s = ST.scores[b.num] ?? null;
@@ -2780,32 +3090,106 @@ function renderFilterCount() {
 /* ── Cards ──────────────────────────────────────────────────── */
 function renderCards(animate=false) {
   const box=_el('cards-container'), noRes=_el('no-results'), empty=_el('empty-state'), fbar=_el('filter-bar');
-  if(!ST.brolls.length){box.innerHTML='';empty.classList.remove('hidden');noRes.style.display='none';fbar.classList.add('hidden');return;}
+  if(!ST.brolls.length){
+    box.innerHTML='';empty.classList.remove('hidden');noRes.style.display='none';fbar.classList.add('hidden');
+    box.style.minHeight='';
+    return;
+  }
   empty.classList.add('hidden');fbar.classList.remove('hidden');
-  const list=sortedList(ST.brolls.filter(passes)); renderFilterCount();
-  if(!list.length){box.innerHTML='';noRes.style.display='block';return;}
+
+  let list = sortedList(ST.brolls.filter(passes));
+
+  const activeRBatch = ST.activeRatingBatchFilter ? (ST.ratingBatches || []).find(x => x.id === ST.activeRatingBatchFilter) : null;
+  if (activeRBatch) {
+    list = list.filter(b => activeRBatch.brolls.includes(b.num));
+  }
+
+  renderFilterCount();
+
+  const curHeight = box.offsetHeight;
+  if (curHeight > 0) box.style.minHeight = curHeight + 'px';
+
+  // Render batch filter banner if active
+  const existingBanner = document.getElementById('batch-filter-banner');
+  if (existingBanner) existingBanner.remove();
+
+  if (activeRBatch) {
+    const banner = document.createElement('div');
+    banner.id = 'batch-filter-banner';
+    banner.className = 'batch-filter-banner';
+    banner.innerHTML = `
+      <div class="bfb-info">
+        <span class="bfb-badge">⭐ Rating Batch: ${escHtml(activeRBatch.label)}</span>
+        <span class="bfb-meta">Showing ${list.length} B-rolls (${activeRBatch.count || list.length} ratings)</span>
+      </div>
+      <button class="hbtn" id="btn-clear-batch-filter">✕ Show All Cards</button>
+    `;
+    banner.querySelector('#btn-clear-batch-filter').addEventListener('click', () => {
+      ST.activeRatingBatchFilter = null;
+      ST.activeRatingBatch = 'new';
+      renderRatingTabs();
+      renderCards();
+      toast('👁️ Showing all cards');
+    });
+    box.parentElement.insertBefore(banner, box);
+  }
+
+  if(!list.length){
+    box.innerHTML='';noRes.style.display='block';
+    requestAnimationFrame(() => { box.style.minHeight = ''; });
+    return;
+  }
   noRes.style.display='none'; box.innerHTML='';
-  list.forEach((b,i)=>{const card=buildCard(b);if(animate){card.style.animationDelay=`${Math.min(i*18,300)}ms`;card.classList.add('card-enter');}box.appendChild(card);});
+
+  list.forEach((b,i)=>{
+    const allowedSets = activeRBatch ? getBatchSetsForBroll(activeRBatch, b.num) : null;
+    const card=buildCard(b, allowedSets);
+    if (activeRBatch) card.classList.add('is-expanded');
+    if(animate){card.style.animationDelay=`${Math.min(i*18,300)}ms`;card.classList.add('card-enter');}
+    box.appendChild(card);
+  });
+  updateCompactViewUI();
+
+  requestAnimationFrame(() => {
+    box.style.minHeight = '';
+  });
 }
 
-function buildCard(b) {
+
+
+
+function buildCard(b, allowedSetIndices = null, idPrefix = '') {
   const score=ST.scores[b.num]??null, col=getC(score), prompts=ST.prompts[b.num]||[];
   const used=ST.usedSets[b.num];
 
   const card=document.createElement('div');
-  card.className='broll-card'; card.id=`card-${b.num}`;
+  card.className='broll-card';
+  card.id = idPrefix ? `${idPrefix}card-${b.num}` : `card-${b.num}`;
   card.style.borderLeftColor=col.border;
 
   /* Badge */
   const badge=document.createElement('div');
-  badge.className='c-num'; badge.id=`cn-${b.num}`;
+  badge.className='c-num';
+  badge.id = idPrefix ? `${idPrefix}cn-${b.num}` : `cn-${b.num}`;
   badge.style.background=col.bg;
   badge.style.boxShadow=col.glow!=='transparent'?`0 3px 14px ${col.glow}`:'none';
   badge.textContent=b.num; card.appendChild(badge);
 
   /* Middle */
   const mid=document.createElement('div'); mid.className='c-mid';
-  const line=document.createElement('div'); line.className='c-line'; line.textContent=b.line; line.title=b.line; mid.appendChild(line);
+  const line=document.createElement('div'); line.className='c-line'; line.textContent=b.line; line.title=b.line;
+  mid.appendChild(line);
+
+  // Bengali / 2nd Language line
+  const bnLine = ST.bengaliLines ? ST.bengaliLines[b.num] : null;
+  if (ST.showBengali !== false && bnLine) {
+    const bnEl = document.createElement('div');
+    bnEl.className = 'c-line-bengali';
+    bnEl.textContent = bnLine;
+    bnEl.title = `Bengali: ${bnLine}`;
+    mid.appendChild(bnEl);
+  }
+
 
   /* Slider */
   const slRow=document.createElement('div'); slRow.className='c-slider-row';
@@ -2813,7 +3197,8 @@ function buildCard(b) {
   const slWrap=document.createElement('div'); slWrap.className='slider-wrap' + (ST.mainRatingLocked ? ' is-locked' : '');
   const inp=document.createElement('input');
   inp.type='range'; inp.min='0'; inp.max='10'; inp.step='0.5'; inp.value=score!==null?score:'0';
-  inp.className='score-slider'; inp.id=`sl-${b.num}`;
+  inp.className='score-slider';
+  inp.id = idPrefix ? `${idPrefix}sl-${b.num}` : `sl-${b.num}`;
   inp.disabled = !!ST.mainRatingLocked;
   inp.setAttribute('list','score-steps'); inp.setAttribute('aria-label',`B-roll ${b.num} score`);
   applySliderStyle(inp, score);
@@ -2855,26 +3240,24 @@ function buildCard(b) {
   const l10=document.createElement('span'); l10.className='s-label'; l10.textContent='10'; slRow.appendChild(l10);
   mid.appendChild(slRow);
 
-  /* Prompt chips */
-  if(prompts.length){
-    const prow=document.createElement('div'); prow.className='c-prompts'; prow.id=`cp-${b.num}`;
-    prompts.forEach((entry,i)=>prow.appendChild(buildPromptChip(b.num,i,entry)));
-    mid.appendChild(prow);
-  }
-
+  /* Prompt chips (filtered to allowed sets if passed) */
+  const prow = buildPromptChipsElement(b.num, prompts, allowedSetIndices, idPrefix);
+  if (prow) mid.appendChild(prow);
 
   card.appendChild(mid);
 
-  /* Right: score wrap + clear */
+  /* Right: score wrap + copy line + done + expand */
   const right=document.createElement('div'); right.className='c-right';
 
   const scoreWrap=document.createElement('div'); scoreWrap.className='c-score-wrap';
-  const val=document.createElement('div'); val.className='score-val'; val.id=`sv-${b.num}`;
+  const val=document.createElement('div'); val.className='score-val';
+  val.id = idPrefix ? `${idPrefix}sv-${b.num}` : `sv-${b.num}`;
   val.style.background=col.bg; val.style.borderColor=col.border; val.textContent=scoreLbl(score);
   scoreWrap.appendChild(val);
 
   const suBadge=document.createElement('div');
-  suBadge.className='su-badge'+(used!==undefined?'':' hidden'); suBadge.id=`su-${b.num}`;
+  suBadge.className='su-badge'+(used!==undefined?'':' hidden');
+  suBadge.id = idPrefix ? `${idPrefix}su-${b.num}` : `su-${b.num}`;
   suBadge.textContent=used!==undefined?`S${used+1}`:''; suBadge.title=used!==undefined?`Used set ${used+1} for this rating`:'';
   scoreWrap.appendChild(suBadge);
   right.appendChild(scoreWrap);
@@ -2901,7 +3284,7 @@ function buildCard(b) {
   const isCov = !!(ST.covered && ST.covered[b.num]);
   const doneBtn = document.createElement('button');
   doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
-  doneBtn.id = `done-btn-${b.num}`;
+  doneBtn.id = idPrefix ? `${idPrefix}done-btn-${b.num}` : `done-btn-${b.num}`;
   doneBtn.innerHTML = isCov ? '✔' : '◻';
   doneBtn.title = isCov
     ? `B-roll #${b.num} is Done (9+ in Overview)\nClick to unmark`
@@ -2912,9 +3295,29 @@ function buildCard(b) {
   });
   right.appendChild(doneBtn);
 
+  const countDisplay = allowedSetIndices ? allowedSetIndices.length : prompts.length;
+  // Open / Expand prompt boxes button (below Copy & Done buttons)
+  if (countDisplay > 0) {
+    const expBtn = document.createElement('button');
+    expBtn.className = 'c-exp-card-btn';
+    expBtn.id = idPrefix ? `${idPrefix}exp-btn-${b.num}` : `exp-btn-${b.num}`;
+    expBtn.innerHTML = `<span class="exp-count">${countDisplay}</span><span class="exp-arrow">▾</span>`;
+    expBtn.title = `Expand prompt sets for #${b.num} (${countDisplay} set${countDisplay>1?'s':''})`;
+    expBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isExp = card.classList.toggle('is-expanded');
+      expBtn.classList.toggle('active', isExp);
+      const arr = expBtn.querySelector('.exp-arrow');
+      if (arr) arr.textContent = isExp ? '▴' : '▾';
+    });
+    right.appendChild(expBtn);
+  }
+
   card.appendChild(right);
   return card;
 }
+
+
 
 
 
@@ -3015,17 +3418,57 @@ function updateCardVisuals(num,score){
   if(brl&&!passes(brl)){card.style.opacity='0.35';card.style.transform='translateX(6px)';setTimeout(()=>renderCards(),500);}
 }
 
-/* ── Load script ────────────────────────────────────────────── */
-function loadScript(text,keepScores=true){
-  const brolls=parseScript(text);
-  if(!brolls.length){toast('⚠️ No valid lines found');return;}
-  ST.brolls=brolls; if(!keepScores)ST.scores={};
-  collapseInput(); save();
-  renderProjectTabs();
-  renderHeatmap(); renderStats(); renderCards(true); updateAllPromptChips();
-  updateLineCopyPreview();
-  toast(`✅ Loaded ${brolls.length} B-roll clips`);
+/* ── Bengali / 2nd Language Script Parser ──────────────────── */
+function parseAltScript(text) {
+  const map = {};
+  if (!text) return map;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  for (const l of lines) {
+    const m = l.match(/^#?(?:broll|b-roll|clip)?\s*(\d+(?:\.\d+)?)\s*[:\.\-–]?\s+(.+)/i);
+    if (m) {
+      map[parseFloat(m[1])] = m[2].trim();
+    }
+  }
+  return map;
 }
+
+/* ── Load script ────────────────────────────────────────────── */
+function loadScript(text, keepScores = true) {
+  const ta = _el('script-textarea');
+  const bnTa = _el('script-bengali-textarea');
+  const enText = (text !== undefined && text !== null) ? text : (ta ? ta.value : '');
+  const bnText = bnTa ? bnTa.value : (ST.bengaliScript || '');
+
+  const brolls = parseScript(enText);
+  if (!brolls.length && enText.trim().length > 0) {
+    toast('⚠️ No valid lines found in English script');
+    return;
+  }
+
+  createProjectBackup('Before Load Script');
+
+  ST.brolls = brolls;
+  ST.bengaliScript = bnText;
+  ST.bengaliLines = parseAltScript(bnText);
+
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    PROJECTS[ACTIVE_PID].script = enText;
+    PROJECTS[ACTIVE_PID].bengaliScript = bnText;
+    PROJECTS[ACTIVE_PID].bengaliLines = ST.bengaliLines;
+  }
+
+  if (!keepScores) ST.scores = {};
+  collapseInput();
+  save(true);
+  renderProjectTabs();
+  renderHeatmap();
+  renderStats();
+  renderCards(true);
+  updateAllPromptChips();
+  updateLineCopyPreview();
+  toast(brolls.length ? `✅ Loaded ${brolls.length} B-roll clips` : 'ℹ️ Script cleared');
+}
+
 
 function collapseInput(){_el('input-section')?.classList.add('collapsed');ST.inputOpen=false;const ch=document.querySelector('#input-section .it-chevron');if(ch)ch.textContent='▼';}
 function expandInput(){_el('input-section')?.classList.remove('collapsed');ST.inputOpen=true;const ch=document.querySelector('#input-section .it-chevron');if(ch)ch.textContent='▲';}
@@ -3088,11 +3531,13 @@ function setFilter(f) {
     c.classList.toggle('active', isAct);
     c.setAttribute('aria-pressed', isAct ? 'true' : 'false');
   });
+  _el('tb-needs-work')?.classList.toggle('active', f === 'needs');
   if (!f.startsWith('below:')) { const e = _el('fb-below'); if (e) e.value = ''; }
   if (!f.startsWith('above:')) { const e = _el('fb-above'); if (e) e.value = ''; }
   renderCards();
   renderFilterCount();
 }
+
 
 /* ── Line Copy & Filter Tool ────────────────────────────────── */
 let LC_TARGET = 'main';
@@ -3151,6 +3596,24 @@ function getFilteredLines() {
 }
 
 
+function formatBatch5Lines(matches, includeNum, lineGap) {
+  const formattedLines = matches.map(b => {
+    const prefix = includeNum ? `${b.num} ` : '';
+    return `${prefix}${b.line}`;
+  });
+
+  const chunks = [];
+  for (let i = 0; i < formattedLines.length; i += 5) {
+    const chunk = formattedLines.slice(i, i + 5);
+    const itemSep = lineGap ? '\n\n' : '\n';
+    chunks.push(chunk.join(itemSep));
+  }
+
+  // 2 line gap (2 blank lines = \n\n\n) between each batch of 5
+  const batchSep = lineGap ? '\n\n\n\n' : '\n\n\n';
+  return chunks.join(batchSep);
+}
+
 function updateLineCopyPreview() {
   const ta = _el('lc-preview-textarea');
   const countBadge = _el('lc-count-badge');
@@ -3161,13 +3624,7 @@ function updateLineCopyPreview() {
   const includeNum = _el('lc-include-num') ? _el('lc-include-num').checked : true;
   const lineGap = _el('lc-line-gap') ? _el('lc-line-gap').checked : true;
 
-  const formattedLines = matches.map(b => {
-    const prefix = includeNum ? `${b.num} ` : '';
-    return `${prefix}${b.line}`;
-  });
-
-  const sep = lineGap ? '\n\n' : '\n';
-  const text = formattedLines.join(sep);
+  const text = formatBatch5Lines(matches, includeNum, lineGap);
   ta.value = text;
 
   const countText = `${matches.length} line${matches.length === 1 ? '' : 's'} matching filter`;
@@ -3191,7 +3648,7 @@ function copyFilteredLines() {
   }
   const text = ta.value.trim();
   const matches = getFilteredLines();
-  const doConfirm = () => toast(`📋 Copied ${matches.length} filtered lines to clipboard!`);
+  const doConfirm = () => toast(`📋 Copied ${matches.length} filtered lines in batches of 5!`);
   if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(doConfirm).catch(() => fbCopy(text, doConfirm));
   } else {
@@ -3199,13 +3656,66 @@ function copyFilteredLines() {
   }
 }
 
+function getNeedsWorkLines() {
+  if (!ST.brolls || !ST.brolls.length) return [];
+  const skipReal9 = _el('lc-skip-real-9') ? _el('lc-skip-real-9').checked : true;
+
+  return ST.brolls.filter(b => {
+    // If skip real >= 9 or covered is checked
+    if (skipReal9) {
+      if (ST.covered && ST.covered[b.num]) return false;
+      const lr = getLineRealRating(b.num);
+      if (lr.isRated && lr.score >= 9) return false;
+    }
+
+    if (LC_TARGET === 'main') {
+      const s = ST.scores[b.num] ?? null;
+      return s === null || s < 9;
+    } else {
+      const lr = getLineRealRating(b.num);
+      return !lr.isRated || lr.score < 9;
+    }
+  });
+}
+
+function copyNeedsWorkLines() {
+  const matches = getNeedsWorkLines();
+  if (!matches.length) {
+    toast('🎉 All lines are 9+! No lines need work.');
+    return;
+  }
+  const includeNum = _el('lc-include-num') ? _el('lc-include-num').checked : true;
+  const lineGap = _el('lc-line-gap') ? _el('lc-line-gap').checked : true;
+
+  const text = formatBatch5Lines(matches, includeNum, lineGap);
+
+  const doConfirm = () => toast(`📋 Copied ${matches.length} "Needs Work" lines in batches of 5!`);
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(doConfirm).catch(() => fbCopy(text, doConfirm));
+  } else {
+    fbCopy(text, doConfirm);
+  }
+}
+
+
+
 /* ── Export / Import ────────────────────────────────────────── */
 
 function exportData(){
+  saveProjects(true);
   const ta = _el('script-textarea');
+  const bnTa = _el('script-bengali-textarea');
   const scriptVal = ta ? ta.value : (PROJECTS[ACTIVE_PID]?.script || '');
+  const bnScriptVal = bnTa ? bnTa.value : (PROJECTS[ACTIVE_PID]?.bengaliScript || ST.bengaliScript || '');
+
   const d = {
-    v: 6, date: new Date().toISOString(), script: scriptVal,
+    v: 7,
+    date: new Date().toISOString(),
+    active: ACTIVE_PID,
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    script: scriptVal,
+    bengaliScript: bnScriptVal,
+    bengaliLines: JSON.parse(JSON.stringify(ST.bengaliLines || {})),
     scores: JSON.parse(JSON.stringify(ST.scores)),
     prompts: JSON.parse(JSON.stringify(ST.prompts)),
     batches: JSON.parse(JSON.stringify(ST.batches)),
@@ -3214,10 +3724,12 @@ function exportData(){
     ratingBatches: JSON.parse(JSON.stringify(ST.ratingBatches || [])),
     myRatings: JSON.parse(JSON.stringify(ST.myRatings || {})),
     covered: JSON.parse(JSON.stringify(ST.covered || {})),
-    prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled,
+    prefix: ST.prefix,
+    suffix: ST.suffix,
+    labelEnabled: ST.labelEnabled,
   };
   const json = JSON.stringify(d, null, 2);
-  const filename = `broll-${new Date().toISOString().slice(0,10)}.json`;
+  const filename = `broll-tracker-${new Date().toISOString().slice(0,10)}.json`;
   try {
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -3230,38 +3742,76 @@ function exportData(){
     a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
     a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
-  toast('📥 Exported');
+  toast('📥 Exported complete backup');
 }
+
 function importJSON(file){
   const r = new FileReader();
   r.onload = ev => {
     try {
       const d = JSON.parse(ev.target.result);
-      if (d.script) { const ta = _el('script-textarea'); if (ta) ta.value = d.script; }
-      ST.scores        = d.scores        || {};
-      ST.prompts       = _migratePrompts(d.prompts || {});
-      ST.batches       = d.batches       || [];
-      ST.usedSets      = d.usedSets      || {};
-      ST.setRatings    = _migrateSetRatings(d.setRatings || {});
-      ST.ratingBatches = d.ratingBatches || [];
-      ST.myRatings     = _migrateMyRatings(d.myRatings || {});
-      ST.covered       = _migrateCovered(d.covered || {});
-      if (d.prefix !== undefined) ST.prefix = d.prefix;
-      if (d.suffix !== undefined) ST.suffix = d.suffix;
-      if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
-      if (d.script) loadScript(d.script, true);
+      createProjectBackup('Before Import JSON');
+
+      // If full multi-project export
+      if (d.projects && typeof d.projects === 'object' && Object.keys(d.projects).length) {
+        for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+        for (const [k, v] of Object.entries(d.projects)) {
+          PROJECTS[k] = {
+            name: v.name || 'Script',
+            script: v.script || '',
+            bengaliScript: v.bengaliScript || '',
+            bengaliLines: v.bengaliLines || parseAltScript(v.bengaliScript || ''),
+            scores: _migrateScores(v.scores),
+            prompts: _migratePrompts(v.prompts || {}),
+            batches: v.batches || [],
+            usedSets: _migrateUsedSets(v.usedSets),
+            setRatings: _migrateSetRatings(v.setRatings || {}),
+            ratingBatches: v.ratingBatches || [],
+            myRatings: _migrateMyRatings(v.myRatings || {}),
+            covered: _migrateCovered(v.covered || {})
+          };
+        }
+        const activePid = (d.active && PROJECTS[d.active]) ? d.active : Object.keys(PROJECTS)[0];
+        if (d.prefix !== undefined) ST.prefix = d.prefix;
+        if (d.suffix !== undefined) ST.suffix = d.suffix;
+        if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
+        saveGlobalCset();
+        activateProject(activePid);
+      } else {
+        // Single project import format
+        const pid = ACTIVE_PID || uid();
+        const bnScript = d.bengaliScript || '';
+        PROJECTS[pid] = {
+          name: PROJECTS[pid]?.name || 'Script 1',
+          script: d.script || '',
+          bengaliScript: bnScript,
+          bengaliLines: d.bengaliLines || parseAltScript(bnScript),
+          scores: _migrateScores(d.scores),
+          prompts: _migratePrompts(d.prompts || {}),
+          batches: d.batches || [],
+          usedSets: _migrateUsedSets(d.usedSets),
+          setRatings: _migrateSetRatings(d.setRatings || {}),
+          ratingBatches: d.ratingBatches || [],
+          myRatings: _migrateMyRatings(d.myRatings || {}),
+          covered: _migrateCovered(d.covered || {})
+        };
+        if (d.prefix !== undefined) ST.prefix = d.prefix;
+        if (d.suffix !== undefined) ST.suffix = d.suffix;
+        if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
+        saveGlobalCset();
+        activateProject(pid);
+      }
+
       save(true);
-      renderHeatmap(); renderStats(); renderCards(true);
-      renderLibraryView(); renderBatchTabs(); updateLibBadge(); syncCsetUI();
-      renderRatingTabs(); renderRatingPanel(); updateSratingHint(); updateAllPromptChips();
-      renderMyDatabase();
-      toast('📤 Imported');
-
-
-    } catch(err) { console.error('Import error:', err); toast('❌ Invalid file'); }
+      toast('📤 Backup imported successfully');
+    } catch(err) {
+      console.error('Import error:', err);
+      toast('❌ Invalid JSON file');
+    }
   };
   r.readAsText(file);
 }
+
 
 
 function syncCsetUI(){
@@ -3274,19 +3824,296 @@ function syncCsetUI(){
 /* ── Toast & Modal ──────────────────────────────────────────── */
 let _t;
 function toast(msg){const el=_el('toast');if(!el)return;el.textContent=msg;el.classList.add('show');clearTimeout(_t);_t=setTimeout(()=>el.classList.remove('show'),2800);}
-function showModal(title,bodyHtml,onOk){
-  _el('modal-title').textContent=title; _el('modal-body').innerHTML=bodyHtml;
-  const ov=_el('modal-overlay'); ov.classList.add('show');
-  _el('modal-ok').onclick=()=>{onOk();ov.classList.remove('show');};
-  _el('modal-cancel').onclick=()=>ov.classList.remove('show');
-  ov.onclick=ev=>{if(ev.target===ov)ov.classList.remove('show');};
+
+function showModal(title, bodyHtml, onOk, onCancel = null, okText = 'Confirm', cancelText = 'Cancel', okClass = 'danger') {
+  const titleEl = _el('modal-title'); if (titleEl) titleEl.textContent = title;
+  const bodyEl = _el('modal-body'); if (bodyEl) bodyEl.innerHTML = bodyHtml;
+  const ov = _el('modal-overlay'); if (!ov) return;
+  ov.classList.add('show');
+
+  const okBtn = _el('modal-ok');
+  if (okBtn) {
+    okBtn.textContent = okText;
+    okBtn.className = `hbtn ${okClass}`;
+    okBtn.onclick = () => {
+      ov.classList.remove('show');
+      if (onOk) onOk();
+    };
+  }
+
+  const cancelBtn = _el('modal-cancel');
+  if (cancelBtn) {
+    cancelBtn.textContent = cancelText;
+    cancelBtn.onclick = () => {
+      ov.classList.remove('show');
+      if (onCancel) onCancel();
+    };
+  }
+
+  ov.onclick = ev => {
+    if (ev.target === ov) {
+      ov.classList.remove('show');
+      if (onCancel) onCancel();
+    }
+  };
 }
+
 function _el(id){return document.getElementById(id);}
 function setText(id,v){const e=_el(id);if(e)e.textContent=v;}
 function setStyle(id,p,v){const e=_el(id);if(e)e.style[p]=v;}
-function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-/* ── Main Rating Lock (Mistouch Protection) ───────────────── */
+/* ── 10 Rolling Complete Tracker Backups System ────────────────── */
+const TRACKER_BACKUPS_KEY = 'br_tracker_backups';
+let _workingStateBeforePreview = null;
+
+function createProjectBackup(reason = 'Manual Backup') {
+  // 1. Flush active project state first so snapshot is 100% up-to-date
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    const ta = _el('script-textarea');
+    const bnTa = _el('script-bengali-textarea');
+    PROJECTS[ACTIVE_PID].script = ta && ta.value !== undefined && ta.value !== null ? ta.value : (PROJECTS[ACTIVE_PID].script || '');
+    PROJECTS[ACTIVE_PID].bengaliScript = bnTa && bnTa.value !== undefined && bnTa.value !== null ? bnTa.value : (PROJECTS[ACTIVE_PID].bengaliScript || ST.bengaliScript || '');
+    PROJECTS[ACTIVE_PID].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+    PROJECTS[ACTIVE_PID].scores = JSON.parse(JSON.stringify(ST.scores || {}));
+    PROJECTS[ACTIVE_PID].prompts = JSON.parse(JSON.stringify(ST.prompts || {}));
+    PROJECTS[ACTIVE_PID].batches = JSON.parse(JSON.stringify(ST.batches || []));
+    PROJECTS[ACTIVE_PID].usedSets = JSON.parse(JSON.stringify(ST.usedSets || {}));
+    PROJECTS[ACTIVE_PID].setRatings = JSON.parse(JSON.stringify(ST.setRatings || {}));
+    PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+    PROJECTS[ACTIVE_PID].myRatings = JSON.parse(JSON.stringify(ST.myRatings || {}));
+    PROJECTS[ACTIVE_PID].covered = JSON.parse(JSON.stringify(ST.covered || {}));
+  }
+
+  let list = [];
+  try {
+    list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]');
+  } catch {}
+
+  const now = Date.now();
+  const scriptCount = Object.keys(PROJECTS).length;
+  let totalBrolls = 0;
+  let totalPrompts = 0;
+  let totalRatings = 0;
+
+  for (const p of Object.values(PROJECTS)) {
+    totalBrolls += parseScript(p.script || '').length;
+    totalPrompts += Object.values(p.prompts || {}).reduce((acc, arr) => acc + (arr?.length || 0), 0);
+    totalRatings += Object.values(p.setRatings || {}).reduce((acc, obj) => acc + Object.keys(obj || {}).length, 0);
+  }
+
+  const backup = {
+    id: 'bk_' + now.toString(36) + Math.random().toString(36).slice(2, 6),
+    reason,
+    date: now,
+    dateStr: new Date(now).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    activePid: ACTIVE_PID,
+    scriptsCount: scriptCount,
+    totalBrolls,
+    totalPrompts,
+    totalRatings,
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false }
+  };
+
+  list.unshift(backup);
+  if (list.length > 10) list = list.slice(0, 10);
+  try {
+    localStorage.setItem(TRACKER_BACKUPS_KEY, JSON.stringify(list));
+  } catch {}
+  renderBackupsListUI();
+}
+
+function renderBackupsListUI() {
+  const container = _el('backups-list-container');
+  if (!container) return;
+
+  let list = [];
+  try {
+    list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]');
+  } catch {}
+
+  if (!list.length) {
+    container.innerHTML = '<span style="font-size:11px;color:var(--text-3);padding:6px 0;">No backups created yet. Click "＋ Save Backup Now" above to save one.</span>';
+    return;
+  }
+
+  container.innerHTML = '';
+  list.forEach(b => {
+    const card = document.createElement('div');
+    card.className = 'backup-card';
+    card.innerHTML = `
+      <div class="backup-card-info">
+        <div class="backup-card-title">
+          <span>🕒 ${escHtml(b.dateStr)}</span>
+          <span class="backup-tag">${escHtml(b.reason || 'Backup')}</span>
+        </div>
+        <div class="backup-card-sub">${b.scriptsCount} Script${b.scriptsCount !== 1 ? 's' : ''} · ${b.totalBrolls} B-rolls · ${b.totalPrompts} prompts · ${b.totalRatings} ratings</div>
+      </div>
+      <div class="backup-card-actions">
+        <button class="hbtn primary btn-preview-backup" style="font-size:10px;padding:3px 7px;" title="Load and inspect this backup">👁️ Preview</button>
+        <button class="hbtn btn-dl-backup" style="font-size:10px;padding:3px 7px;" title="Download JSON backup">📥</button>
+        <button class="hbtn danger btn-del-backup" style="font-size:10px;padding:3px 6px;" title="Delete backup">🗑</button>
+      </div>
+    `;
+
+    card.querySelector('.btn-preview-backup').addEventListener('click', () => previewBackup(b.id));
+    card.querySelector('.btn-dl-backup').addEventListener('click', () => downloadBackupJSON(b.id));
+    card.querySelector('.btn-del-backup').addEventListener('click', () => deleteBackup(b.id));
+    container.appendChild(card);
+  });
+}
+
+function downloadBackupJSON(backupId) {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]'); } catch {}
+  const backup = list.find(b => b.id === backupId);
+  if (!backup) { toast('⚠️ Backup not found'); return; }
+
+  const d = {
+    v: 7,
+    date: new Date(backup.date).toISOString(),
+    active: backup.activePid,
+    projects: backup.projects,
+    prefix: backup.globalCset?.prefix || '',
+    suffix: backup.globalCset?.suffix || '',
+    labelEnabled: backup.globalCset?.labelEnabled !== false
+  };
+  const json = JSON.stringify(d, null, 2);
+  const filename = `broll-backup-${new Date(backup.date).toISOString().slice(0, 10)}-${backup.id}.json`;
+  try {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch {
+    const a = document.createElement('a');
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+    a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+  toast(`📥 Downloaded backup (${backup.dateStr})`);
+}
+
+function deleteBackup(backupId) {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]'); } catch {}
+  list = list.filter(b => b.id !== backupId);
+  try { localStorage.setItem(TRACKER_BACKUPS_KEY, JSON.stringify(list)); } catch {}
+  renderBackupsListUI();
+  toast('🗑 Backup deleted');
+}
+
+function previewBackup(backupId) {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(TRACKER_BACKUPS_KEY) || '[]'); } catch {}
+  const backup = list.find(b => b.id === backupId);
+  if (!backup) { toast('⚠️ Backup not found'); return; }
+
+  // Save current working state to revert if cancelled
+  _workingStateBeforePreview = {
+    projects: JSON.parse(JSON.stringify(PROJECTS)),
+    activePid: ACTIVE_PID,
+    globalCset: { prefix: ST.prefix, suffix: ST.suffix, labelEnabled: ST.labelEnabled }
+  };
+
+  // Temporarily load backup state
+  for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+  for (const [k, v] of Object.entries(backup.projects)) {
+    PROJECTS[k] = JSON.parse(JSON.stringify(v));
+  }
+  if (backup.globalCset) {
+    ST.prefix = backup.globalCset.prefix || '';
+    ST.suffix = backup.globalCset.suffix || '';
+    ST.labelEnabled = backup.globalCset.labelEnabled !== false;
+    syncCsetUI();
+  }
+
+  const targetPid = (backup.activePid && PROJECTS[backup.activePid]) ? backup.activePid : Object.keys(PROJECTS)[0];
+  activateProject(targetPid);
+  switchBottomTab('p');
+
+  // Inject floating preview banner
+  const existing = _el('backup-preview-banner');
+  if (existing) existing.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'backup-preview-banner';
+  banner.className = 'backup-preview-banner';
+  banner.innerHTML = `
+    <div class="bpb-left">
+      <span class="bpb-title">⏮ Previewing Backup: <strong>${escHtml(backup.dateStr)}</strong> (${escHtml(backup.reason || 'Snapshot')})</span>
+      <span class="bpb-sub">Inspect cards and data. Confirm to make this backup the latest save, or Cancel to revert.</span>
+    </div>
+    <div class="bpb-actions">
+      <button class="hbtn primary" id="btn-confirm-restore-backup">✔ Confirm as Latest Save</button>
+      <button class="hbtn danger" id="btn-cancel-restore-backup">✕ Cancel</button>
+    </div>
+  `;
+
+  banner.querySelector('#btn-confirm-restore-backup').addEventListener('click', () => {
+    _workingStateBeforePreview = null;
+    banner.remove();
+    _userMadeLocalEdit = true;
+    _lastUserEditTime = Date.now();
+    save(true);
+    createProjectBackup('Restored Backup');
+    toast(`✅ Restored backup from ${backup.dateStr} as latest save!`);
+  });
+
+  banner.querySelector('#btn-cancel-restore-backup').addEventListener('click', () => {
+    if (_workingStateBeforePreview) {
+      for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+      for (const [k, v] of Object.entries(_workingStateBeforePreview.projects)) {
+        PROJECTS[k] = JSON.parse(JSON.stringify(v));
+      }
+      if (_workingStateBeforePreview.globalCset) {
+        ST.prefix = _workingStateBeforePreview.globalCset.prefix || '';
+        ST.suffix = _workingStateBeforePreview.globalCset.suffix || '';
+        ST.labelEnabled = _workingStateBeforePreview.globalCset.labelEnabled !== false;
+        syncCsetUI();
+      }
+      const prevPid = _workingStateBeforePreview.activePid;
+      _workingStateBeforePreview = null;
+      activateProject(prevPid);
+    }
+    banner.remove();
+    toast('↩ Cancelled preview, returned to current state.');
+  });
+
+  const appEl = _el('app');
+  if (appEl) appEl.insertBefore(banner, appEl.firstChild);
+}
+
+
+/* ── Settings Center Sync ──────────────────────────────────── */
+function syncSettingsUI() {
+  const comp = _el('setting-compact-view');
+  if (comp) comp.checked = !!ST.compactView;
+
+  const ovScroll = _el('setting-overview-scroll');
+  if (ovScroll) ovScroll.checked = !!ST.overviewScroll;
+
+  const slLock = _el('setting-slider-lock');
+  if (slLock) slLock.checked = !!ST.mainRatingLocked;
+
+  const ad9 = _el('setting-autodone-9');
+  if (ad9) ad9.checked = (ST.autoDone9 !== false);
+
+  const showBn = _el('setting-show-bengali');
+  if (showBn) showBn.checked = (ST.showBengali !== false);
+
+  const qr1 = _el('setting-qr-tier1');
+  if (qr1) qr1.value = ST.quickRateTier1 ?? 5;
+
+  const qr2 = _el('setting-qr-tier2');
+  if (qr2) qr2.value = ST.quickRateTier2 ?? 9;
+
+  renderBackupsListUI();
+}
+
+
 function updateRatingLockUI() {
   const btn = _el('rating-lock-btn');
   const ic = _el('lock-icon');
@@ -3306,6 +4133,7 @@ function updateRatingLockUI() {
   document.querySelectorAll('.slider-wrap').forEach(sw => {
     sw.classList.toggle('is-locked', isLocked);
   });
+  syncSettingsUI();
 }
 
 function toggleMainRatingLock() {
@@ -3314,6 +4142,22 @@ function toggleMainRatingLock() {
   updateRatingLockUI();
   toast(ST.mainRatingLocked ? '🔒 Main rating locked to prevent accidental changes' : '🔓 Main rating unlocked for editing');
 }
+
+/* ── Compact Cards View (Hide Prompt Boxes) ─────────────────── */
+function updateCompactViewUI() {
+  const isCompact = !!ST.compactView;
+  _el('cards-container')?.classList.toggle('compact-cards', isCompact);
+  _el('tb-compact-toggle')?.classList.toggle('active', isCompact);
+  syncSettingsUI();
+}
+
+function toggleCompactView() {
+  ST.compactView = !ST.compactView;
+  try { localStorage.setItem('br_compact_cards', ST.compactView ? 'true' : 'false'); } catch {}
+  updateCompactViewUI();
+  toast(ST.compactView ? '🗜️ Compact View: Prompts hidden' : '👁️ Normal View: Prompts visible');
+}
+
 
 /* ── Init ───────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded',()=>{
@@ -3337,6 +4181,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   } catch {}
 
   try {
+    const savedCompact = localStorage.getItem('br_compact_cards');
+    ST.compactView = (savedCompact !== 'false'); // default true
+  } catch {
+    ST.compactView = true;
+  }
+
+
+  try {
     const savedScroll = localStorage.getItem('br_overview_scroll');
     ST.overviewScroll = (savedScroll === 'true');
   } catch {}
@@ -3345,8 +4197,9 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   _el('library-section')?.classList.add('collapsed');
   _el('cset-section')?.classList.add('collapsed');
-  _el('mydb-section')?.classList.add('collapsed');
+
   if (ST.brolls.length) collapseInput();
+
 
   renderProjectTabs();
   renderFilterChips();
@@ -3354,7 +4207,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   renderBatchTabs(); renderBatchPanel(); renderLibraryView(); updateLibBadge();
 
   syncCsetUI(); updateSratingHint(); renderRatingTabs(); renderRatingPanel(); refreshUR();
-  renderMyDatabase();
+
   updateLineCopyPreview();
   updateRatingLockUI();
   updateOverviewModeUI();
@@ -3393,8 +4246,35 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 
   /* Script */
-  _el('btn-load').addEventListener('click',()=>{const t=_el('script-textarea').value.trim();if(!t){toast('⚠️ Paste script first');return;}loadScript(t,true);});
-  _el('script-textarea').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')_el('btn-load').click();});
+  /* Script Tabs & Load */
+  const tabEn = _el('tab-script-en');
+  const tabBn = _el('tab-script-bn');
+  const scriptTa = _el('script-textarea');
+  const bnTa = _el('script-bengali-textarea');
+
+  tabEn?.addEventListener('click', () => {
+    tabEn.classList.add('active');
+    tabBn?.classList.remove('active');
+    scriptTa?.classList.remove('hidden');
+    bnTa?.classList.add('hidden');
+  });
+
+  tabBn?.addEventListener('click', () => {
+    tabBn.classList.add('active');
+    tabEn?.classList.remove('active');
+    bnTa?.classList.remove('hidden');
+    scriptTa?.classList.add('hidden');
+  });
+
+  _el('btn-load')?.addEventListener('click', () => {
+    loadScript();
+  });
+  scriptTa?.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') _el('btn-load')?.click();
+  });
+  bnTa?.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') _el('btn-load')?.click();
+  });
 
   const autoPad = (ta) => {
     setTimeout(() => {
@@ -3403,22 +4283,25 @@ document.addEventListener('DOMContentLoaded',()=>{
       ta.setSelectionRange(ta.value.length, ta.value.length);
     }, 10);
   };
-  _el('script-textarea')?.addEventListener('paste', () => autoPad(_el('script-textarea')));
+  scriptTa?.addEventListener('paste', () => autoPad(scriptTa));
+  bnTa?.addEventListener('paste', () => autoPad(bnTa));
   _el('prompt-textarea')?.addEventListener('paste', () => autoPad(_el('prompt-textarea')));
   _el('srating-textarea')?.addEventListener('paste', () => autoPad(_el('srating-textarea')));
 
-  _el('input-toggle').addEventListener('click',()=>{if(ST.inputOpen)collapseInput();else expandInput();});
+  _el('input-toggle')?.addEventListener('click',()=>{if(ST.inputOpen)collapseInput();else expandInput();});
 
   /* Header */
-  _el('btn-clear').addEventListener('click',()=>showModal('Clear this script?','Script + scores + prompts for this script will be removed.',()=>{
-    _el('script-textarea').value='';
+  _el('btn-clear')?.addEventListener('click',()=>showModal('Clear this script?','Script + scores + prompts for this script will be removed.',()=>{
+    const sta = _el('script-textarea'); if (sta) sta.value='';
+    const bta = _el('script-bengali-textarea'); if (bta) bta.value='';
     ST.brolls=[];ST.scores={};ST.prompts={};ST.batches=[];ST.usedSets={};ST.setRatings={};ST.ratingBatches=[];ST.activeRatingBatch='new';
+    ST.bengaliScript=''; ST.bengaliLines={};
     save(); expandInput();
     renderProjectTabs();
     renderHeatmap();renderStats();renderCards();renderBatchTabs();renderBatchPanel();renderLibraryView();updateLibBadge();updateSratingHint();renderRatingTabs();renderRatingPanel();
     toast('🗑️ Cleared');
   }));
-  _el('btn-reset').addEventListener('click', () => {
+  _el('btn-reset')?.addEventListener('click', () => {
     showModal(
       'Reset all ticks for this script?',
       'All green "copied" checkmarks for all prompt sets in this script will be unticked. Prompts, scores, and ratings will remain untouched.',
@@ -3428,29 +4311,91 @@ document.addEventListener('DOMContentLoaded',()=>{
     );
   });
 
-  _el('btn-undo').addEventListener('click',doUndo);
-  _el('btn-redo').addEventListener('click',doRedo);
-  _el('btn-export').addEventListener('click',exportData);
-  _el('btn-import').addEventListener('click',()=>_el('file-input').click());
-  _el('file-input').addEventListener('change',e=>{if(e.target.files[0]){importJSON(e.target.files[0]);e.target.value='';}});
+  _el('btn-undo')?.addEventListener('click',doUndo);
+  _el('btn-redo')?.addEventListener('click',doRedo);
+  _el('btn-export')?.addEventListener('click',exportData);
+  _el('btn-import')?.addEventListener('click',()=>_el('file-input')?.click());
+  _el('file-input')?.addEventListener('change',e=>{if(e.target.files[0]){importJSON(e.target.files[0]);e.target.value='';}});
 
   /* Copy Settings — handlers save to GLOBAL cset key */
-  _el('cset-toggle').addEventListener('click',()=>{
+  _el('cset-toggle')?.addEventListener('click',()=>{
     const sec=_el('cset-section');if(!sec)return;
     ST.csetOpen=!ST.csetOpen;sec.classList.toggle('collapsed',!ST.csetOpen);
-    document.querySelector('#cset-toggle .it-chevron').textContent=ST.csetOpen?'▲':'▼';
+    const ch = document.querySelector('#cset-toggle .it-chevron');
+    if (ch) ch.textContent=ST.csetOpen?'▲':'▼';
   });
-  _el('cset-prefix').addEventListener('input',e=>{ST.prefix=e.target.value;saveGlobalCset();updateCsetHint();});
-  _el('cset-suffix').addEventListener('input',e=>{ST.suffix=e.target.value;saveGlobalCset();updateCsetHint();});
+  _el('cset-prefix')?.addEventListener('input',e=>{ST.prefix=e.target.value;saveGlobalCset();updateCsetHint();});
+  _el('cset-suffix')?.addEventListener('input',e=>{ST.suffix=e.target.value;saveGlobalCset();updateCsetHint();});
   _el('cset-label-toggle')?.addEventListener('change', e => {
     ST.labelEnabled = e.target.checked;
     saveGlobalCset();
     updateCsetHint();
     toast(ST.labelEnabled ? '🏷️ B-roll & Set tag enabled' : '🏷️ B-roll & Set tag disabled');
   });
-  _el('cset-clear-pre').addEventListener('click',()=>{ST.prefix='';_el('cset-prefix').value='';saveGlobalCset();updateCsetHint();toast('Prefix cleared');});
-  _el('cset-clear-suf').addEventListener('click',()=>{ST.suffix='';_el('cset-suffix').value='';saveGlobalCset();updateCsetHint();toast('Suffix cleared');});
+  _el('cset-clear-pre')?.addEventListener('click',()=>{ST.prefix='';const cp=_el('cset-prefix');if(cp)cp.value='';saveGlobalCset();updateCsetHint();toast('Prefix cleared');});
+  _el('cset-clear-suf')?.addEventListener('click',()=>{ST.suffix='';const cs=_el('cset-suffix');if(cs)cs.value='';saveGlobalCset();updateCsetHint();toast('Suffix cleared');});
 
+  /* Settings Center Switch Listeners */
+  _el('setting-compact-view')?.addEventListener('change', e => {
+    ST.compactView = e.target.checked;
+    try { localStorage.setItem('br_compact_cards', ST.compactView ? 'true' : 'false'); } catch {}
+    updateCompactViewUI();
+    toast(ST.compactView ? '🗜️ Compact View: Prompts hidden' : '👁️ Normal View: Prompts visible');
+  });
+
+  _el('setting-overview-scroll')?.addEventListener('change', () => {
+    toggleOverviewScrollMode();
+    syncSettingsUI();
+  });
+
+  _el('setting-slider-lock')?.addEventListener('change', () => {
+    toggleMainRatingLock();
+    syncSettingsUI();
+  });
+
+  _el('setting-autodone-9')?.addEventListener('change', e => {
+    ST.autoDone9 = e.target.checked;
+    try { localStorage.setItem('br_auto_done_9', ST.autoDone9 ? 'true' : 'false'); } catch {}
+    toast(ST.autoDone9 ? '✔ Auto-Done on 9+ enabled' : '◻ Auto-Done on 9+ disabled');
+  });
+
+  _el('setting-show-bengali')?.addEventListener('change', e => {
+    ST.showBengali = e.target.checked;
+    try { localStorage.setItem('br_show_bengali', ST.showBengali ? 'true' : 'false'); } catch {}
+    renderCards(false);
+    toast(ST.showBengali ? '🇧🇩 Bengali script visible' : 'Bengali script hidden');
+  });
+
+  _el('setting-qr-tier1')?.addEventListener('change', e => {
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val) && val >= 0 && val <= 10) {
+      ST.quickRateTier1 = val;
+      try { localStorage.setItem('br_qr_tier1', val); } catch {}
+      toast(`⚡ Tier 1 quick-rate set to ${val}`);
+    }
+  });
+
+  _el('setting-qr-tier2')?.addEventListener('change', e => {
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val) && val >= 0 && val <= 10) {
+      ST.quickRateTier2 = val;
+      try { localStorage.setItem('br_qr_tier2', val); } catch {}
+      toast(`⚡ Tier 2 quick-rate set to ${val}`);
+    }
+  });
+
+  _el('btn-create-manual-backup')?.addEventListener('click', () => {
+    createProjectBackup('Manual Backup');
+    toast('💾 Backup saved successfully!');
+  });
+
+  _el('setting-force-sync')?.addEventListener('click', () => {
+    toast('🔄 Cloud sync in progress…');
+    pushToFirebase(true);
+  });
+
+  _el('setting-export-json')?.addEventListener('click', exportData);
+  _el('setting-import-json')?.addEventListener('click', () => _el('file-input')?.click());
 
   /* Line Copy & Filter section */
   _el('line-copy-toggle')?.addEventListener('click', () => {
@@ -3470,19 +4415,18 @@ document.addEventListener('DOMContentLoaded',()=>{
   _el('lc-include-num')?.addEventListener('change', updateLineCopyPreview);
   _el('lc-line-gap')?.addEventListener('change', updateLineCopyPreview);
   _el('btn-copy-filtered-lines')?.addEventListener('click', copyFilteredLines);
-
-
+  _el('btn-copy-needs-work-lines')?.addEventListener('click', copyNeedsWorkLines);
 
   /* Set Ratings section */
-
-  _el('srating-toggle').addEventListener('click',()=>{
+  _el('srating-toggle')?.addEventListener('click',()=>{
     const sec=_el('srating-section');if(!sec)return;
     sec.classList.toggle('collapsed');
-    document.querySelector('#srating-toggle .it-chevron').textContent=sec.classList.contains('collapsed')?'▼':'▲';
+    const ch = document.querySelector('#srating-toggle .it-chevron');
+    if (ch) ch.textContent=sec.classList.contains('collapsed')?'▼':'▲';
   });
-  _el('btn-apply-ratings').addEventListener('click',()=>{
-    const t=_el('srating-textarea').value.trim();if(!t){toast('⚠️ Paste rating lines first');return;}
-    applySetRatings(t);
+  _el('btn-apply-ratings')?.addEventListener('click',()=>{
+    const t=_el('srating-textarea')?.value.trim();if(!t){toast('⚠️ Paste rating lines first');return;}
+    requestApplySetRatings(t);
   });
   _el('btn-paste-ratings')?.addEventListener('click', async () => {
     try {
@@ -3506,14 +4450,13 @@ document.addEventListener('DOMContentLoaded',()=>{
       toast('⚠️ Cannot read clipboard — use Ctrl+V');
     }
   });
-  _el('btn-clear-rating-input').addEventListener('click',()=>{_el('srating-textarea').value='';});
-  _el('btn-clear-all-ratings').addEventListener('click',()=>showModal('Clear all set ratings?','All set ratings and why text will be removed.',()=>{
+  _el('btn-clear-rating-input')?.addEventListener('click',()=>{const ta=_el('srating-textarea');if(ta)ta.value='';});
+  _el('btn-clear-all-ratings')?.addEventListener('click',()=>showModal('Clear all set ratings?','All set ratings and why text will be removed.',()=>{
     ST.setRatings={};ST.ratingBatches=[];ST.activeRatingBatch='new';save();updateAllPromptChips();updateSratingHint();renderRatingTabs();renderRatingPanel();toast('🗑️ Set ratings cleared');
   }));
 
-
   /* Clear copy history — event delegation on project-bar */
-  _el('project-bar').addEventListener('click',e=>{
+  _el('project-bar')?.addEventListener('click',e=>{
     if(e.target.closest('#btn-clear-copy')){
       showModal('Clear copy history?','All green "copied" marks for this script will be removed.',()=>{
         clearCopyHistory();toast('⟲ Copy history cleared');
@@ -3556,14 +4499,13 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 
   /* Sort */
-
   document.querySelectorAll('.sort-btn').forEach(btn=>btn.addEventListener('click',()=>{ST.sortBy=btn.dataset.sort;document.querySelectorAll('.sort-btn').forEach(b=>b.classList.toggle('active',b.dataset.sort===ST.sortBy));renderCards();}));
 
   /* Library */
-  _el('library-toggle').addEventListener('click',()=>{const sec=_el('library-section');if(!sec)return;ST.libOpen=!ST.libOpen;sec.classList.toggle('collapsed',!ST.libOpen);document.querySelector('#library-toggle .it-chevron').textContent=ST.libOpen?'▲':'▼';});
-  _el('btn-import-prompts').addEventListener('click',()=>{const t=_el('prompt-textarea').value.trim();if(!t){toast('⚠️ Paste prompt batch first');return;}importPrompts(t);_el('prompt-textarea').value='';});
-  _el('btn-clear-prompt-input').addEventListener('click',()=>{_el('prompt-textarea').value='';});
-  _el('btn-clear-prompts').addEventListener('click',()=>showModal('Clear ALL prompts?','Removes every prompt and all batch history.',()=>{
+  _el('library-toggle')?.addEventListener('click',()=>{const sec=_el('library-section');if(!sec)return;ST.libOpen=!ST.libOpen;sec.classList.toggle('collapsed',!ST.libOpen);const ch=document.querySelector('#library-toggle .it-chevron');if(ch)ch.textContent=ST.libOpen?'▲':'▼';});
+  _el('btn-import-prompts')?.addEventListener('click',()=>{const t=_el('prompt-textarea')?.value.trim();if(!t){toast('⚠️ Paste prompt batch first');return;}requestImportPrompts(t);});
+  _el('btn-clear-prompt-input')?.addEventListener('click',()=>{const pta=_el('prompt-textarea');if(pta)pta.value='';});
+  _el('btn-clear-prompts')?.addEventListener('click',()=>showModal('Clear ALL prompts?','Removes every prompt and all batch history.',()=>{
     ST.prompts={};ST.batches=[];ST.usedSets={};ST.activeBatch='new';
     save();updateAllPromptChips();renderBatchTabs();renderBatchPanel();renderLibraryView();updateLibBadge();toast('🗑️ All prompts cleared');
   }));
@@ -3580,7 +4522,6 @@ document.addEventListener('DOMContentLoaded',()=>{
       } else {
         ta.value = text;
       }
-      // Same autoPad behavior: ensure 2 trailing newlines and move cursor to end
       setTimeout(() => {
         if (!ta.value.endsWith('\n\n')) ta.value = ta.value.trimEnd() + '\n\n';
         ta.scrollTop = ta.scrollHeight;
@@ -3603,42 +4544,41 @@ document.addEventListener('DOMContentLoaded',()=>{
   }, { passive: true });
   jt?.addEventListener('click', () => scrollTo({ top: 0, behavior: 'smooth' }));
   jb?.addEventListener('click', () => scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
-  // Show bottom button initially if page is scrollable
   if (document.body.scrollHeight > window.innerHeight + 300) jb?.classList.add('visible');
 
+  /* ── Bottom Tab Bar ─────────────────────────────────────── */
+  document.querySelectorAll('.btab').forEach(b => {
+    b.addEventListener('click', () => switchBottomTab(b.dataset.tab));
+  });
 
-  /* My Rating Database */
-  _el('mydb-toggle')?.addEventListener('click', () => {
-    const sec = _el('mydb-section'); if (!sec) return;
-    sec.classList.toggle('collapsed');
-    document.querySelector('#mydb-toggle .it-chevron').textContent = sec.classList.contains('collapsed') ? '▼' : '▲';
+
+  /* ── Toolbar 🔍: toggle filter bar ──────────────────────── */
+  _el('tb-filter-toggle')?.addEventListener('click', () => {
+    const fb = _el('filter-bar');
+    if (!fb) return;
+    const hidden = fb.classList.toggle('hidden');
+    _el('tb-filter-toggle')?.classList.toggle('active', !hidden);
+    switchBottomTab('p');
   });
-  _el('mydb-filter-above')?.addEventListener('input', e => {
-    const v = e.target.value.trim();
-    _myDbFilter.above = v ? parseFloat(v) : null;
-    renderMyDatabase();
+
+
+  /* ── Toolbar ⚡: Needs Work (<9) quick filter ────────────── */
+  _el('tb-needs-work')?.addEventListener('click', () => {
+    switchBottomTab('p');
+    if (ST.filter === 'needs') {
+      setFilter('all');
+    } else {
+      setFilter('needs');
+      toast('⚡ Filter: Needs Work (<9)');
+    }
   });
-  _el('mydb-filter-below')?.addEventListener('input', e => {
-    const v = e.target.value.trim();
-    _myDbFilter.below = v ? parseFloat(v) : null;
-    renderMyDatabase();
-  });
-  _el('mydb-filter-keyword')?.addEventListener('input', e => {
-    _myDbFilter.keyword = e.target.value.trim();
-    renderMyDatabase();
-  });
-  _el('mydb-filter-clear')?.addEventListener('click', () => {
-    _myDbFilter = { above: null, below: null, keyword: '' };
-    const fa = _el('mydb-filter-above'); if (fa) fa.value = '';
-    const fb = _el('mydb-filter-below'); if (fb) fb.value = '';
-    const fk = _el('mydb-filter-keyword'); if (fk) fk.value = '';
-    renderMyDatabase();
-  });
-  _el('btn-clear-myratings')?.addEventListener('click', () => showModal(
-    'Clear ALL personal ratings?',
-    'All your personal ratings and comments will be removed.',
-    () => { ST.myRatings = {}; save(); updateAllPromptChips(); renderMyDatabase(); toast('🗑️ Personal ratings cleared'); }
-  ));
+
+  /* ── Toolbar 🗜️: Compact View (hide prompts) ────────────── */
+  updateCompactViewUI();
+  _el('tb-compact-toggle')?.addEventListener('click', toggleCompactView);
+
+
+
 
   /* Service Worker for PWA / TWA */
   if ('serviceWorker' in navigator) {
@@ -3650,3 +4590,4 @@ document.addEventListener('DOMContentLoaded',()=>{
     });
   }
 });
+
