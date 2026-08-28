@@ -106,6 +106,50 @@ let _lastFirebaseSaveTime = 0;     // timestamp of last successful firebase writ
 let _fbConnected = false;
 let _fbRetryTimer = null;
 let _fbRetryCount = 0;
+let _isForceSaving = false;  // when true, blocks normal pushToFirebase debounce
+let _activePctTimer = null;
+let _activeForceTimeout = null;
+let _cloudWriteInFlight = false;
+let _cloudWriteQueued = false;
+let _cloudWriteRevision = 0;
+let _cancelledCloudRevision = 0;
+let _cloudChangeVersion = 0;
+
+function promptCancelSave() {
+  showModal(
+    '⏸ Cancel Cloud Save?',
+    `<div style="font-size:12.5px;line-height:1.6">
+       <p style="color:var(--text-1);margin-bottom:8px;">A cloud save is currently in progress.</p>
+       <p style="color:var(--text-2);">Cancelling stops waiting for this save. Your data is already saved locally and can be synced again at any time.</p>
+     </div>`,
+    () => {
+      cancelCurrentSave();
+    },
+    null,
+    '⏸ Yes, Cancel Save',
+    'Keep Saving',
+    'danger'
+  );
+}
+
+function cancelCurrentSave() {
+  if (_fbSyncTimer) { clearTimeout(_fbSyncTimer); _fbSyncTimer = null; }
+  if (_fbRetryTimer) { clearTimeout(_fbRetryTimer); _fbRetryTimer = null; }
+  if (_activePctTimer) { clearInterval(_activePctTimer); _activePctTimer = null; }
+  if (_activeForceTimeout) { clearTimeout(_activeForceTimeout); _activeForceTimeout = null; }
+  _isForceSaving = false;
+  _cancelledCloudRevision = _cloudWriteRevision;
+  _hasPendingLocalChange = false;
+  _lastSavedStatus = 'synced';
+  updateSavedTimeDisplay();
+  const fsBtn = _el('btn-force-save-cloud');
+  if (fsBtn) {
+    fsBtn.textContent = '⬆ Force Save';
+    fsBtn.disabled = false;
+    fsBtn.classList.remove('saving');
+  }
+  toast('⏸ Cloud save cancelled. Data is safe locally.');
+}
 
 function setApplyingRemote(val) {
   _isApplyingRemote = !!val;
@@ -128,8 +172,10 @@ function setApplyingRemote(val) {
   }
 }
 
-let _lastSavedStatus = 'synced';
+let _lastSavedStatus = 'loading';
 let _lastRemoteUpdatedAt = 0;
+let _pendingImportSnapshot = null;
+let _pendingImportInfo = null;
 
 function updateSavedTimeDisplay() {
   const dot = _el('sync-dot');
@@ -137,6 +183,23 @@ function updateSavedTimeDisplay() {
   const pill = _el('sync-status');
   if (!dot || !txt) return;
 
+  if (_pendingImportSnapshot && _pendingImportInfo) {
+    dot.className = 'sync-dot pending-import';
+    txt.textContent = 'Save Import?';
+    if (pill) {
+      pill.classList.add('pending-import-pill');
+      pill.title = `⚠️ Unconfirmed Import (${_pendingImportInfo.label})\nClick to Save to Cloud or Reject & Revert`;
+    }
+    return;
+  }
+  if (pill) pill.classList.remove('pending-import-pill');
+
+  if (_lastSavedStatus === 'loading') {
+    dot.className = 'sync-dot syncing';
+    txt.textContent = 'Loading…';
+    if (pill) pill.title = 'Fetching latest data from Cloud…';
+    return;
+  }
   if (_lastSavedStatus === 'syncing') {
     dot.className = 'sync-dot syncing';
     txt.textContent = 'Saving…';
@@ -171,6 +234,141 @@ function updateSyncUI(status, text) {
   // Do NOT reset _lastFirebaseSaveTime here (connection events are not saves)
   _lastSavedStatus = status;
   updateSavedTimeDisplay();
+}
+
+function handleSyncStatusClick() {
+  if (_pendingImportSnapshot && _pendingImportInfo) {
+    const info = _pendingImportInfo;
+    const typeLabel = info.type === 'json' ? 'JSON Data' : (info.type === 'prompts' ? 'Prompts' : 'Ratings');
+    showModal(
+      `💾 Save or Reject Import (${info.label})`,
+      `<div style="font-size:12.5px;line-height:1.5">
+         <p style="margin-bottom:8px;color:var(--text-1);">You have imported <b>${info.label}</b> (${typeLabel}) currently in review.</p>
+         <p style="margin-bottom:8px;color:var(--text-2);">• <b>Save to Cloud</b>: Directly saves and pushes this imported data to Firebase Cloud.<br/>• <b>Reject &amp; Revert</b>: Cancels the import and restores your previous project state.</p>
+       </div>`,
+      () => {
+        confirmSavePendingImport();
+      },
+      () => {
+        rejectPendingImport();
+      },
+      '✔ Save to Cloud',
+      '✕ Reject & Revert',
+      'primary'
+    );
+    return;
+  }
+
+  if (_cloudWriteInFlight || _cloudWriteQueued || _lastSavedStatus === 'syncing') {
+    toast('☁️ Save in progress — changes are already safe on this device.');
+    return;
+  }
+
+  // Normal status click: manual force sync
+  toast('🔄 Force syncing with Cloud…');
+  pushToFirebase(true);
+}
+
+function confirmSavePendingImport() {
+  if (!_pendingImportSnapshot) return;
+  const info = _pendingImportInfo;
+  _pendingImportSnapshot = null;
+  _pendingImportInfo = null;
+
+  // Flush current ST state fully into PROJECTS
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    try {
+      const ta = _el('script-textarea');
+      const bnTa = _el('script-bengali-textarea');
+      PROJECTS[ACTIVE_PID].script        = (ta  && ta.value  != null) ? ta.value  : (PROJECTS[ACTIVE_PID].script  || '');
+      PROJECTS[ACTIVE_PID].bengaliScript = (bnTa && bnTa.value != null) ? bnTa.value : (PROJECTS[ACTIVE_PID].bengaliScript || '');
+      PROJECTS[ACTIVE_PID].bengaliLines  = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+      PROJECTS[ACTIVE_PID].scores        = JSON.parse(JSON.stringify(ST.scores       || {}));
+      PROJECTS[ACTIVE_PID].prompts       = JSON.parse(JSON.stringify(ST.prompts      || {}));
+      PROJECTS[ACTIVE_PID].batches       = JSON.parse(JSON.stringify(ST.batches      || []));
+      PROJECTS[ACTIVE_PID].usedSets      = JSON.parse(JSON.stringify(ST.usedSets     || {}));
+      PROJECTS[ACTIVE_PID].setRatings    = JSON.parse(JSON.stringify(ST.setRatings   || {}));
+      PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches|| []));
+      PROJECTS[ACTIVE_PID].myRatings     = JSON.parse(JSON.stringify(ST.myRatings    || {}));
+      PROJECTS[ACTIVE_PID].covered       = JSON.parse(JSON.stringify(ST.covered      || {}));
+    } catch {}
+  }
+
+  // Save to localStorage first
+  try {
+    localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+    _lastLocalSaveTime = Date.now();
+    _userMadeLocalEdit = false;
+  } catch {}
+
+  // Trigger Force Save to cloud directly (with % progress, 90s timeout)
+  forceSaveToCloud();
+}
+
+function rejectPendingImport() {
+  if (!_pendingImportSnapshot) return;
+  const snapshot = _pendingImportSnapshot;
+  const info = _pendingImportInfo;
+  _pendingImportSnapshot = null;
+  _pendingImportInfo = null;
+
+  // Restore PROJECTS
+  for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+  for (const [k, v] of Object.entries(snapshot.projects)) {
+    PROJECTS[k] = JSON.parse(JSON.stringify(v));
+  }
+  ACTIVE_PID = snapshot.activePid;
+
+  // Restore ST for active project
+  const st = snapshot.st;
+  if (st) {
+    ST.scores        = JSON.parse(JSON.stringify(st.scores || {}));
+    ST.prompts       = JSON.parse(JSON.stringify(st.prompts || {}));
+    ST.batches       = JSON.parse(JSON.stringify(st.batches || []));
+    ST.usedSets      = JSON.parse(JSON.stringify(st.usedSets || {}));
+    ST.setRatings    = JSON.parse(JSON.stringify(st.setRatings || {}));
+    ST.ratingBatches = JSON.parse(JSON.stringify(st.ratingBatches || []));
+    ST.myRatings     = JSON.parse(JSON.stringify(st.myRatings || {}));
+    ST.covered       = JSON.parse(JSON.stringify(st.covered || {}));
+    ST.bengaliScript = st.bengaliScript || '';
+    ST.bengaliLines  = JSON.parse(JSON.stringify(st.bengaliLines || {}));
+    ST.activeBatch   = st.activeBatch;
+    ST.activeRatingBatch = st.activeRatingBatch;
+  }
+
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    ST.brolls = parseScript(PROJECTS[ACTIVE_PID].script || '');
+    const ta = _el('script-textarea');
+    if (ta) ta.value = PROJECTS[ACTIVE_PID].script || '';
+    const bnTa = _el('script-bengali-textarea');
+    if (bnTa) bnTa.value = PROJECTS[ACTIVE_PID].bengaliScript || '';
+  }
+
+  // Save reverted state to localStorage
+  try {
+    localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+  } catch {}
+
+  // Re-render UI
+  renderProjectTabs();
+  renderHeatmap();
+  renderStats();
+  renderCards(false);
+  updateAllPromptChips();
+  renderBatchTabs();
+  renderBatchPanel();
+  updateLibBadge();
+  renderRatingTabs();
+  renderRatingPanel();
+  updateSratingHint();
+  renderBackupsListUI();
+
+  _lastSavedStatus = 'synced';
+  updateSavedTimeDisplay();
+
+  toast(`✕ Rejected — reverted ${info?.label || 'import'} to previous state.`);
 }
 
 /* ── Deep merge helpers ─────────────────────────────────────── */
@@ -255,102 +453,67 @@ function _mergeProject(cloudProj, localProj) {
 let _isInitialCloudLoaded = false;
 let _userMadeLocalEdit = false;
 let _lastUserEditTime = 0;
+let _latestCloudData = null;
 
-function pushToFirebase(immediate = false) {
-  if (!_fbRef) return;
-  if (!_isInitialCloudLoaded) {
-    console.log('Firebase push skipped: initial cloud state not loaded yet.');
-    return;
-  }
-
-  if (_isApplyingRemote) {
-    _hasPendingLocalChange = true;
-    return;
-  }
-
+function pushToFirebase(immediate = false, isNewChange = true) {
+  if (!_fbRef || _pendingImportSnapshot) return;
+  if (isNewChange) _cloudChangeVersion++;
+  if (_isApplyingRemote) { _hasPendingLocalChange = true; return; }
   if (_fbSyncTimer) clearTimeout(_fbSyncTimer);
-  _lastSavedStatus = 'syncing';
-  updateSavedTimeDisplay();
 
   const doPush = () => {
-    if (_isApplyingRemote) {
-      _hasPendingLocalChange = true;
-      _lastSavedStatus = 'synced';
-      updateSavedTimeDisplay();
-      return;
-    }
-
-    try {
-      const ta = _el('script-textarea');
-      const savedScript = ta && ta.value !== undefined && ta.value !== null
-        ? ta.value
-        : (PROJECTS[ACTIVE_PID]?.script || '');
-
-      const bnTa = _el('script-bengali-textarea');
-      const savedBnScript = bnTa && bnTa.value !== undefined && bnTa.value !== null
-        ? bnTa.value
-        : (PROJECTS[ACTIVE_PID]?.bengaliScript || ST.bengaliScript || '');
-
-      if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
-        PROJECTS[ACTIVE_PID].script = savedScript;
-        PROJECTS[ACTIVE_PID].bengaliScript = savedBnScript;
-        PROJECTS[ACTIVE_PID].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
-      }
-    } catch {}
+    if (!_fbRef || _pendingImportSnapshot) return;
+    if (_isApplyingRemote) { _hasPendingLocalChange = true; return; }
+    // A complete database snapshot can be sizeable. Never upload two snapshots at once:
+    // retain only the newest requested state and send it after the current write finishes.
+    if (_cloudWriteInFlight) { _cloudWriteQueued = true; return; }
 
     const now = Date.now();
+    const revision = ++_cloudWriteRevision;
+    const sentChangeVersion = _cloudChangeVersion;
     const localProjects = JSON.parse(JSON.stringify(PROJECTS));
+    let projects = localProjects;
+    if (_latestCloudData?.projects && _latestCloudData.lastUpdatedBy !== CLIENT_ID) {
+      projects = {};
+      const ids = new Set([...Object.keys(_latestCloudData.projects), ...Object.keys(localProjects)]);
+      ids.forEach(pid => { projects[pid] = _mergeProject(_latestCloudData.projects[pid], localProjects[pid]); });
+    }
+    const payload = { active: ACTIVE_PID, projects,
+      globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
+      lastUpdatedBy: CLIENT_ID, updatedAt: now };
 
-    _fbRef.once('value').then(snap => {
-      const cloudData = snap.val();
-      let mergedProjects = localProjects;
-      if (cloudData && cloudData.projects && cloudData.lastUpdatedBy !== CLIENT_ID) {
-        mergedProjects = {};
-        const allPids = new Set([...Object.keys(cloudData.projects), ...Object.keys(localProjects)]);
-        allPids.forEach(pid => {
-          mergedProjects[pid] = _mergeProject(cloudData.projects[pid], localProjects[pid]);
-        });
+    _cloudWriteInFlight = true;
+    let succeeded = false;
+    _lastSavedStatus = 'syncing';
+    updateSavedTimeDisplay();
+    _fbRef.set(payload).then(() => {
+      succeeded = true;
+      if (revision > _cancelledCloudRevision) {
+        _lastFirebaseSaveTime = Date.now();
+        _lastRemoteUpdatedAt = now;
+        _latestCloudData = payload;
+        if (_cloudChangeVersion === sentChangeVersion) _userMadeLocalEdit = false;
+        _fbRetryCount = 0;
       }
-
-      const payload = {
-        active: ACTIVE_PID,
-        projects: mergedProjects,
-        globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
-        lastUpdatedBy: CLIENT_ID,
-        updatedAt: now
-      };
-
-      return _fbRef.set(payload);
-    })
-    .then(() => {
-      _lastFirebaseSaveTime = Date.now();
-      _lastRemoteUpdatedAt = now;
-      _lastSavedStatus = 'synced';
-      _userMadeLocalEdit = false;
-      _fbRetryCount = 0;
-      updateSavedTimeDisplay();
-      if (_hasPendingLocalChange) {
-        _hasPendingLocalChange = false;
-        pushToFirebase(true);
-      }
-    })
-    .catch(err => {
+    }).catch(err => {
       console.warn('Firebase push failed:', err);
-      _lastSavedStatus = 'error';
-      updateSavedTimeDisplay();
-      if (_fbRetryCount < 5) {
+      _lastSavedStatus = 'offline';
+      if (revision > _cancelledCloudRevision && _fbRetryCount < 5) {
         _fbRetryCount++;
         if (_fbRetryTimer) clearTimeout(_fbRetryTimer);
-        _fbRetryTimer = setTimeout(() => pushToFirebase(true), Math.min(1000 * Math.pow(2, _fbRetryCount), 30000));
+        _fbRetryTimer = setTimeout(() => pushToFirebase(true, false), Math.min(1000 * 2 ** _fbRetryCount, 30000));
       }
+    }).finally(() => {
+      _cloudWriteInFlight = false;
+      const needsAnotherWrite = _cloudWriteQueued || _hasPendingLocalChange || _cloudChangeVersion > sentChangeVersion;
+      _cloudWriteQueued = false;
+      _hasPendingLocalChange = false;
+      _lastSavedStatus = needsAnotherWrite ? 'syncing' : (succeeded ? 'synced' : 'offline');
+      updateSavedTimeDisplay();
+      if (needsAnotherWrite) pushToFirebase(true, false);
     });
   };
-
-  if (immediate) {
-    doPush();
-  } else {
-    _fbSyncTimer = setTimeout(doPush, 1500);
-  }
+  if (immediate) doPush(); else _fbSyncTimer = setTimeout(() => { _fbSyncTimer = null; doPush(); }, 750);
 }
 
 function applyRemoteData(data, isInitial = false) {
@@ -459,6 +622,68 @@ function applyRemoteData(data, isInitial = false) {
   }
 }
 
+/* ── Force Load from Cloud ────────────────────────────────── */
+function forceLoadFromCloud() {
+  const btn = _el('btn-force-load-cloud');
+  if (!_fbRef) {
+    toast('⚠️ No cloud connection yet — please wait.');
+    return;
+  }
+  if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
+  _lastSavedStatus = 'loading';
+  updateSavedTimeDisplay();
+
+  _fbRef.once('value').then(snap => {
+    const data = snap.val();
+    if (!data || !data.projects || Object.keys(data.projects).length === 0) {
+      toast('☁️ Cloud is empty — nothing to load.');
+      _lastSavedStatus = 'synced';
+      updateSavedTimeDisplay();
+      if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; }
+      return;
+    }
+    _latestCloudData = data;
+    applyRemoteData(data, true);
+    if (btn) {
+      btn.textContent = '✔ Loaded!';
+      setTimeout(() => { if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; } }, 1200);
+    }
+    toast('☁️ Pulled and loaded latest data from Cloud!');
+  }).catch(err => {
+    console.error('Force load failed:', err);
+    toast('❌ Failed to load from Cloud.');
+    _lastSavedStatus = 'offline';
+    updateSavedTimeDisplay();
+    if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; }
+  });
+}
+
+/* ── Force Save to Cloud ──────────────────────────────────── */
+function forceSaveToCloud() {
+  const btn = _el('btn-force-save-cloud');
+  if (!_fbRef) {
+    toast('⚠️ No cloud connection — data saved locally only.');
+    return;
+  }
+  // Force Save joins the same queue as automatic saves. This prevents it from
+  // racing a large background upload and accidentally overwriting newer data.
+  if (btn) { btn.textContent = '⏳ Saving…'; btn.disabled = true; }
+  saveProjects(true);
+  const waitForQueue = () => {
+    if (_cloudWriteInFlight || _cloudWriteQueued || _fbSyncTimer) {
+      setTimeout(waitForQueue, 250);
+      return;
+    }
+    if (btn) {
+      const saved = _lastSavedStatus === 'synced';
+      btn.textContent = saved ? '✔ Saved' : '⬆ Force Save';
+      btn.disabled = false;
+      if (saved) setTimeout(() => { if (btn) btn.textContent = '⬆ Force Save'; }, 1200);
+    }
+  };
+  waitForQueue();
+}
+
 function initFirebaseSync() {
   if (typeof firebase === 'undefined') {
     console.warn('Firebase SDK not loaded, using local storage.');
@@ -466,11 +691,25 @@ function initFirebaseSync() {
     return;
   }
   try {
+    _lastSavedStatus = 'loading';
+    updateSavedTimeDisplay();
+
     if (!firebase.apps || !firebase.apps.length) {
       firebase.initializeApp(FIREBASE_CONFIG);
     }
     _fbDb = firebase.database();
     _fbRef = _fbDb.ref('broll_app_data');
+
+    // Release loading status safety timeout if offline / slow
+    setTimeout(() => {
+      if (!_isInitialCloudLoaded) {
+        _isInitialCloudLoaded = true;
+        if (_lastSavedStatus === 'loading') {
+          _lastSavedStatus = 'synced';
+          updateSavedTimeDisplay();
+        }
+      }
+    }, 3000);
 
     _fbDb.ref('.info/connected').on('value', snap => {
       _fbConnected = !!snap.val();
@@ -478,34 +717,43 @@ function initFirebaseSync() {
         _lastSavedStatus = 'offline';
         updateSavedTimeDisplay();
       } else {
-        if (_userMadeLocalEdit && _isInitialCloudLoaded) {
+        if (!_isInitialCloudLoaded) {
+          _lastSavedStatus = 'loading';
+          updateSavedTimeDisplay();
+        } else if (_userMadeLocalEdit) {
           pushToFirebase(true);
         }
       }
     });
 
-    _fbRef.once('value').then(snap => {
-      const data = snap.val();
-      if (data && data.projects && Object.keys(data.projects).length > 0) {
-        applyRemoteData(data, true);
-        _isInitialCloudLoaded = true;
-        console.log('✅ Loaded latest cloud database version.');
-      } else {
-        _isInitialCloudLoaded = true;
-        if (Object.keys(PROJECTS).length > 0) {
-          pushToFirebase(true);
-        }
-      }
-    }).catch(err => {
-      console.warn('Initial cloud read error:', err);
-      _isInitialCloudLoaded = true;
-    });
-
+    let isInitialRead = true;
     _fbRef.on('value', snap => {
-      if (!_isInitialCloudLoaded) return;
       const data = snap.val();
-      if (!data || !data.projects || Object.keys(data.projects).length === 0) return;
-      if (data.lastUpdatedBy === CLIENT_ID) return;
+      _latestCloudData = data;
+
+      if (isInitialRead) {
+        isInitialRead = false;
+        _isInitialCloudLoaded = true;
+
+        if (data && data.projects && Object.keys(data.projects).length > 0) {
+          // Absolute priority: Always load server data on entry
+          applyRemoteData(data, true);
+          console.log('✅ Loaded latest cloud database version on entry.');
+        } else {
+          // Cloud empty: seed from local only if present
+          if (Object.keys(PROJECTS).length > 0) {
+            pushToFirebase(true);
+          } else {
+            _lastSavedStatus = 'synced';
+            updateSavedTimeDisplay();
+          }
+        }
+        return;
+      }
+
+      if (data.lastUpdatedBy === CLIENT_ID) {
+        return;
+      }
 
       applyRemoteData(data, false);
     });
@@ -515,7 +763,10 @@ function initFirebaseSync() {
       _fbRef.once('value').then(snap => {
         const data = snap.val();
         if (!data || !data.updatedAt) return;
-        if (data.lastUpdatedBy === CLIENT_ID) return;
+        _latestCloudData = data;
+        if (data.lastUpdatedBy === CLIENT_ID) {
+          return;
+        }
         if (data.updatedAt > (_lastRemoteUpdatedAt || 0)) {
           applyRemoteData(data, false);
         }
@@ -526,12 +777,6 @@ function initFirebaseSync() {
       if (document.visibilityState === 'visible') checkFreshRemote();
     });
     window.addEventListener('focus', checkFreshRemote);
-
-    // Click on sync status pill to manual force sync
-    _el('sync-status')?.addEventListener('click', () => {
-      toast('🔄 Force syncing with Cloud…');
-      pushToFirebase(true);
-    });
 
   } catch (err) {
     console.error('Firebase initialization error:', err);
@@ -1359,38 +1604,38 @@ function parseSetRatings(text) {
   for (const line of text.split('\n')) {
     const l = line.trim(); if (!l) continue;
 
-    // Format 1: 14S6: 9.5 (why) or 14S6 : 9.5 : why or 14S6 - 9.5 - why
-    let m = l.match(/^#?(\d+)\s*[Ss]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
+    // Format 1: 14S6: 9.5 (why) or 1.5S6 : 9.5 : why or 1.2S6 - 9.5 - why
+    let m = l.match(/^#?(\d+(?:\.\d+)?)\s*[Ss]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
     if (m) {
       const score = parseFloat(m[3]);
       if (!isNaN(score) && score >= 0 && score <= 10) {
         let why = (m[4] || '').trim();
         if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
-        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        results.push({ brollNum: parseFloat(m[1]), rawSetNum: parseInt(m[2]), score, why });
         continue;
       }
     }
 
-    // Format 2: 1 : 6 : 9.5 : why or 1 : 6 - 9.5 - why or 1.6 : 9.5 : why
-    m = l.match(/^#?(\d+)\s*[:\.]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
+    // Format 2: 1.5 : 6 : 9.5 : why or 1 : 6 - 9.5 - why
+    m = l.match(/^#?(\d+(?:\.\d+)?)\s*[:\s]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
     if (m) {
       const score = parseFloat(m[3]);
       if (!isNaN(score) && score >= 0 && score <= 10) {
         let why = (m[4] || '').trim();
         if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
-        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        results.push({ brollNum: parseFloat(m[1]), rawSetNum: parseInt(m[2]), score, why });
         continue;
       }
     }
 
-    // Format 3: B-roll 1 Set 6: 9.5 (why) or BROLL 1 ALT 6: 9.5 (why)
-    m = l.match(/^(?:broll|b-roll|clip)?\s*#?(\d+)\s*(?:set|alt|prompt|s)?\s*#?(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/i);
+    // Format 3: B-roll 1.5 Set 6: 9.5 (why) or BROLL 1.2 ALT 6: 9.5 (why)
+    m = l.match(/^(?:broll|b-roll|clip)?\s*#?(\d+(?:\.\d+)?)\s*(?:set|alt|prompt|s)?\s*#?(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/i);
     if (m) {
       const score = parseFloat(m[3]);
       if (!isNaN(score) && score >= 0 && score <= 10) {
         let why = (m[4] || '').trim();
         if (why.startsWith('(') && why.endsWith(')')) why = why.slice(1, -1).trim();
-        results.push({ brollNum: parseInt(m[1]), rawSetNum: parseInt(m[2]), score, why });
+        results.push({ brollNum: parseFloat(m[1]), rawSetNum: parseInt(m[2]), score, why });
         continue;
       }
     }
@@ -1444,13 +1689,14 @@ function requestApplySetRatings(text) {
 
 function applySetRatings(text, parsed, ratingsByBroll, brollsInBatch, tabLabel) {
   createProjectBackup(`Before Rating Import ${tabLabel}`);
+
   if (!ST.setRatings) ST.setRatings = {};
   if (!ST.ratingBatches) ST.ratingBatches = [];
 
   const batchId = uid();
 
   for (const [brollNumStr, items] of Object.entries(ratingsByBroll)) {
-    const brollNum = parseInt(brollNumStr);
+    const brollNum = parseFloat(brollNumStr);
     if (!ST.setRatings[brollNum]) ST.setRatings[brollNum] = {};
 
     const prompts = ST.prompts[brollNum] || [];
@@ -1488,7 +1734,7 @@ function applySetRatings(text, parsed, ratingsByBroll, brollsInBatch, tabLabel) 
 
   const setsByBroll = {};
   for (const [brollNumStr, items] of Object.entries(ratingsByBroll)) {
-    const brollNum = parseInt(brollNumStr);
+    const brollNum = parseFloat(brollNumStr);
     setsByBroll[brollNum] = items.map(x => x.setIdx);
   }
 
@@ -1507,13 +1753,18 @@ function applySetRatings(text, parsed, ratingsByBroll, brollsInBatch, tabLabel) 
   const ta = _el('srating-textarea');
   if (ta) ta.value = '';
 
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    PROJECTS[ACTIVE_PID].setRatings = JSON.parse(JSON.stringify(ST.setRatings || {}));
+    PROJECTS[ACTIVE_PID].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+  }
+
   save(true);
   updateAllPromptChips();
   updateSratingHint();
   renderRatingTabs();
   renderRatingPanel();
 
-  toast(`⭐ Applied ${parsed.length} ratings for B-roll ${tabLabel}`);
+  toast(`⭐ Applied ${parsed.length} ratings for ${tabLabel}.`);
 }
 
 
@@ -1960,7 +2211,7 @@ function updateCsetHint() {
 function parseScript(text) {
   return text.split('\n').map(l => l.trim()).filter(Boolean)
     .reduce((a, l) => {
-      const m = l.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
+      const m = l.match(/^#?(?:broll|b-roll|clip)?\s*(\d+(?:\.\d+)?)\s*[:\.\-–]?\s*(.+)/i) || l.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
       if (m) a.push({ num: parseFloat(m[1]), line: m[2].trim() });
       return a;
     }, [])
@@ -1970,13 +2221,16 @@ function parseScript(text) {
 /* ── Prompt Batch Parsing ───────────────────────────────────── */
 function parsePromptBatch(text) {
   const result = {};
-  for (const sec of text.split(/(?=BROLL\s+\d+\s*:)/i)) {
-    const numM = sec.match(/^BROLL\s+(\d+)\s*:/i); if (!numM) continue;
-    const num = parseInt(numM[1]);
+  for (const sec of text.split(/(?=(?:BROLL|B-ROLL|CLIP)\s*#?\d+(?:\.\d+)?\s*:|(?<=\n)\s*#\d+(?:\.\d+)?\s*:)/i)) {
+    const numM = sec.match(/^(?:(?:BROLL|B-ROLL|CLIP)\s*#?|#)(\d+(?:\.\d+)?)\s*:/i); if (!numM) continue;
+    const num = parseFloat(numM[1]);
     const vpIdx = sec.search(/VIDEO\s+PROMPT\s*:/i); if (vpIdx === -1) continue;
-    const chunks = sec.slice(vpIdx).split(/(?:ALT|SET)\s+\d+\s*:/i).slice(1);
+    const chunks = sec.slice(vpIdx).split(/(?:ALT|SET|PROMPT)\s*#?\d+\s*:/i).slice(1);
     if (!result[num]) result[num] = [];
-    for (const c of chunks) { const t = c.trim(); if (t) result[num].push(t); }
+    for (const c of chunks) {
+      const t = c.replace(/^[\s—\-]+|[\s—\-]+$/g, '').trim();
+      if (t) result[num].push(t);
+    }
   }
   return result;
 }
@@ -2027,6 +2281,7 @@ function requestImportPrompts(text) {
 
 function applyImportPrompts(parsed, text, brollNums, total, tabLabel) {
   createProjectBackup(`Before Prompt Import ${tabLabel}`);
+
   const batchId = uid();
   const rawBlocks = [];
 
@@ -2062,14 +2317,20 @@ function applyImportPrompts(parsed, text, brollNums, total, tabLabel) {
   const ta = _el('prompt-textarea');
   if (ta) ta.value = '';
 
-  save(true);
+  if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+    PROJECTS[ACTIVE_PID].prompts = JSON.parse(JSON.stringify(ST.prompts || {}));
+    PROJECTS[ACTIVE_PID].batches = JSON.parse(JSON.stringify(ST.batches || []));
+  }
+
+  _lastSavedStatus = 'pending_import';
+  updateSavedTimeDisplay();
   renderBatchTabs();
   renderBatchPanel();
   updateAllPromptChips();
   renderLibraryView();
   updateLibBadge();
 
-  toast(`✅ Imported ${total} prompts across ${brollNums.length} B-rolls`);
+  toast(`✅ Imported ${total} prompts across ${brollNums.length} B-rolls. Click "Save Import?" to save to Cloud or reject.`);
 }
 
 
@@ -2511,7 +2772,7 @@ function buildPromptChip(num, i, entry, idPrefix = '') {
     }
   });
 
-  // Mobile / Touchscreen: Hold 1.0s = Tier 1 (5), Hold 2.5s = Tier 2 (9)
+  // Mobile / Touchscreen: Hold 1.0s = Tier 1 (5), Hold 2.0s = Tier 2 (9)
   let _lpTimer1 = null;
   let _lpTimer2 = null;
   let _touchStartX = 0, _touchStartY = 0;
@@ -2534,15 +2795,15 @@ function buildPromptChip(num, i, entry, idPrefix = '') {
       setTimeout(() => myBtn?.classList.remove('longpress-flash'), 400);
     }, 1000);
 
-    // 2.5 seconds hold -> Tier 2
+    // 2.0 seconds hold -> Tier 2
     _lpTimer2 = setTimeout(() => {
       _lpTimer2 = null;
       if (navigator.vibrate) try { navigator.vibrate([60, 40, 60]); } catch {}
       myBtn.classList.add('longpress-flash-tier2');
       saveMyRating(num, i, t2, '');
-      toast(`⚡ 2.5s Hold: Quick rated #${num} Set ${i + 1}: ${t2}`);
+      toast(`⚡ 2s Hold: Quick rated #${num} Set ${i + 1}: ${t2}`);
       setTimeout(() => myBtn?.classList.remove('longpress-flash-tier2'), 600);
-    }, 2500);
+    }, 2000);
   }, { passive: true });
 
   const cancelTouch = (e) => {
@@ -3748,12 +4009,29 @@ function exportData(){
 function importJSON(file){
   const r = new FileReader();
   r.onload = ev => {
+    // Step 1: Parse JSON — isolated catch so only a real parse failure shows "Invalid JSON"
+    let d;
     try {
-      const d = JSON.parse(ev.target.result);
-      createProjectBackup('Before Import JSON');
+      d = JSON.parse(ev.target.result);
+    } catch(err) {
+      console.error('JSON parse error:', err);
+      toast('❌ Invalid JSON file');
+      return;
+    }
 
-      // If full multi-project export
+    // Step 2: Validate structure
+    if (!d || typeof d !== 'object') {
+      toast('❌ Invalid JSON file');
+      return;
+    }
+
+    // Step 3: Pre-import backup (swallow errors — don't let backup issues abort the import)
+    try { createProjectBackup('Before Import JSON'); } catch {}
+
+    // Step 4: Load data into PROJECTS
+    try {
       if (d.projects && typeof d.projects === 'object' && Object.keys(d.projects).length) {
+        // Full multi-project export
         for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
         for (const [k, v] of Object.entries(d.projects)) {
           PROJECTS[k] = {
@@ -3801,16 +4079,99 @@ function importJSON(file){
         saveGlobalCset();
         activateProject(pid);
       }
-
-      save(true);
-      toast('📤 Backup imported successfully');
     } catch(err) {
-      console.error('Import error:', err);
-      toast('❌ Invalid JSON file');
+      console.error('Import load error:', err);
+      toast('❌ Error loading import data. Check console.');
+      return;
+    }
+
+    // Step 5: Save locally
+    try {
+      localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+      if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+      _lastLocalSaveTime = Date.now();
+      _userMadeLocalEdit = false;
+    } catch {}
+
+    toast('📤 Backup imported successfully');
+
+    // Step 6: Send through the normal coalescing queue. It avoids a second,
+    // competing full-database upload immediately after a large import.
+    saveProjects(true);
+    return;
+
+    // Legacy direct Firebase push retained below for reference only.
+    if (_fbRef) {
+      const now = Date.now();
+      const payload = {
+        active: ACTIVE_PID,
+        projects: JSON.parse(JSON.stringify(PROJECTS)),
+        globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
+        lastUpdatedBy: CLIENT_ID,
+        updatedAt: now
+      };
+
+      // Block regular auto-saves during import push
+      _isForceSaving = true;
+      if (_fbSyncTimer) { clearTimeout(_fbSyncTimer); _fbSyncTimer = null; }
+
+      // Update sync pill once — show "Saving" in pill during push
+      _lastSavedStatus = 'syncing';
+      updateSavedTimeDisplay();
+
+      // Progress on sync pill text (fake %, Firebase has no upload progress API)
+      let _ipct = 0;
+      const _ipctTimer = setInterval(() => {
+        if (_ipct < 88) {
+          _ipct += _ipct < 40 ? 8 : _ipct < 70 ? 4 : 1;
+          const txt = _el('sync-text');
+          if (txt && _isForceSaving) txt.textContent = `Saving ${Math.min(_ipct, 88)}%`;
+        }
+      }, 400);
+
+      // Hard timeout — 90s max so import push never stays stuck
+      const _importTimeout = setTimeout(() => {
+        clearInterval(_ipctTimer);
+        if (_isForceSaving) {
+          _isForceSaving = false;
+          _lastSavedStatus = 'offline';
+          updateSavedTimeDisplay();
+          toast('⏱ Import cloud save timed out — data is saved locally only.');
+        }
+      }, 90000);
+
+      _fbRef.set(payload)
+        .then(() => {
+          clearInterval(_ipctTimer);
+          clearTimeout(_importTimeout);
+          _lastFirebaseSaveTime = Date.now();
+          _lastRemoteUpdatedAt  = now;
+          _latestCloudData      = payload;
+          _lastSavedStatus      = 'synced';
+          _userMadeLocalEdit    = false;
+          _fbRetryCount         = 0;
+          _isForceSaving        = false;
+          updateSavedTimeDisplay();
+          toast('☁️ Import saved to Cloud!');
+        })
+        .catch(err => {
+          clearInterval(_ipctTimer);
+          clearTimeout(_importTimeout);
+          console.warn('Import direct push failed:', err);
+          _isForceSaving = false;
+          _lastSavedStatus = 'offline';
+          updateSavedTimeDisplay();
+          toast('⚠️ Import saved locally — cloud upload failed. Tap Force Save to retry.');
+        });
+    } else {
+      // No Firebase — just mark as locally saved
+      _lastSavedStatus = 'synced';
+      updateSavedTimeDisplay();
     }
   };
   r.readAsText(file);
 }
+
 
 
 
@@ -4217,6 +4578,13 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   scrollToLastScoredBroll();
   initFirebaseSync();
+
+  // Attach sync pill click ALWAYS (not just when Firebase succeeds)
+  _el('sync-status')?.addEventListener('click', handleSyncStatusClick);
+
+  // ── Force Cloud Action Buttons ───────────────────────────
+  _el('btn-force-load-cloud')?.addEventListener('click', forceLoadFromCloud);
+  _el('btn-force-save-cloud')?.addEventListener('click', forceSaveToCloud);
 
 
   let rT; window.addEventListener('resize',()=>{clearTimeout(rT);rT=setTimeout(renderHeatmap,120);});
