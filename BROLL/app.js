@@ -114,6 +114,41 @@ let _cloudWriteQueued = false;
 let _cloudWriteRevision = 0;
 let _cancelledCloudRevision = 0;
 let _cloudChangeVersion = 0;
+const _dirtyCloudProjects = new Set();
+const _cloudProjectVersions = new Map();
+
+function markProjectDirty(pid) {
+  if (!pid) return;
+  _dirtyCloudProjects.add(pid);
+  _cloudProjectVersions.set(pid, (_cloudProjectVersions.get(pid) || 0) + 1);
+}
+function markAllProjectsDirty() { Object.keys(PROJECTS).forEach(markProjectDirty); }
+
+function bytesToBase64(bytes) {
+  let result = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) result += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(result);
+}
+function base64ToBytes(value) {
+  const raw = atob(value); const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+async function encodeCloudProject(project) {
+  const raw = JSON.stringify(project);
+  if (!window.CompressionStream || raw.length < 100_000) return project;
+  const stream = new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip'));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  // Compression is only useful when it actually reduces the upload.
+  return bytes.length < raw.length ? { _encoding: 'gzip-base64', data: bytesToBase64(bytes) } : project;
+}
+async function decodeCloudProject(project) {
+  if (!project || project._encoding !== 'gzip-base64' || !project.data) return project;
+  if (!window.DecompressionStream) throw new Error('This browser cannot read the compressed cloud project.');
+  const stream = new Blob([base64ToBytes(project.data)]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}
 
 function promptCancelSave() {
   showModal(
@@ -461,7 +496,7 @@ function pushToFirebase(immediate = false, isNewChange = true) {
   if (_isApplyingRemote) { _hasPendingLocalChange = true; return; }
   if (_fbSyncTimer) clearTimeout(_fbSyncTimer);
 
-  const doPush = () => {
+  const doPush = async () => {
     if (!_fbRef || _pendingImportSnapshot) return;
     if (_isApplyingRemote) { _hasPendingLocalChange = true; return; }
     // A complete database snapshot can be sizeable. Never upload two snapshots at once:
@@ -471,27 +506,33 @@ function pushToFirebase(immediate = false, isNewChange = true) {
     const now = Date.now();
     const revision = ++_cloudWriteRevision;
     const sentChangeVersion = _cloudChangeVersion;
-    const localProjects = JSON.parse(JSON.stringify(PROJECTS));
-    let projects = localProjects;
-    if (_latestCloudData?.projects && _latestCloudData.lastUpdatedBy !== CLIENT_ID) {
-      projects = {};
-      const ids = new Set([...Object.keys(_latestCloudData.projects), ...Object.keys(localProjects)]);
-      ids.forEach(pid => { projects[pid] = _mergeProject(_latestCloudData.projects[pid], localProjects[pid]); });
-    }
-    const payload = { active: ACTIVE_PID, projects,
+    // Write only projects that actually changed. Each project is compressed before
+    // upload, keeping large prompt libraries fast and avoiding full-database writes.
+    const dirtyPids = [..._dirtyCloudProjects];
+    if (!dirtyPids.length) dirtyPids.push(ACTIVE_PID);
+    const sentProjectVersions = new Map(dirtyPids.map(pid => [pid, _cloudProjectVersions.get(pid) || 0]));
+    _cloudWriteInFlight = true; // lock before asynchronous compression begins
+    const updates = { active: ACTIVE_PID,
       globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
       lastUpdatedBy: CLIENT_ID, updatedAt: now };
+    try {
+      for (const pid of dirtyPids) updates[`projects/${pid}`] = PROJECTS[pid] ? await encodeCloudProject(PROJECTS[pid]) : null;
+    } catch (err) {
+      console.error('Cloud compression failed:', err);
+      _cloudWriteInFlight = false;
+      _lastSavedStatus = 'offline'; updateSavedTimeDisplay(); return;
+    }
 
-    _cloudWriteInFlight = true;
     let succeeded = false;
     _lastSavedStatus = 'syncing';
     updateSavedTimeDisplay();
-    _fbRef.set(payload).then(() => {
+    _fbRef.update(updates).then(() => {
       succeeded = true;
       if (revision > _cancelledCloudRevision) {
         _lastFirebaseSaveTime = Date.now();
         _lastRemoteUpdatedAt = now;
-        _latestCloudData = payload;
+        if (_latestCloudData) _latestCloudData = { ..._latestCloudData, active: ACTIVE_PID, updatedAt: now, lastUpdatedBy: CLIENT_ID };
+        dirtyPids.forEach(pid => { if ((_cloudProjectVersions.get(pid) || 0) === sentProjectVersions.get(pid)) _dirtyCloudProjects.delete(pid); });
         if (_cloudChangeVersion === sentChangeVersion) _userMadeLocalEdit = false;
         _fbRetryCount = 0;
       }
@@ -505,7 +546,7 @@ function pushToFirebase(immediate = false, isNewChange = true) {
       }
     }).finally(() => {
       _cloudWriteInFlight = false;
-      const needsAnotherWrite = _cloudWriteQueued || _hasPendingLocalChange || _cloudChangeVersion > sentChangeVersion;
+      const needsAnotherWrite = _cloudWriteQueued || _hasPendingLocalChange || _cloudChangeVersion > sentChangeVersion || _dirtyCloudProjects.size > 0;
       _cloudWriteQueued = false;
       _hasPendingLocalChange = false;
       _lastSavedStatus = needsAnotherWrite ? 'syncing' : (succeeded ? 'synced' : 'offline');
@@ -516,7 +557,7 @@ function pushToFirebase(immediate = false, isNewChange = true) {
   if (immediate) doPush(); else _fbSyncTimer = setTimeout(() => { _fbSyncTimer = null; doPush(); }, 750);
 }
 
-function applyRemoteData(data, isInitial = false) {
+async function applyRemoteData(data, isInitial = false) {
   if (!data || !data.projects || typeof data.projects !== 'object' || Object.keys(data.projects).length === 0) return;
 
   const remoteUpdatedAt = data.updatedAt || 0;
@@ -529,8 +570,10 @@ function applyRemoteData(data, isInitial = false) {
 
   setApplyingRemote(true);
   try {
+    const decodedProjects = {};
+    for (const [k, v] of Object.entries(data.projects)) decodedProjects[k] = await decodeCloudProject(v);
     for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
-    for (const [k, v] of Object.entries(data.projects)) {
+    for (const [k, v] of Object.entries(decodedProjects)) {
       PROJECTS[k] = {
         name: v.name || 'Script',
         script: v.script || '',
@@ -629,24 +672,24 @@ function forceLoadFromCloud() {
     toast('⚠️ No cloud connection yet — please wait.');
     return;
   }
-  if (btn) { btn.textContent = '⏳ Loading…'; btn.disabled = true; }
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   _lastSavedStatus = 'loading';
   updateSavedTimeDisplay();
 
-  _fbRef.once('value').then(snap => {
+  _fbRef.once('value').then(async snap => {
     const data = snap.val();
     if (!data || !data.projects || Object.keys(data.projects).length === 0) {
       toast('☁️ Cloud is empty — nothing to load.');
       _lastSavedStatus = 'synced';
       updateSavedTimeDisplay();
-      if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; }
+      if (btn) { btn.textContent = '⇩'; btn.disabled = false; }
       return;
     }
     _latestCloudData = data;
-    applyRemoteData(data, true);
+    await applyRemoteData(data, true);
     if (btn) {
-      btn.textContent = '✔ Loaded!';
-      setTimeout(() => { if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; } }, 1200);
+      btn.textContent = '✔';
+      setTimeout(() => { if (btn) { btn.textContent = '⇩'; btn.disabled = false; } }, 1200);
     }
     toast('☁️ Pulled and loaded latest data from Cloud!');
   }).catch(err => {
@@ -654,7 +697,7 @@ function forceLoadFromCloud() {
     toast('❌ Failed to load from Cloud.');
     _lastSavedStatus = 'offline';
     updateSavedTimeDisplay();
-    if (btn) { btn.textContent = '⬇ Load Latest'; btn.disabled = false; }
+    if (btn) { btn.textContent = '⇩'; btn.disabled = false; }
   });
 }
 
@@ -667,7 +710,7 @@ function forceSaveToCloud() {
   }
   // Force Save joins the same queue as automatic saves. This prevents it from
   // racing a large background upload and accidentally overwriting newer data.
-  if (btn) { btn.textContent = '⏳ Saving…'; btn.disabled = true; }
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   saveProjects(true);
   const waitForQueue = () => {
     if (_cloudWriteInFlight || _cloudWriteQueued || _fbSyncTimer) {
@@ -676,9 +719,9 @@ function forceSaveToCloud() {
     }
     if (btn) {
       const saved = _lastSavedStatus === 'synced';
-      btn.textContent = saved ? '✔ Saved' : '⬆ Force Save';
+      btn.textContent = saved ? '✔' : '☁';
       btn.disabled = false;
-      if (saved) setTimeout(() => { if (btn) btn.textContent = '⬆ Force Save'; }, 1200);
+      if (saved) setTimeout(() => { if (btn) btn.textContent = '☁'; }, 1200);
     }
   };
   waitForQueue();
@@ -742,6 +785,7 @@ function initFirebaseSync() {
         } else {
           // Cloud empty: seed from local only if present
           if (Object.keys(PROJECTS).length > 0) {
+            markAllProjectsDirty();
             pushToFirebase(true);
           } else {
             _lastSavedStatus = 'synced';
@@ -900,6 +944,7 @@ function saveProjects(immediate = false) {
       covered:       JSON.parse(JSON.stringify(ST.covered||{})),
     };
   }
+  markProjectDirty(ACTIVE_PID);
   // localStorage is fast but is typically limited to about 5 MB. Keep smaller
   // projects there and place large imports in IndexedDB, which is built for them.
   const projectSnapshot = JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS });
@@ -1207,6 +1252,7 @@ function deleteProject(pid) {
   const name = PROJECTS[pid]?.name || 'Script';
   createProjectBackup(`Before Delete ${name}`);
   delete PROJECTS[pid];
+  markProjectDirty(pid);
   saveProjects(true);
   if (ACTIVE_PID === pid) { activateProject(Object.keys(PROJECTS)[0]); }
   else { renderProjectTabs(); }
@@ -4144,6 +4190,7 @@ function importJSON(file){
 
     // Step 6: Send through the normal coalescing queue. It avoids a second,
     // competing full-database upload immediately after a large import.
+    markAllProjectsDirty();
     saveProjects(true);
     return;
 
@@ -4531,6 +4578,7 @@ function updateRatingLockUI() {
     btn.classList.toggle('locked', isLocked);
     btn.classList.toggle('unlocked', !isLocked);
     btn.title = isLocked ? 'Main rating is LOCKED to prevent mistouch (click to unlock)' : 'Main rating is UNLOCKED (click to lock)';
+    btn.setAttribute('aria-label', isLocked ? 'Unlock main rating' : 'Lock main rating');
   }
   if (ic) ic.textContent = isLocked ? '🔒' : '🔓';
   if (tx) tx.textContent = isLocked ? 'Locked' : 'Unlocked';

@@ -38,16 +38,10 @@
     <div id="project-bar-wrap">
       <div id="project-bar" role="tablist" aria-label="Scripts"></div>
       <div id="project-bar-right">
-        <button class="hpill force-load-pill" id="btn-force-load-cloud" title="Pull and load latest data from Cloud">⬇ Load Latest</button>
-        <button class="hpill force-save-pill" id="btn-force-save-cloud" title="Force save current state to Cloud as latest">⬆ Force Save</button>
         <div class="hpill sync-pill" id="sync-status" title="Cloud sync status — click to force sync" style="cursor:pointer">
           <span class="sync-dot" id="sync-dot"></span>
           <span class="sync-text" id="sync-text">Cloud</span>
         </div>
-        <button class="hpill lock-pill locked" id="rating-lock-btn" title="Main rating lock (click to toggle)">
-          <span class="lock-icon" id="lock-icon">🔒</span>
-          <span class="lock-text" id="lock-text">Locked</span>
-        </button>
       </div>
     </div>
 
@@ -67,7 +61,12 @@
       <div class="tb-group tb-right">
         <button class="tb-btn undo-btn disabled" id="btn-undo" disabled title="Undo (Ctrl+Z)">↩</button>
         <button class="tb-btn redo-btn disabled" id="btn-redo" disabled title="Redo (Ctrl+Y)">↪</button>
+        <button class="tb-btn rating-lock-icon locked" id="rating-lock-btn" title="Main rating lock (click to toggle)" aria-label="Main rating lock">
+          <span class="lock-icon" id="lock-icon">🔒</span>
+        </button>
         <div class="ur-sep"></div>
+        <button class="tb-btn cloud-load-icon" id="btn-force-load-cloud" title="Load latest data from Cloud" aria-label="Load latest from Cloud">⇩</button>
+        <button class="tb-btn cloud-save-icon" id="btn-force-save-cloud" title="Save latest state to Cloud" aria-label="Save to Cloud">☁</button>
         <button class="tb-btn" id="btn-reset"  title="Reset all scores">↺</button>
         <button class="tb-btn" id="btn-import" title="Import JSON">📤</button>
         <button class="tb-btn" id="btn-export" title="Export JSON">📥</button>
@@ -517,7 +516,6 @@
 <script src="app.js?v=20260827_13"></script>
 </body>
 </html>
-
 
 
 

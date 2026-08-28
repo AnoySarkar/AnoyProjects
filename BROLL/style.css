@@ -1324,6 +1324,15 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .tb-btn.danger:hover { background: rgba(224,85,85,0.12) }
 .tb-btn.disabled { opacity: 0.25; cursor: not-allowed }
 .tb-btn.undo-btn, .tb-btn.redo-btn { font-size: 13px }
+.tb-btn.rating-lock-icon { font-size:12px; }
+.tb-btn.rating-lock-icon.locked { color:#fca5a5; border-color:rgba(239,68,68,0.38); background:rgba(239,68,68,0.10); }
+.tb-btn.rating-lock-icon.unlocked { color:#86efac; border-color:rgba(34,197,94,0.38); background:rgba(34,197,94,0.10); }
+.tb-btn.rating-lock-icon:hover { filter:brightness(1.18); }
+.tb-btn.cloud-load-icon { color:#4ade80; border-color:rgba(34,197,94,0.30); font-size:15px; line-height:1; }
+.tb-btn.cloud-load-icon:hover:not(:disabled) { background:rgba(34,197,94,0.15); border-color:#22c55e; }
+.tb-btn.cloud-save-icon { color:#c4b5fd; border-color:rgba(124,109,250,0.35); font-size:14px; line-height:1; }
+.tb-btn.cloud-save-icon:hover:not(:disabled) { background:rgba(124,109,250,0.16); border-color:var(--accent); }
+.tb-btn.cloud-load-icon:disabled, .tb-btn.cloud-save-icon:disabled { opacity:0.45; cursor:not-allowed; }
 
 /* ══ BOTTOM TAB BAR ════════════════════════════════════════ */
 #bottom-tab-bar {
@@ -1729,7 +1738,6 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .settings-input-num:focus {
   border-color: var(--accent);
 }
-
 
 
 

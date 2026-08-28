@@ -1,4 +1,4 @@
-const CACHE_NAME = 'broll-tracker-v4';
+const CACHE_NAME = 'broll-tracker-v6';
 const ASSETS = [
   './',
   './index.html',
