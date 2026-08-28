@@ -125,11 +125,23 @@ input,textarea { font-family:inherit }
 
 .sync-pill { display:flex; align-items:center; gap:5px; border-color:rgba(124,109,250,0.25); background:rgba(124,109,250,0.08); transition:all 0.2s }
 .sync-pill:hover { background:rgba(124,109,250,0.18); border-color:var(--accent) }
+.sync-pill.pending-import-pill {
+  background: rgba(245, 158, 11, 0.18) !important;
+  border-color: #f59e0b !important;
+  animation: pendingPillGlow 1.2s infinite alternate ease-in-out;
+  cursor: pointer;
+}
+.sync-pill.pending-import-pill .sync-text {
+  color: #fbbf24 !important;
+  font-weight: 800;
+}
 .sync-dot { width:6px; height:6px; border-radius:50%; background:#22c55e; flex-shrink:0; transition:all 0.25s }
 .sync-dot.syncing { background:#eab308; box-shadow:0 0 6px rgba(234,179,8,0.7); animation:syncPulse 0.9s infinite alternate }
 .sync-dot.offline { background:#ef4444; box-shadow:none }
+.sync-dot.pending-import { background:#f59e0b; box-shadow:0 0 8px #f59e0b; animation:syncPulse 0.6s infinite alternate }
 .sync-text { font-size:10px; font-weight:700; color:var(--text-2); font-family:var(--font) }
 @keyframes syncPulse { 0% { opacity:0.3; transform:scale(0.8) } 100% { opacity:1; transform:scale(1.2) } }
+@keyframes pendingPillGlow { 0% { box-shadow: 0 0 3px rgba(245, 158, 11, 0.3); } 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.7); } }
 
 .hdr-actions { display:flex; gap:2px; flex-shrink:0; margin-left:auto; align-items:center }
 
