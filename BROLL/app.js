@@ -807,6 +807,44 @@ function loadGlobalCset() {
 const PROJECTS   = {};
 let   ACTIVE_PID = null;
 const PROJ_KEY   = 'br_v6_proj';
+const LARGE_STORE_DB = 'broll-tracker-data';
+const LARGE_STORE_NAME = 'snapshots';
+const LARGE_PROJECT_LIMIT = 4_500_000; // safely below the common localStorage quota
+let _largeLocalRaw = null;
+
+function openLargeStore() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) { reject(new Error('IndexedDB is unavailable')); return; }
+    const req = indexedDB.open(LARGE_STORE_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(LARGE_STORE_NAME);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveLargeSnapshot(raw) {
+  const db = await openLargeStore();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(LARGE_STORE_NAME, 'readwrite');
+    tx.objectStore(LARGE_STORE_NAME).put(raw, PROJ_KEY);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+async function restoreLargeSnapshot() {
+  try {
+    const db = await openLargeStore();
+    const raw = await new Promise((resolve, reject) => {
+      const req = db.transaction(LARGE_STORE_NAME, 'readonly').objectStore(LARGE_STORE_NAME).get(PROJ_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    if (raw) _largeLocalRaw = raw;
+  } catch { /* IndexedDB is an optional resilience layer. */ }
+}
 
 function _projData(name) {
   return {
@@ -862,14 +900,23 @@ function saveProjects(immediate = false) {
       covered:       JSON.parse(JSON.stringify(ST.covered||{})),
     };
   }
-  // Always write to localStorage FIRST (instant, never fails due to network)
+  // localStorage is fast but is typically limited to about 5 MB. Keep smaller
+  // projects there and place large imports in IndexedDB, which is built for them.
+  const projectSnapshot = JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS });
   try {
-    localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+    if (projectSnapshot.length > LARGE_PROJECT_LIMIT) throw new DOMException('Project data is too large for localStorage', 'QuotaExceededError');
+    localStorage.setItem(PROJ_KEY, projectSnapshot);
     if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
     _lastLocalSaveTime = Date.now();
     _lastUserEditTime = Date.now();
     _userMadeLocalEdit = true;
-  } catch {}
+  } catch (err) {
+    saveLargeSnapshot(projectSnapshot).then(() => {
+      _largeLocalRaw = projectSnapshot;
+      _lastLocalSaveTime = Date.now();
+    }).catch(idbErr => console.error('Large local save failed:', idbErr));
+    console.warn('Using IndexedDB for this large project:', err);
+  }
   saveGlobalCset();
   pushToFirebase(immediate); // then push to Firebase
   maybeAutoBackup();
@@ -989,7 +1036,7 @@ function _migrateSetRatings(raw) {
 function loadProjects() {
   /* Try new multi-project store */
   try {
-    const raw = JSON.parse(localStorage.getItem(PROJ_KEY)||'null');
+    const raw = JSON.parse(_largeLocalRaw || localStorage.getItem(PROJ_KEY)||'null');
     if (raw && raw.projects && Object.keys(raw.projects).length) {
       for (const [k,v] of Object.entries(raw.projects)) {
         PROJECTS[k] = {
@@ -4521,7 +4568,9 @@ function toggleCompactView() {
 
 
 /* ── Init ───────────────────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded',()=>{
+document.addEventListener('DOMContentLoaded', async ()=>{
+  // Read the large-project fallback before choosing a local project state.
+  await restoreLargeSnapshot();
   loadProjects();
   const proj = PROJECTS[ACTIVE_PID] || {};
   ST.scores        = proj.scores        || {};
