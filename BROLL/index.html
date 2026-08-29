@@ -48,8 +48,8 @@
     <!-- Compact Toolbar -->
     <div id="top-toolbar">
       <div class="tb-group tb-left">
-        <button class="tb-btn active" id="tb-needs-work" title="Show only lines below the Needs Work thresholds">⚡</button>
-        <button class="tb-btn active" id="tb-skip-high-real" title="Skip lines at or above the Real Rating threshold">⏭</button>
+        <button class="tb-btn prompt-view-btn active" id="tb-needs-work" title="Show only lines below the Needs Work thresholds">⚡ <span class="prompt-view-count" id="needs-work-count">0</span></button>
+        <button class="tb-btn prompt-view-btn active" id="tb-skip-high-real" title="Skip lines at or above the Real Rating threshold">⏭ <span class="prompt-view-count" id="skip-high-real-count">0</span></button>
         <button class="tb-btn" id="tb-compact-toggle" title="Toggle Compact View (Hide Prompts)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">
             <rect x="3" y="4" width="18" height="6" rx="1.5"></rect>
@@ -504,7 +504,6 @@
 <script src="app.js?v=20260827_13"></script>
 </body>
 </html>
-
 
 
 

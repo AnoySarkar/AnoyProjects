@@ -3433,6 +3433,7 @@ function renderFilterCount() {
 /* ── Cards ──────────────────────────────────────────────────── */
 function renderCards(animate=false) {
   const box=_el('cards-container'), noRes=_el('no-results'), empty=_el('empty-state'), fbar=_el('filter-bar');
+  updatePromptViewControls();
   if(!ST.brolls.length){
     box.innerHTML='';empty.classList.remove('hidden');noRes.style.display='none';fbar?.classList.add('hidden');
     box.style.minHeight='';
@@ -3884,17 +3885,26 @@ function setFilter(f) {
 function updatePromptViewControls() {
   const needs = _el('tb-needs-work');
   const skip = _el('tb-skip-high-real');
+  const needsCount = ST.brolls.filter(passes).length;
+  const highRealCount = ST.brolls.filter(b => {
+    const real = getLineRealRating(b.num);
+    return real.isRated && real.score >= (ST.skipHighRealThreshold ?? 9);
+  }).length;
+  const needsBadge = _el('needs-work-count');
+  const skipBadge = _el('skip-high-real-count');
+  if (needsBadge) needsBadge.textContent = needsCount;
+  if (skipBadge) skipBadge.textContent = highRealCount;
   if (needs) {
     needs.classList.toggle('active', !!ST.needsWorkEnabled);
     needs.title = ST.needsWorkEnabled
-      ? `Needs Work ON: Main and Real below ${ST.needsWorkThreshold}`
-      : 'Needs Work OFF: show all cards';
+      ? `Needs Work ON: ${needsCount} cards shown`
+      : `Needs Work OFF: ${needsCount} cards shown`;
   }
   if (skip) {
     skip.classList.toggle('active', !!ST.skipHighReal);
     skip.title = ST.skipHighReal
-      ? `Skip Real ${ST.skipHighRealThreshold}+ ON`
-      : 'Skip high Real ratings OFF';
+      ? `Skip Real ${ST.skipHighRealThreshold}+ ON: ${highRealCount} cards skipped`
+      : `Skip Real ${ST.skipHighRealThreshold}+ OFF: ${highRealCount} matching cards included`;
   }
 }
 

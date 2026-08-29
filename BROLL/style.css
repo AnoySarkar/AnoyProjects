@@ -1333,6 +1333,9 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .tb-btn.cloud-save-icon { color:#c4b5fd; border-color:rgba(124,109,250,0.35); font-size:14px; line-height:1; }
 .tb-btn.cloud-save-icon:hover:not(:disabled) { background:rgba(124,109,250,0.16); border-color:var(--accent); }
 .tb-btn.cloud-load-icon:disabled, .tb-btn.cloud-save-icon:disabled { opacity:0.45; cursor:not-allowed; }
+.tb-btn.prompt-view-btn { gap:3px; padding-inline:6px; }
+.prompt-view-count { min-width:13px; padding:0 3px; border-radius:99px; background:rgba(255,255,255,0.12); font:700 8px/14px var(--mono); color:inherit; }
+.tb-btn.prompt-view-btn:not(.active) .prompt-view-count { opacity:0.55; }
 
 /* ══ BOTTOM TAB BAR ════════════════════════════════════════ */
 #bottom-tab-bar {
@@ -1739,7 +1742,6 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .settings-input-num:focus {
   border-color: var(--accent);
 }
-
 
 
 
