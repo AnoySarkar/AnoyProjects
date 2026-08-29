@@ -67,8 +67,12 @@ const ST = {
   suffix:            '',
   labelEnabled:      true, // Prepend "14S6" label to copied prompts
   mainRatingLocked:  true, // Lock main rating slider to prevent mistouch (default true)
-  filterTarget:      'main', // 'main' or 'real'
+  filterTarget:      'main', // retained for score sorting compatibility
   filter:            'all',
+  needsWorkEnabled:  localStorage.getItem('br_needs_work_enabled') !== 'false',
+  needsWorkThreshold: parseFloat(localStorage.getItem('br_needs_work_threshold')) || 9,
+  skipHighReal:      localStorage.getItem('br_skip_high_real') !== 'false',
+  skipHighRealThreshold: parseFloat(localStorage.getItem('br_skip_high_real_threshold')) || 9,
   sortBy:            'num',
   activeBatch:       'new',
   inputOpen:         true,
@@ -3037,37 +3041,22 @@ function getLineRealRating(num) {
   };
 }
 
-/* ── Filter & Sort (Main Rating vs Real Rating) ─────────────── */
+/* ── Prompt View: Needs Work + high-real skip ──────────────── */
 function passes(b) {
-  const target = ST.filterTarget || 'main';
-  const f = ST.filter;
+  const mainScore = ST.scores[b.num] ?? null;
+  const real = getLineRealRating(b.num);
+  const needsThreshold = ST.needsWorkThreshold ?? 9;
+  const skipThreshold = ST.skipHighRealThreshold ?? 9;
+  const belowMain = mainScore === null || mainScore < needsThreshold;
+  const belowReal = !real.isRated || real.score < needsThreshold;
 
-
-
-  if (target === 'main') {
-    const s = ST.scores[b.num] ?? null;
-    if (f === 'all') return true;
-    if (f === 'unscored' || f === 'unrated') return s === null;
-    if (f === 'needs') return s === null || s < 9;
-    if (f === 'retry') return s === 0;
-    if (f.startsWith('above:')) return s !== null && s >= parseFloat(f.slice(6));
-    if (f.startsWith('below:')) return s === null || s < parseFloat(f.slice(6));
-    if (f === 'perfect') return s !== null && snap(s) === 10;
-    return true;
-  } else {
-    // Real Rating filtering: represented by highest real score of the sets, or 9 if covered
-    const lr = getLineRealRating(b.num);
-    if (f === 'all') return true;
-    if (f === 'unrated' || f === 'unscored') return !lr.isRated;
-    if (f === 'retry') return lr.hasRetry;
-    if (f === 'needs') return !lr.isRated || lr.score < 9;
-    if (f === 'above:9' || f === '9plus') return lr.isRated && lr.score >= 9;
-    if (f === 'perfect') return lr.isRated && lr.score >= 10;
-    if (f === 'covered') return lr.isCovered;
-    if (f.startsWith('above:')) return lr.isRated && lr.score >= parseFloat(f.slice(6));
-    if (f.startsWith('below:')) return !lr.isRated || lr.score < parseFloat(f.slice(6));
-    return true;
-  }
+  // Needs Work always requires a low/unrated Main score. Real-score exclusion is
+  // controlled exclusively by the Skip button, so turning it off truly reveals
+  // high-Real cards whose Main score still needs work.
+  if (ST.needsWorkEnabled && !belowMain) return false;
+  if (ST.needsWorkEnabled && ST.skipHighReal && !belowReal) return false;
+  if (ST.skipHighReal && real.isRated && real.score >= skipThreshold) return false;
+  return true;
 }
 
 function sortedList(arr) {
@@ -3445,11 +3434,11 @@ function renderFilterCount() {
 function renderCards(animate=false) {
   const box=_el('cards-container'), noRes=_el('no-results'), empty=_el('empty-state'), fbar=_el('filter-bar');
   if(!ST.brolls.length){
-    box.innerHTML='';empty.classList.remove('hidden');noRes.style.display='none';fbar.classList.add('hidden');
+    box.innerHTML='';empty.classList.remove('hidden');noRes.style.display='none';fbar?.classList.add('hidden');
     box.style.minHeight='';
     return;
   }
-  empty.classList.add('hidden');fbar.classList.remove('hidden');
+  empty.classList.add('hidden');fbar?.classList.remove('hidden');
 
   let list = sortedList(ST.brolls.filter(passes));
 
@@ -3890,6 +3879,23 @@ function setFilter(f) {
   if (!f.startsWith('above:')) { const e = _el('fb-above'); if (e) e.value = ''; }
   renderCards();
   renderFilterCount();
+}
+
+function updatePromptViewControls() {
+  const needs = _el('tb-needs-work');
+  const skip = _el('tb-skip-high-real');
+  if (needs) {
+    needs.classList.toggle('active', !!ST.needsWorkEnabled);
+    needs.title = ST.needsWorkEnabled
+      ? `Needs Work ON: Main and Real below ${ST.needsWorkThreshold}`
+      : 'Needs Work OFF: show all cards';
+  }
+  if (skip) {
+    skip.classList.toggle('active', !!ST.skipHighReal);
+    skip.title = ST.skipHighReal
+      ? `Skip Real ${ST.skipHighRealThreshold}+ ON`
+      : 'Skip high Real ratings OFF';
+  }
 }
 
 
@@ -4565,6 +4571,14 @@ function syncSettingsUI() {
   const qr2 = _el('setting-qr-tier2');
   if (qr2) qr2.value = ST.quickRateTier2 ?? 9;
 
+  const needsThreshold = _el('setting-needs-work-threshold');
+  if (needsThreshold) needsThreshold.value = ST.needsWorkThreshold ?? 9;
+  const skipHighReal = _el('setting-skip-high-real');
+  if (skipHighReal) skipHighReal.checked = !!ST.skipHighReal;
+  const skipThreshold = _el('setting-skip-high-real-threshold');
+  if (skipThreshold) skipThreshold.value = ST.skipHighRealThreshold ?? 9;
+  updatePromptViewControls();
+
   renderBackupsListUI();
 }
 
@@ -4824,6 +4838,29 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     toast(ST.autoDone9 ? '✔ Auto-Done on 9+ enabled' : '◻ Auto-Done on 9+ disabled');
   });
 
+  _el('setting-needs-work-threshold')?.addEventListener('change', e => {
+    const value = parseFloat(e.target.value);
+    if (Number.isNaN(value) || value < 0 || value > 10) { syncSettingsUI(); return; }
+    ST.needsWorkThreshold = value;
+    try { localStorage.setItem('br_needs_work_threshold', value); } catch {}
+    renderCards(); updatePromptViewControls();
+    toast(`⚡ Needs Work now requires both ratings below ${value}`);
+  });
+
+  _el('setting-skip-high-real')?.addEventListener('change', e => {
+    ST.skipHighReal = e.target.checked;
+    try { localStorage.setItem('br_skip_high_real', ST.skipHighReal ? 'true' : 'false'); } catch {}
+    renderCards(); updatePromptViewControls();
+  });
+
+  _el('setting-skip-high-real-threshold')?.addEventListener('change', e => {
+    const value = parseFloat(e.target.value);
+    if (Number.isNaN(value) || value < 0 || value > 10) { syncSettingsUI(); return; }
+    ST.skipHighRealThreshold = value;
+    try { localStorage.setItem('br_skip_high_real_threshold', value); } catch {}
+    renderCards(); updatePromptViewControls();
+  });
+
   _el('setting-show-bengali')?.addEventListener('change', e => {
     ST.showBengali = e.target.checked;
     try { localStorage.setItem('br_show_bengali', ST.showBengali ? 'true' : 'false'); } catch {}
@@ -5017,25 +5054,20 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   });
 
 
-  /* ── Toolbar 🔍: toggle filter bar ──────────────────────── */
-  _el('tb-filter-toggle')?.addEventListener('click', () => {
-    const fb = _el('filter-bar');
-    if (!fb) return;
-    const hidden = fb.classList.toggle('hidden');
-    _el('tb-filter-toggle')?.classList.toggle('active', !hidden);
-    switchBottomTab('p');
-  });
-
-
-  /* ── Toolbar ⚡: Needs Work (<9) quick filter ────────────── */
+  /* ── Prompt view controls ───────────────────────────────── */
   _el('tb-needs-work')?.addEventListener('click', () => {
     switchBottomTab('p');
-    if (ST.filter === 'needs') {
-      setFilter('all');
-    } else {
-      setFilter('needs');
-      toast('⚡ Filter: Needs Work (<9)');
-    }
+    ST.needsWorkEnabled = !ST.needsWorkEnabled;
+    try { localStorage.setItem('br_needs_work_enabled', ST.needsWorkEnabled ? 'true' : 'false'); } catch {}
+    updatePromptViewControls(); renderCards();
+    toast(ST.needsWorkEnabled ? '⚡ Needs Work view on' : '👁 All cards visible');
+  });
+  _el('tb-skip-high-real')?.addEventListener('click', () => {
+    switchBottomTab('p');
+    ST.skipHighReal = !ST.skipHighReal;
+    try { localStorage.setItem('br_skip_high_real', ST.skipHighReal ? 'true' : 'false'); } catch {}
+    updatePromptViewControls(); renderCards();
+    toast(ST.skipHighReal ? `⏭ Skipping Real ${ST.skipHighRealThreshold}+` : '⏭ High Real ratings included');
   });
 
   /* ── Toolbar 🗜️: Compact View (hide prompts) ────────────── */

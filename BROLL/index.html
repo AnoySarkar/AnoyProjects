@@ -48,8 +48,8 @@
     <!-- Compact Toolbar -->
     <div id="top-toolbar">
       <div class="tb-group tb-left">
-        <button class="tb-btn" id="tb-filter-toggle" title="Toggle Filter Bar">🔍</button>
-        <button class="tb-btn" id="tb-needs-work" title="Needs Work (&lt;9)">⚡</button>
+        <button class="tb-btn active" id="tb-needs-work" title="Show only lines below the Needs Work thresholds">⚡</button>
+        <button class="tb-btn active" id="tb-skip-high-real" title="Skip lines at or above the Real Rating threshold">⏭</button>
         <button class="tb-btn" id="tb-compact-toggle" title="Toggle Compact View (Hide Prompts)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">
             <rect x="3" y="4" width="18" height="6" rx="1.5"></rect>
@@ -77,37 +77,6 @@
     <!-- Overview Bar Grid -->
     <div id="heatmap-panel">
       <div id="heatmap-grid" class="hm-linked-grid" role="list"></div>
-    </div>
-
-    <!-- Filter Bar (toggled by F button) -->
-    <div id="filter-bar" class="hidden" role="search">
-      <div class="fb-target-grp">
-        <button class="fb-target-btn active" id="fb-target-main" data-target="main">🎯 Main</button>
-        <button class="fb-target-btn" id="fb-target-real" data-target="real">✏ Real</button>
-      </div>
-      <div class="fb-sep"></div>
-      <div id="fb-chips" class="fb-chips-wrap">
-        <button class="chip active" data-filter="all"      id="chip-all">All</button>
-        <button class="chip"        data-filter="unscored" id="chip-un">Unscored</button>
-        <button class="chip"        data-filter="needs"    id="chip-needs">Needs Work</button>
-        <button class="chip"        data-filter="above:9"  id="chip-9">9+ ✅</button>
-        <button class="chip"        data-filter="perfect"  id="chip-10">10 🏆</button>
-      </div>
-      <div class="fb-sep"></div>
-      <div class="fb-input-wrap">
-        <span>below</span>
-        <input type="number" id="fb-below" min="0" max="10" step="0.5" />
-      </div>
-      <div class="fb-input-wrap">
-        <span>above</span>
-        <input type="number" id="fb-above" min="0" max="10" step="0.5" />
-      </div>
-      <span class="fb-count" id="fb-count" aria-live="polite">—</span>
-      <div class="sort-grp">
-        <button class="sort-btn active" data-sort="num"  title="Sort by #">#</button>
-        <button class="sort-btn"        data-sort="asc"  title="Low first">↑</button>
-        <button class="sort-btn"        data-sort="desc" title="High first">↓</button>
-      </div>
     </div>
 
   </div><!-- /sticky-top -->
@@ -365,6 +334,25 @@
             </div>
             <input type="checkbox" class="settings-switch" id="setting-autodone-9" checked />
           </div>
+
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <div class="settings-row-title">Needs Work Threshold</div>
+              <div class="settings-row-sub">Show cards with a Main rating below this value; the Skip High Real setting controls Real-rating exclusion</div>
+            </div>
+            <input type="number" class="settings-input-num" id="setting-needs-work-threshold" min="0" max="10" step="0.5" value="9" />
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row-info">
+              <div class="settings-row-title">Skip High Real Ratings</div>
+              <div class="settings-row-sub">Hide cards whose Real rating reaches the skip threshold</div>
+            </div>
+            <div class="settings-inline-control">
+              <input type="number" class="settings-input-num" id="setting-skip-high-real-threshold" min="0" max="10" step="0.5" value="9" />
+              <input type="checkbox" class="settings-switch" id="setting-skip-high-real" checked />
+            </div>
+          </div>
         </div>
       </section>
 
@@ -516,9 +504,6 @@
 <script src="app.js?v=20260827_13"></script>
 </body>
 </html>
-
-
-
 
 
 
