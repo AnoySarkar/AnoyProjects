@@ -61,8 +61,9 @@ const ST = {
   showBengali:       localStorage.getItem('br_show_bengali') !== 'false',
   bengaliScript:     '',
   bengaliLines:      {},   // { [brollNum]: "বাংলা লাইন..." }
-  quickRateTier1:    parseFloat(localStorage.getItem('br_qr_tier1')) || 5,
-  quickRateTier2:    parseFloat(localStorage.getItem('br_qr_tier2')) || 9,
+  quickRateOptions:  (localStorage.getItem('br_qr_options') || '0, 1, 7, 8, 9, 9.5, 10').split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n)),
+  quickRateRawStr:   localStorage.getItem('br_qr_options') || '0, 1, 7, 8, 9, 9.5, 10',
+  quickRateAuto10:   parseFloat(localStorage.getItem('br_qr_auto10')) || 10,
   prefix:            '',
   suffix:            '',
   labelEnabled:      true, // Prepend "14S6" label to copied prompts
@@ -1553,6 +1554,74 @@ function closeMyRatingModal() {
   _ignoreScrollSyncUntil = Date.now() + 350;
 }
 
+/* ── Horizontal Quick-Rate Bar ───────────────────────────────── */
+let _quickRateBar = null;
+
+function closeQuickRateBar() {
+  document.querySelectorAll('.quickrate-bar').forEach(b => b.remove());
+  _quickRateBar = null;
+}
+
+function showQuickRateBar(triggerEl, num, setIdx) {
+  closeQuickRateBar();
+  closeMyRatingModal();
+
+  const bar = document.createElement('div');
+  bar.className = 'quickrate-bar';
+  _quickRateBar = bar;
+
+  const rect = triggerEl.getBoundingClientRect();
+  const top = rect.bottom + window.scrollY + 6;
+  const left = Math.max(8, Math.min(rect.left + window.scrollX - 20, window.innerWidth - 260));
+  bar.style.top = `${top}px`;
+  bar.style.left = `${left}px`;
+
+  const scores = (ST.quickRateOptions && ST.quickRateOptions.length)
+    ? ST.quickRateOptions
+    : [0, 1, 7, 8, 9, 9.5, 10];
+
+  scores.forEach(val => {
+    const btn = document.createElement('button');
+    btn.className = 'qr-btn';
+    btn.textContent = val === 0 ? '0↺' : val;
+    btn.title = `Rate #${num} Set ${setIdx + 1}: ${val}`;
+
+    const mc = getMyRatingColor(val);
+    if (mc) {
+      btn.style.background = mc.bg;
+      btn.style.borderColor = mc.border;
+      btn.style.color = mc.text;
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      closeQuickRateBar();
+      saveMyRating(num, setIdx, val, '');
+      triggerEl.classList.add('longpress-flash');
+      setTimeout(() => triggerEl?.classList.remove('longpress-flash'), 400);
+      toast(`⚡ Quick rated #${num} Set ${setIdx + 1}: ${val}`);
+    });
+
+    bar.appendChild(btn);
+  });
+
+  document.body.appendChild(bar);
+
+  // Close on outside click
+  setTimeout(() => {
+    const onOutside = (ev) => {
+      if (!bar.contains(ev.target) && ev.target !== triggerEl) {
+        closeQuickRateBar();
+        document.removeEventListener('mousedown', onOutside);
+        document.removeEventListener('touchstart', onOutside);
+      }
+    };
+    document.addEventListener('mousedown', onOutside);
+    document.addEventListener('touchstart', onOutside);
+  }, 50);
+}
+
 function toggleCoveredClip(num) {
   if (!ST.covered) ST.covered = {};
   const oldVal = !!ST.covered[num];
@@ -2879,36 +2948,34 @@ function buildPromptChip(num, i, entry, idPrefix = '') {
     showMyRatingModal(myBtn, num, i);
   });
 
-  // PC Mouse: Single Right-Click = Tier 1 (default 5), Double Right-Click = Tier 2 (default 9)
+  // PC Mouse: Single Right-Click = Quick-Rate Bar; Double Right-Click = Auto-Rate 10
   let _rcTimer = null;
   myBtn.addEventListener('contextmenu', e => {
     e.preventDefault();
     e.stopPropagation();
-    const t1 = ST.quickRateTier1 ?? 5;
-    const t2 = ST.quickRateTier2 ?? 9;
+    const autoScore = ST.quickRateAuto10 ?? 10;
 
     if (_rcTimer) {
       // Double right-click detected!
       clearTimeout(_rcTimer);
       _rcTimer = null;
-      saveMyRating(num, i, t2, '');
+      closeQuickRateBar();
+      saveMyRating(num, i, autoScore, '');
       myBtn.classList.add('longpress-flash-tier2');
       setTimeout(() => myBtn?.classList.remove('longpress-flash-tier2'), 500);
-      toast(`⚡ Double Right-Click: Quick rated #${num} Set ${i + 1}: ${t2}`);
+      toast(`⚡ Double Right-Click: Auto-rated #${num} Set ${i + 1}: ${autoScore}`);
     } else {
+      // Wait briefly (260ms) to distinguish single right-click from double right-click
       _rcTimer = setTimeout(() => {
         _rcTimer = null;
-        saveMyRating(num, i, t1, '');
-        myBtn.classList.add('longpress-flash');
-        setTimeout(() => myBtn?.classList.remove('longpress-flash'), 400);
-        toast(`⚡ Quick rated #${num} Set ${i + 1}: ${t1}`);
-      }, 300);
+        showQuickRateBar(myBtn, num, i);
+      }, 260);
     }
   });
 
-  // Mobile / Touchscreen: Hold 1.0s = Tier 1 (5), Hold 2.0s = Tier 2 (9)
-  let _lpTimer1 = null;
-  let _lpTimer2 = null;
+  // Mobile / Touchscreen: Hold 1.0s = Quick-Rate Bar; Hold 2.0s = Auto-Rate 10
+  let _holdTimer1 = null;
+  let _holdTimer2 = null;
   let _touchStartX = 0, _touchStartY = 0;
 
   myBtn.addEventListener('touchstart', e => {
@@ -2916,43 +2983,40 @@ function buildPromptChip(num, i, entry, idPrefix = '') {
     _touchStartX = e.touches[0].clientX;
     _touchStartY = e.touches[0].clientY;
 
-    const t1 = ST.quickRateTier1 ?? 5;
-    const t2 = ST.quickRateTier2 ?? 9;
+    const autoScore = ST.quickRateAuto10 ?? 10;
 
-    // 1.0 second hold -> Tier 1
-    _lpTimer1 = setTimeout(() => {
-      _lpTimer1 = null;
+    // 1.0 second hold -> Open Quick-Rate Bar
+    _holdTimer1 = setTimeout(() => {
+      _holdTimer1 = null;
       if (navigator.vibrate) try { navigator.vibrate(50); } catch {}
-      myBtn.classList.add('longpress-flash');
-      saveMyRating(num, i, t1, '');
-      toast(`⚡ 1s Hold: Quick rated #${num} Set ${i + 1}: ${t1}`);
-      setTimeout(() => myBtn?.classList.remove('longpress-flash'), 400);
+      showQuickRateBar(myBtn, num, i);
     }, 1000);
 
-    // 2.0 seconds hold -> Tier 2
-    _lpTimer2 = setTimeout(() => {
-      _lpTimer2 = null;
+    // 2.0 seconds hold -> Auto-Rate 10
+    _holdTimer2 = setTimeout(() => {
+      _holdTimer2 = null;
+      closeQuickRateBar();
       if (navigator.vibrate) try { navigator.vibrate([60, 40, 60]); } catch {}
+      saveMyRating(num, i, autoScore, '');
       myBtn.classList.add('longpress-flash-tier2');
-      saveMyRating(num, i, t2, '');
-      toast(`⚡ 2s Hold: Quick rated #${num} Set ${i + 1}: ${t2}`);
-      setTimeout(() => myBtn?.classList.remove('longpress-flash-tier2'), 600);
+      setTimeout(() => myBtn?.classList.remove('longpress-flash-tier2'), 500);
+      toast(`⚡ 2s Hold: Auto-rated #${num} Set ${i + 1}: ${autoScore}`);
     }, 2000);
   }, { passive: true });
 
-  const cancelTouch = (e) => {
+  const cancelHold = (e) => {
     if (e && e.touches && e.touches.length === 1) {
       const dx = Math.abs(e.touches[0].clientX - _touchStartX);
       const dy = Math.abs(e.touches[0].clientY - _touchStartY);
       if (dx < 10 && dy < 10) return;
     }
-    if (_lpTimer1) { clearTimeout(_lpTimer1); _lpTimer1 = null; }
-    if (_lpTimer2) { clearTimeout(_lpTimer2); _lpTimer2 = null; }
+    if (_holdTimer1) { clearTimeout(_holdTimer1); _holdTimer1 = null; }
+    if (_holdTimer2) { clearTimeout(_holdTimer2); _holdTimer2 = null; }
   };
 
-  myBtn.addEventListener('touchend', cancelTouch);
-  myBtn.addEventListener('touchcancel', cancelTouch);
-  myBtn.addEventListener('touchmove', cancelTouch, { passive: true });
+  myBtn.addEventListener('touchend', cancelHold);
+  myBtn.addEventListener('touchcancel', cancelHold);
+  myBtn.addEventListener('touchmove', cancelHold, { passive: true });
 
   wrapper.appendChild(myBtn);
   return wrapper;
@@ -4610,11 +4674,11 @@ function syncSettingsUI() {
   const showBn = _el('setting-show-bengali');
   if (showBn) showBn.checked = (ST.showBengali !== false);
 
-  const qr1 = _el('setting-qr-tier1');
-  if (qr1) qr1.value = ST.quickRateTier1 ?? 5;
+  const qrOpt = _el('setting-qr-options');
+  if (qrOpt) qrOpt.value = ST.quickRateRawStr || '0, 1, 7, 8, 9, 9.5, 10';
 
-  const qr2 = _el('setting-qr-tier2');
-  if (qr2) qr2.value = ST.quickRateTier2 ?? 9;
+  const qrAuto10 = _el('setting-qr-auto10');
+  if (qrAuto10) qrAuto10.value = ST.quickRateAuto10 ?? 10;
 
   const needsThreshold = _el('setting-needs-work-threshold');
   if (needsThreshold) needsThreshold.value = ST.needsWorkThreshold ?? 9;
@@ -4926,21 +4990,29 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     toast(ST.showBengali ? '🇧🇩 Bengali script visible' : 'Bengali script hidden');
   });
 
-  _el('setting-qr-tier1')?.addEventListener('change', e => {
-    const val = parseFloat(e.target.value);
-    if (!isNaN(val) && val >= 0 && val <= 10) {
-      ST.quickRateTier1 = val;
-      try { localStorage.setItem('br_qr_tier1', val); } catch {}
-      toast(`⚡ Tier 1 quick-rate set to ${val}`);
+  _el('setting-qr-options')?.addEventListener('change', e => {
+    const str = e.target.value.trim() || '0, 1, 7, 8, 9, 9.5, 10';
+    const parsed = str.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+    if (parsed.length) {
+      ST.quickRateOptions = parsed;
+      ST.quickRateRawStr = str;
+      try { localStorage.setItem('br_qr_options', str); } catch {}
+      toast(`⚡ Quick-rate options updated: [${parsed.join(', ')}]`);
+    } else {
+      e.target.value = ST.quickRateRawStr || '0, 1, 7, 8, 9, 9.5, 10';
+      toast('⚠️ Please enter valid numbers (e.g. 0, 1, 7, 8, 9, 9.5, 10)');
     }
   });
 
-  _el('setting-qr-tier2')?.addEventListener('change', e => {
+  _el('setting-qr-auto10')?.addEventListener('change', e => {
     const val = parseFloat(e.target.value);
     if (!isNaN(val) && val >= 0 && val <= 10) {
-      ST.quickRateTier2 = val;
-      try { localStorage.setItem('br_qr_tier2', val); } catch {}
-      toast(`⚡ Tier 2 quick-rate set to ${val}`);
+      ST.quickRateAuto10 = val;
+      try { localStorage.setItem('br_qr_auto10', val); } catch {}
+      toast(`⚡ Double Right-Click / 2s Hold auto-rate set to ${val}`);
+    } else {
+      e.target.value = ST.quickRateAuto10 ?? 10;
+      toast('⚠️ Please enter a score between 0 and 10');
     }
   });
 

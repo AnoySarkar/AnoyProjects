@@ -376,22 +376,22 @@
       <!-- Quick Rating Shortcuts Settings -->
       <section class="settings-group-card">
         <div class="settings-card-hdr">
-          <span>⚡ Real Rating Quick-Rate Shortcuts</span>
+          <span>⚡ Real Rating Quick-Rate Bar (1s Hold / Right-Click)</span>
         </div>
         <div class="settings-card-body">
           <div class="settings-row">
             <div class="settings-row-info">
-              <div class="settings-row-title">Tier 1 Quick Rate (1s Hold / Single Right-Click)</div>
-              <div class="settings-row-sub">Default rating applied on 1-second touch hold or single right-click</div>
+              <div class="settings-row-title">Quick-Rate Numbers (1s Hold / Single Right-Click)</div>
+              <div class="settings-row-sub">Comma-separated scores shown in horizontal quick-rate bar (e.g. 0, 1, 7, 8, 9, 9.5, 10)</div>
             </div>
-            <input type="number" class="settings-input-num" id="setting-qr-tier1" min="0" max="10" step="0.5" value="5" />
+            <input type="text" class="settings-input-text" id="setting-qr-options" value="0, 1, 7, 8, 9, 9.5, 10" placeholder="0, 1, 7, 8, 9, 9.5, 10" style="width:190px;" />
           </div>
           <div class="settings-row">
             <div class="settings-row-info">
-              <div class="settings-row-title">Tier 2 Quick Rate (2s Hold / Double Right-Click)</div>
-              <div class="settings-row-sub">Higher rating applied on 2-second touch hold or double right-click</div>
+              <div class="settings-row-title">Double Right-Click / 2s Hold Auto-Rate Score</div>
+              <div class="settings-row-sub">Score applied instantly on double right-click or 2-second hold (default 10)</div>
             </div>
-            <input type="number" class="settings-input-num" id="setting-qr-tier2" min="0" max="10" step="0.5" value="9" />
+            <input type="number" class="settings-input-num" id="setting-qr-auto10" min="0" max="10" step="0.5" value="10" />
           </div>
         </div>
       </section>
