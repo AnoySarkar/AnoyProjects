@@ -1343,6 +1343,17 @@ function renderProjectTabs() {
       tab.appendChild(badge);
     }
 
+    /* download button */
+    const dl = document.createElement('span');
+    dl.className = 'proj-tab-dl';
+    dl.textContent = '⭳';
+    dl.title = `Download "${proj.name}" JSON`;
+    dl.addEventListener('click', e => {
+      e.stopPropagation();
+      exportSingleProject(pid);
+    });
+    tab.appendChild(dl);
+
     /* delete button (only if >1 project) */
     if (pids.length > 1) {
       const del = document.createElement('span');
@@ -4170,7 +4181,68 @@ function copyNeedsWorkLines() {
 
 /* ── Export / Import ────────────────────────────────────────── */
 
-function exportData(){
+function exportSingleProject(pid) {
+  if (!PROJECTS[pid]) return;
+  // If exporting the active project, flush textareas and ST values first
+  if (pid === ACTIVE_PID) {
+    const ta = _el('script-textarea');
+    const bnTa = _el('script-bengali-textarea');
+    PROJECTS[pid].script = ta ? ta.value : (PROJECTS[pid].script || '');
+    PROJECTS[pid].bengaliScript = bnTa ? bnTa.value : (PROJECTS[pid].bengaliScript || ST.bengaliScript || '');
+    PROJECTS[pid].bengaliLines = JSON.parse(JSON.stringify(ST.bengaliLines || {}));
+    PROJECTS[pid].scores = JSON.parse(JSON.stringify(ST.scores || {}));
+    PROJECTS[pid].prompts = JSON.parse(JSON.stringify(ST.prompts || {}));
+    PROJECTS[pid].batches = JSON.parse(JSON.stringify(ST.batches || []));
+    PROJECTS[pid].usedSets = JSON.parse(JSON.stringify(ST.usedSets || {}));
+    PROJECTS[pid].setRatings = JSON.parse(JSON.stringify(ST.setRatings || {}));
+    PROJECTS[pid].ratingBatches = JSON.parse(JSON.stringify(ST.ratingBatches || []));
+    PROJECTS[pid].myRatings = JSON.parse(JSON.stringify(ST.myRatings || {}));
+    PROJECTS[pid].covered = JSON.parse(JSON.stringify(ST.covered || {}));
+  }
+  saveProjects(true);
+
+  const proj = PROJECTS[pid];
+  const d = {
+    type: 'single_project',
+    v: 7,
+    date: new Date().toISOString(),
+    name: proj.name || 'Script',
+    script: proj.script || '',
+    bengaliScript: proj.bengaliScript || '',
+    bengaliLines: JSON.parse(JSON.stringify(proj.bengaliLines || {})),
+    scores: JSON.parse(JSON.stringify(proj.scores || {})),
+    prompts: JSON.parse(JSON.stringify(proj.prompts || {})),
+    batches: JSON.parse(JSON.stringify(proj.batches || [])),
+    usedSets: JSON.parse(JSON.stringify(proj.usedSets || {})),
+    setRatings: JSON.parse(JSON.stringify(proj.setRatings || {})),
+    ratingBatches: JSON.parse(JSON.stringify(proj.ratingBatches || [])),
+    myRatings: JSON.parse(JSON.stringify(proj.myRatings || {})),
+    covered: JSON.parse(JSON.stringify(proj.covered || {})),
+    prefix: ST.prefix,
+    suffix: ST.suffix,
+    labelEnabled: ST.labelEnabled
+  };
+
+  const cleanName = (proj.name || 'Script').trim().replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, ' ') || 'Script';
+  const filename = `${cleanName}.json`;
+  const json = JSON.stringify(d, null, 2);
+
+  try {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch {
+    const a = document.createElement('a');
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+    a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+  toast(`📥 Downloaded "${cleanName}.json"`);
+}
+
+function exportFullBackup() {
   saveProjects(true);
   const ta = _el('script-textarea');
   const bnTa = _el('script-bengali-textarea');
@@ -4214,10 +4286,121 @@ function exportData(){
   toast('📥 Exported complete backup');
 }
 
+function exportData() {
+  const curProj = PROJECTS[ACTIVE_PID];
+  const curName = curProj?.name || 'Current Script';
+  showModal(
+    '📥 Export Data',
+    `<div style="display:flex;flex-direction:column;gap:12px;margin:8px 0;">
+      <p style="font-size:13px;color:var(--text-2);margin:0;">Choose what you would like to download:</p>
+      <button id="modal-export-single-btn" class="modal-choice-btn primary">
+        <span style="font-size:24px;flex-shrink:0;">📄</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:2px;">Download Current Script ("${escHtml(curName)}")</div>
+          <div style="font-size:11px;color:var(--text-3);line-height:1.4;">Downloads only "${escHtml(curName)}" with all its data (${escHtml(curName)}.json). Can be added to any project later.</div>
+        </div>
+      </button>
+      <button id="modal-export-full-btn" class="modal-choice-btn">
+        <span style="font-size:24px;flex-shrink:0;">📦</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:2px;">Download Full Backup (All Scripts)</div>
+          <div style="font-size:11px;color:var(--text-3);line-height:1.4;">Backs up all scripts, tabs, settings, and full history into one file.</div>
+        </div>
+      </button>
+    </div>`,
+    null,
+    null,
+    '',
+    'Close',
+    'secondary'
+  );
+
+  setTimeout(() => {
+    _el('modal-export-single-btn')?.addEventListener('click', () => {
+      _el('modal-overlay')?.classList.remove('show');
+      exportSingleProject(ACTIVE_PID);
+    });
+    _el('modal-export-full-btn')?.addEventListener('click', () => {
+      _el('modal-overlay')?.classList.remove('show');
+      exportFullBackup();
+    });
+  }, 50);
+}
+
+function _performMultiImport(d, replaceAll) {
+  try { createProjectBackup(replaceAll ? 'Before Full Restore' : 'Before Import Add Tabs'); } catch {}
+
+  try {
+    let firstNewPid = null;
+    if (replaceAll) {
+      for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
+      for (const [k, v] of Object.entries(d.projects)) {
+        PROJECTS[k] = {
+          name: v.name || 'Script',
+          script: v.script || '',
+          bengaliScript: v.bengaliScript || '',
+          bengaliLines: v.bengaliLines || parseAltScript(v.bengaliScript || ''),
+          scores: _migrateScores(v.scores),
+          prompts: _migratePrompts(v.prompts || {}),
+          batches: v.batches || [],
+          usedSets: _migrateUsedSets(v.usedSets),
+          setRatings: _migrateSetRatings(v.setRatings || {}),
+          ratingBatches: v.ratingBatches || [],
+          myRatings: _migrateMyRatings(v.myRatings || {}),
+          covered: _migrateCovered(v.covered || {})
+        };
+      }
+      const activePid = (d.active && PROJECTS[d.active]) ? d.active : Object.keys(PROJECTS)[0];
+      if (d.prefix !== undefined) ST.prefix = d.prefix;
+      if (d.suffix !== undefined) ST.suffix = d.suffix;
+      if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
+      saveGlobalCset();
+      activateProject(activePid);
+      toast('📤 Backup restored successfully');
+    } else {
+      // Add as new tabs without replacing existing
+      for (const [origKey, v] of Object.entries(d.projects)) {
+        const newPid = uid();
+        if (!firstNewPid) firstNewPid = newPid;
+        let pName = v.name || 'Script';
+        PROJECTS[newPid] = {
+          name: pName,
+          script: v.script || '',
+          bengaliScript: v.bengaliScript || '',
+          bengaliLines: v.bengaliLines || parseAltScript(v.bengaliScript || ''),
+          scores: _migrateScores(v.scores),
+          prompts: _migratePrompts(v.prompts || {}),
+          batches: v.batches || [],
+          usedSets: _migrateUsedSets(v.usedSets),
+          setRatings: _migrateSetRatings(v.setRatings || {}),
+          ratingBatches: v.ratingBatches || [],
+          myRatings: _migrateMyRatings(v.myRatings || {}),
+          covered: _migrateCovered(v.covered || {})
+        };
+      }
+      if (firstNewPid) activateProject(firstNewPid);
+      else renderProjectTabs();
+      toast(`✅ Added ${Object.keys(d.projects).length} script(s) as new tabs!`);
+    }
+
+    try {
+      localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+      if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+      _lastLocalSaveTime = Date.now();
+      _userMadeLocalEdit = false;
+    } catch {}
+
+    markAllProjectsDirty();
+    saveProjects(true);
+  } catch (err) {
+    console.error('Import load error:', err);
+    toast('❌ Error loading import data');
+  }
+}
+
 function importJSON(file){
   const r = new FileReader();
   r.onload = ev => {
-    // Step 1: Parse JSON — isolated catch so only a real parse failure shows "Invalid JSON"
     let d;
     try {
       d = JSON.parse(ev.target.result);
@@ -4227,156 +4410,100 @@ function importJSON(file){
       return;
     }
 
-    // Step 2: Validate structure
     if (!d || typeof d !== 'object') {
       toast('❌ Invalid JSON file');
       return;
     }
 
-    // Step 3: Pre-import backup (swallow errors — don't let backup issues abort the import)
-    try { createProjectBackup('Before Import JSON'); } catch {}
+    // Determine if single project or full backup
+    const isSingle = (d.type === 'single_project') || (!d.projects && (d.script !== undefined || d.scores !== undefined || d.prompts !== undefined || d.name));
 
-    // Step 4: Load data into PROJECTS
-    try {
-      if (d.projects && typeof d.projects === 'object' && Object.keys(d.projects).length) {
-        // Full multi-project export
-        for (const k of Object.keys(PROJECTS)) delete PROJECTS[k];
-        for (const [k, v] of Object.entries(d.projects)) {
-          PROJECTS[k] = {
-            name: v.name || 'Script',
-            script: v.script || '',
-            bengaliScript: v.bengaliScript || '',
-            bengaliLines: v.bengaliLines || parseAltScript(v.bengaliScript || ''),
-            scores: _migrateScores(v.scores),
-            prompts: _migratePrompts(v.prompts || {}),
-            batches: v.batches || [],
-            usedSets: _migrateUsedSets(v.usedSets),
-            setRatings: _migrateSetRatings(v.setRatings || {}),
-            ratingBatches: v.ratingBatches || [],
-            myRatings: _migrateMyRatings(v.myRatings || {}),
-            covered: _migrateCovered(v.covered || {})
-          };
+    if (isSingle) {
+      try { createProjectBackup('Before Import Single Script'); } catch {}
+
+      const pid = uid();
+      const rawName = (d.name && typeof d.name === 'string' && d.name.trim()) ? d.name.trim() : 'Script';
+      
+      const existingNames = Object.values(PROJECTS).map(p => (p.name || '').trim().toLowerCase());
+      let finalName = rawName;
+      if (existingNames.includes(rawName.toLowerCase())) {
+        let counter = 1;
+        while (existingNames.includes(`${rawName} (${counter})`.toLowerCase())) {
+          counter++;
         }
-        const activePid = (d.active && PROJECTS[d.active]) ? d.active : Object.keys(PROJECTS)[0];
-        if (d.prefix !== undefined) ST.prefix = d.prefix;
-        if (d.suffix !== undefined) ST.suffix = d.suffix;
-        if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
-        saveGlobalCset();
-        activateProject(activePid);
-      } else {
-        // Single project import format
-        const pid = ACTIVE_PID || uid();
-        const bnScript = d.bengaliScript || '';
-        PROJECTS[pid] = {
-          name: PROJECTS[pid]?.name || 'Script 1',
-          script: d.script || '',
-          bengaliScript: bnScript,
-          bengaliLines: d.bengaliLines || parseAltScript(bnScript),
-          scores: _migrateScores(d.scores),
-          prompts: _migratePrompts(d.prompts || {}),
-          batches: d.batches || [],
-          usedSets: _migrateUsedSets(d.usedSets),
-          setRatings: _migrateSetRatings(d.setRatings || {}),
-          ratingBatches: d.ratingBatches || [],
-          myRatings: _migrateMyRatings(d.myRatings || {}),
-          covered: _migrateCovered(d.covered || {})
-        };
-        if (d.prefix !== undefined) ST.prefix = d.prefix;
-        if (d.suffix !== undefined) ST.suffix = d.suffix;
-        if (d.labelEnabled !== undefined) ST.labelEnabled = d.labelEnabled;
-        saveGlobalCset();
-        activateProject(pid);
+        finalName = `${rawName} (${counter})`;
       }
-    } catch(err) {
-      console.error('Import load error:', err);
-      toast('❌ Error loading import data. Check console.');
+
+      const bnScript = d.bengaliScript || '';
+      PROJECTS[pid] = {
+        name: finalName,
+        script: d.script || '',
+        bengaliScript: bnScript,
+        bengaliLines: d.bengaliLines || parseAltScript(bnScript),
+        scores: _migrateScores(d.scores),
+        prompts: _migratePrompts(d.prompts || {}),
+        batches: d.batches || [],
+        usedSets: _migrateUsedSets(d.usedSets),
+        setRatings: _migrateSetRatings(d.setRatings || {}),
+        ratingBatches: d.ratingBatches || [],
+        myRatings: _migrateMyRatings(d.myRatings || {}),
+        covered: _migrateCovered(d.covered || {})
+      };
+
+      try {
+        localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
+        if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
+        _lastLocalSaveTime = Date.now();
+        _userMadeLocalEdit = false;
+      } catch {}
+
+      markAllProjectsDirty();
+      saveProjects(true);
+      activateProject(pid);
+      toast(`✅ Added "${finalName}" as a new tab!`);
       return;
     }
 
-    // Step 5: Save locally
-    try {
-      localStorage.setItem(PROJ_KEY, JSON.stringify({ active: ACTIVE_PID, projects: PROJECTS }));
-      if (ACTIVE_PID) localStorage.setItem('br_last_active_pid', ACTIVE_PID);
-      _lastLocalSaveTime = Date.now();
-      _userMadeLocalEdit = false;
-    } catch {}
+    // Full multi-project backup
+    showModal(
+      '📤 Import Backup',
+      `<div style="display:flex;flex-direction:column;gap:12px;margin:8px 0;">
+        <p style="font-size:13px;color:var(--text-2);margin:0;">
+          This backup contains <strong>${Object.keys(d.projects).length} script(s)</strong>. How would you like to import it?
+        </p>
+        <button id="btn-import-add" class="modal-choice-btn primary">
+          <span style="font-size:24px;flex-shrink:0;">➕</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:2px;">Add as New Tabs (Keep Existing Scripts)</div>
+            <div style="font-size:11px;color:var(--text-3);line-height:1.4;">Adds all scripts from this file into new tabs without deleting your current scripts.</div>
+          </div>
+        </button>
+        <button id="btn-import-replace" class="modal-choice-btn danger">
+          <span style="font-size:24px;flex-shrink:0;">⚠️</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:700;font-size:13px;color:var(--text-1);margin-bottom:2px;">Replace All Scripts (Full Restore)</div>
+            <div style="font-size:11px;color:var(--text-3);line-height:1.4;">Replaces all current scripts and tabs with this backup.</div>
+          </div>
+        </button>
+      </div>`,
+      null,
+      null,
+      '',
+      'Cancel',
+      'secondary'
+    );
 
-    toast('📤 Backup imported successfully');
+    setTimeout(() => {
+      _el('btn-import-add')?.addEventListener('click', () => {
+        _el('modal-overlay')?.classList.remove('show');
+        _performMultiImport(d, false);
+      });
 
-    // Step 6: Send through the normal coalescing queue. It avoids a second,
-    // competing full-database upload immediately after a large import.
-    markAllProjectsDirty();
-    saveProjects(true);
-    return;
-
-    // Legacy direct Firebase push retained below for reference only.
-    if (_fbRef) {
-      const now = Date.now();
-      const payload = {
-        active: ACTIVE_PID,
-        projects: JSON.parse(JSON.stringify(PROJECTS)),
-        globalCset: { prefix: ST.prefix || '', suffix: ST.suffix || '', labelEnabled: ST.labelEnabled !== false },
-        lastUpdatedBy: CLIENT_ID,
-        updatedAt: now
-      };
-
-      // Block regular auto-saves during import push
-      _isForceSaving = true;
-      if (_fbSyncTimer) { clearTimeout(_fbSyncTimer); _fbSyncTimer = null; }
-
-      // Update sync pill once — show "Saving" in pill during push
-      _lastSavedStatus = 'syncing';
-      updateSavedTimeDisplay();
-
-      // Progress on sync pill text (fake %, Firebase has no upload progress API)
-      let _ipct = 0;
-      const _ipctTimer = setInterval(() => {
-        if (_ipct < 88) {
-          _ipct += _ipct < 40 ? 8 : _ipct < 70 ? 4 : 1;
-          const txt = _el('sync-text');
-          if (txt && _isForceSaving) txt.textContent = `Saving ${Math.min(_ipct, 88)}%`;
-        }
-      }, 400);
-
-      // Hard timeout — 90s max so import push never stays stuck
-      const _importTimeout = setTimeout(() => {
-        clearInterval(_ipctTimer);
-        if (_isForceSaving) {
-          _isForceSaving = false;
-          _lastSavedStatus = 'offline';
-          updateSavedTimeDisplay();
-          toast('⏱ Import cloud save timed out — data is saved locally only.');
-        }
-      }, 90000);
-
-      _fbRef.set(payload)
-        .then(() => {
-          clearInterval(_ipctTimer);
-          clearTimeout(_importTimeout);
-          _lastFirebaseSaveTime = Date.now();
-          _lastRemoteUpdatedAt  = now;
-          _latestCloudData      = payload;
-          _lastSavedStatus      = 'synced';
-          _userMadeLocalEdit    = false;
-          _fbRetryCount         = 0;
-          _isForceSaving        = false;
-          updateSavedTimeDisplay();
-          toast('☁️ Import saved to Cloud!');
-        })
-        .catch(err => {
-          clearInterval(_ipctTimer);
-          clearTimeout(_importTimeout);
-          console.warn('Import direct push failed:', err);
-          _isForceSaving = false;
-          _lastSavedStatus = 'offline';
-          updateSavedTimeDisplay();
-          toast('⚠️ Import saved locally — cloud upload failed. Tap Force Save to retry.');
-        });
-    } else {
-      // No Firebase — just mark as locally saved
-      _lastSavedStatus = 'synced';
-      updateSavedTimeDisplay();
-    }
+      _el('btn-import-replace')?.addEventListener('click', () => {
+        _el('modal-overlay')?.classList.remove('show');
+        _performMultiImport(d, true);
+      });
+    }, 50);
   };
   r.readAsText(file);
 }
@@ -4403,21 +4530,31 @@ function showModal(title, bodyHtml, onOk, onCancel = null, okText = 'Confirm', c
 
   const okBtn = _el('modal-ok');
   if (okBtn) {
-    okBtn.textContent = okText;
-    okBtn.className = `hbtn ${okClass}`;
-    okBtn.onclick = () => {
-      ov.classList.remove('show');
-      if (onOk) onOk();
-    };
+    if (!okText) {
+      okBtn.style.display = 'none';
+    } else {
+      okBtn.style.display = '';
+      okBtn.textContent = okText;
+      okBtn.className = `hbtn ${okClass}`;
+      okBtn.onclick = () => {
+        ov.classList.remove('show');
+        if (onOk) onOk();
+      };
+    }
   }
 
   const cancelBtn = _el('modal-cancel');
   if (cancelBtn) {
-    cancelBtn.textContent = cancelText;
-    cancelBtn.onclick = () => {
-      ov.classList.remove('show');
-      if (onCancel) onCancel();
-    };
+    if (!cancelText) {
+      cancelBtn.style.display = 'none';
+    } else {
+      cancelBtn.style.display = '';
+      cancelBtn.textContent = cancelText;
+      cancelBtn.onclick = () => {
+        ov.classList.remove('show');
+        if (onCancel) onCancel();
+      };
+    }
   }
 
   ov.onclick = ev => {
