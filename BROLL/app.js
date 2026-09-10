@@ -3673,7 +3673,7 @@ function buildCard(b, allowedSetIndices = null, idPrefix = '') {
 
   card.appendChild(mid);
 
-  /* Right: score wrap + copy line + done + expand */
+  /* Right: score wrap + done */
   const right=document.createElement('div'); right.className='c-right';
 
   const scoreWrap=document.createElement('div'); scoreWrap.className='c-score-wrap';
@@ -3689,25 +3689,7 @@ function buildCard(b, allowedSetIndices = null, idPrefix = '') {
   scoreWrap.appendChild(suBadge);
   right.appendChild(scoreWrap);
 
-  const copyLineBtn = document.createElement('button');
-  copyLineBtn.className = 'c-copy-line';
-  copyLineBtn.textContent = '📋';
-  copyLineBtn.title = `Copy line #${b.num}:\n"${b.line}"`;
-  copyLineBtn.setAttribute('aria-label', `Copy text for B-roll ${b.num}`);
-  copyLineBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const text = b.line;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text)
-        .then(() => toast(`📋 Copied Line #${b.num}`))
-        .catch(() => fbCopy(text, () => toast(`📋 Copied Line #${b.num}`)));
-    } else {
-      fbCopy(text, () => toast(`📋 Copied Line #${b.num}`));
-    }
-  });
-  right.appendChild(copyLineBtn);
-
-  // Done toggle button (below copy line)
+  // Done toggle button
   const doneBtn = document.createElement('button');
   doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
   doneBtn.id = idPrefix ? `${idPrefix}done-btn-${b.num}` : `done-btn-${b.num}`;

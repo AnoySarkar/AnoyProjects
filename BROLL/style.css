@@ -796,30 +796,20 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 .card-highlight { animation:cardGlow 1.4s ease }
 
 
-/* Right column */
-.c-right      { display:flex; align-items:center; gap:4px; flex-shrink:0 }
+/* Right column (Score wrap + Done button) */
+.c-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
+}
 .c-score-wrap { display:flex; flex-direction:column; align-items:center; gap:2px }
 .score-val    { min-width:34px; padding:3px 7px; border-radius:99px; font-size:11px; font-weight:800; font-family:var(--mono); text-align:center; color:rgba(255,255,255,0.92); transition:background 0.3s; border:1px solid rgba(255,255,255,0.07); letter-spacing:-0.4px }
 .su-badge     { font-size:8px; font-weight:800; font-family:var(--mono); background:var(--accent-dim); color:var(--accent); border:1px solid rgba(124,109,250,0.3); border-radius:99px; padding:1px 5px }
-.c-copy-line {
-  width:22px;
-  height:22px;
-  border-radius:5px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:11px;
-  color:var(--text-3);
-  background:var(--bg-3);
-  border:1px solid var(--border);
-  cursor:pointer;
-  transition:all 0.13s;
-  flex-shrink:0;
-}
-.broll-card:hover .c-copy-line { color:var(--text-1); border-color:var(--border-hi) }
-.c-copy-line:hover { background:var(--accent-dim); border-color:var(--accent); color:#fff; transform:scale(1.08) }
 
-/* Done toggle button (right column, below copy) */
+/* Done toggle button (right column) */
 .c-done-btn {
   width: 22px;
   height: 22px;
@@ -1082,11 +1072,44 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
   .c-line { white-space: normal; font-size: 11.5px; line-height: 1.4; word-break: break-word; }
   .c-line-bengali { word-break: break-word; overflow-wrap: break-word; }
   .c-clear { opacity: 1; width: 22px; height: 22px; }
+
+  /* Mobile Right Column: compact Score & Done, does not stretch or take full vertical card */
+  .c-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    align-self: flex-start;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .c-score-wrap {
+    gap: 1px;
+  }
+  .score-val {
+    min-width: 28px;
+    padding: 2px 5px;
+    font-size: 10px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  .su-badge {
+    font-size: 7.5px;
+    padding: 0.5px 3.5px;
+  }
+  .c-done-btn {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+  }
   
-  /* Chip and rating buttons on mobile - Full wrap, zero clipping */
+  /* Chip and rating buttons on mobile - Unified Batch Row with horizontal scroll, zero jagged line breaks */
   .c-prompts {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     flex-wrap: wrap;
     overflow: visible;
     width: 100%;
@@ -1094,30 +1117,39 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
     box-sizing: border-box;
   }
   .p-batch-group {
-    display: flex;
-    flex-wrap: wrap;
+    display: inline-flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
     gap: 4px;
-    padding: 3px 4px;
+    padding: 3px 5px;
     max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
     box-sizing: border-box;
+  }
+  .p-batch-group::-webkit-scrollbar {
+    display: none;
   }
   .p-chip-wrap {
     gap: 2px;
-    margin-bottom: 2px;
+    margin-bottom: 0;
     flex-shrink: 0;
     box-sizing: border-box;
   }
   .p-chip {
     height: auto;
     min-width: 28px;
-    padding: 3px 5px;
+    padding: 2.5px 5px;
     font-size: 9.5px;
     box-sizing: border-box;
   }
   .myrating-chip-btn {
-    height: 16px;
+    height: 15px;
     min-width: 28px;
-    font-size: 8.5px;
+    font-size: 8px;
     padding: 0 2px;
     box-sizing: border-box;
   }
