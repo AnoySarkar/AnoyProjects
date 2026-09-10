@@ -71,6 +71,7 @@ const ST = {
   filter:            'all',
   needsWorkEnabled:  localStorage.getItem('br_needs_work_enabled') !== 'false',
   needsWorkThreshold: parseFloat(localStorage.getItem('br_needs_work_threshold')) || 9,
+  showTickedInNeedsWork: localStorage.getItem('br_show_ticked_in_needs_work') === 'true',
   skipHighReal:      localStorage.getItem('br_skip_high_real') !== 'false',
   skipHighRealThreshold: parseFloat(localStorage.getItem('br_skip_high_real_threshold')) || 9,
   sortBy:            'num',
@@ -476,8 +477,8 @@ function _mergeProject(cloudProj, localProj) {
   return {
     name:          localProj.name || cloudProj.name || 'Script',
     script:        localProj.script !== undefined ? localProj.script : (cloudProj.script || ''),
-    bengaliScript: localProj.bengaliScript !== undefined ? localProj.bengaliScript : (cloudProj.bengaliScript || ''),
-    bengaliLines:  localProj.bengaliLines || cloudProj.bengaliLines || parseAltScript(localProj.bengaliScript || cloudProj.bengaliScript || ''),
+    bengaliScript: (localProj.bengaliScript && localProj.bengaliScript.trim()) ? localProj.bengaliScript : (cloudProj.bengaliScript || ''),
+    bengaliLines:  (localProj.bengaliLines && Object.keys(localProj.bengaliLines).length) ? localProj.bengaliLines : (cloudProj.bengaliLines || parseAltScript(localProj.bengaliScript || cloudProj.bengaliScript || '')),
     scores:        _mergeScores(cloudProj.scores, localProj.scores),
     myRatings:     _mergeMyRatings(cloudProj.myRatings, localProj.myRatings),
     covered:       _mergeCovered(cloudProj.covered, localProj.covered),
@@ -906,6 +907,8 @@ function _projData(name) {
     usedSets: {},
     setRatings: {},
     ratingBatches: [],
+
+
     myRatings: {},
     covered: {}
   };
@@ -929,15 +932,23 @@ function saveProjects(immediate = false) {
       : (PROJECTS[ACTIVE_PID].script || '');
 
     const bnTa = _el('script-bengali-textarea');
-    const savedBnScript = bnTa && bnTa.value !== undefined && bnTa.value !== null
-      ? bnTa.value
-      : (PROJECTS[ACTIVE_PID].bengaliScript || ST.bengaliScript || '');
+    let savedBnScript = PROJECTS[ACTIVE_PID].bengaliScript || ST.bengaliScript || '';
+    if (bnTa && bnTa.value !== undefined && bnTa.value !== null) {
+      if (bnTa.value.trim() || !savedBnScript) {
+        savedBnScript = bnTa.value;
+      }
+    }
+    let savedBnLines = ST.bengaliLines;
+    if ((!savedBnLines || !Object.keys(savedBnLines).length) && savedBnScript) {
+      savedBnLines = parseAltScript(savedBnScript);
+      ST.bengaliLines = savedBnLines;
+    }
 
     PROJECTS[ACTIVE_PID] = {
       ...PROJECTS[ACTIVE_PID],
       script:        savedScript,
       bengaliScript: savedBnScript,
-      bengaliLines:  JSON.parse(JSON.stringify(ST.bengaliLines || {})),
+      bengaliLines:  JSON.parse(JSON.stringify(savedBnLines || {})),
       scores:        JSON.parse(JSON.stringify(ST.scores)),
       prompts:       JSON.parse(JSON.stringify(ST.prompts)),
       batches:       JSON.parse(JSON.stringify(ST.batches)),
@@ -1440,9 +1451,7 @@ function getSetRatingSummary(num, setIdx) {
 function parseMyRatingInput(str) {
   if (!str || !str.trim()) return null;
   let trimmed = str.trim();
-  // Support comma as decimal separator (e.g. 8,5 -> 8.5)
   trimmed = trimmed.replace(/^(\d+),(\d+)/, '$1.$2');
-  // Match score: leading number/decimal (e.g. 8.8, 10, 0, .5) followed by optional comment
   const m = trimmed.match(/^([+\-]?\d*\.?\d+)(?:\s*[:\-–,]?\s*(.*))?$/s);
   if (!m || !m[1]) return null;
   const score = parseFloat(m[1]);
@@ -1458,57 +1467,21 @@ function getMyRating(num, setIdx) {
 
 function updateDoneBtnUI(num) {
   const doneBtn = _el(`done-btn-${num}`);
-  if (!doneBtn) return;
+  const card = _el(`card-${num}`);
   const isCov = !!(ST.covered && ST.covered[num]);
+  if (card) card.classList.toggle('is-ticked', isCov);
+  if (!doneBtn) return;
   doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
   doneBtn.innerHTML = isCov ? '✔' : '◻';
   doneBtn.title = isCov
-    ? `B-roll #${num} is Done (9+ in Overview)\nClick to unmark`
-    : `Mark B-roll #${num} as Done (9+ in Overview)`;
+    ? `B-roll #${num} is Done (✔)\nClick to unmark`
+    : `Mark B-roll #${num} as Done`;
 }
 
 function saveMyRating(num, setIdx, score, comment) {
   const old = getMyRating(num, setIdx);
   const parsedScore = parseFloat(score);
   const newComment = comment || '';
-  const oldCovered = !!(ST.covered && ST.covered[num]);
-  const newCovered = (parsedScore >= 9) ? true : oldCovered;
-
-  const apply = (val, cov) => {
-    if (!ST.myRatings) ST.myRatings = {};
-    if (val === null) {
-      if (ST.myRatings[num]) {
-        delete ST.myRatings[num][setIdx];
-        if (!Object.keys(ST.myRatings[num]).length) delete ST.myRatings[num];
-      }
-    } else {
-      if (!ST.myRatings[num]) ST.myRatings[num] = {};
-      ST.myRatings[num][setIdx] = { score: val.score, comment: val.comment, date: val.date || Date.now() };
-    }
-    if (!ST.covered) ST.covered = {};
-    if (cov) ST.covered[num] = true; else delete ST.covered[num];
-    save(true);
-    updateCardPrompts(num);
-    updateDoneBtnUI(num);
-    updateHmCell(num);
-    renderStats();
-    renderFilterCount();
-    updateLineCopyPreview();
-
-  };
-
-  record(
-    () => apply(old, oldCovered),
-    () => apply({ score: parsedScore, comment: newComment }, newCovered),
-    `Real Rating #${num} Set ${setIdx+1}: ${parsedScore}`
-  );
-  apply({ score: parsedScore, comment: newComment }, newCovered);
-}
-
-function deleteMyRating(num, setIdx) {
-  const old = getMyRating(num, setIdx);
-  if (!old) return;
-  const oldCovered = !!(ST.covered && ST.covered[num]);
 
   const apply = (val) => {
     if (!ST.myRatings) ST.myRatings = {};
@@ -1523,12 +1496,41 @@ function deleteMyRating(num, setIdx) {
     }
     save(true);
     updateCardPrompts(num);
-    updateDoneBtnUI(num);
     updateHmCell(num);
     renderStats();
     renderFilterCount();
     updateLineCopyPreview();
+  };
 
+  record(
+    () => apply(old),
+    () => apply({ score: parsedScore, comment: newComment }),
+    `Real Rating #${num} Set ${setIdx+1}: ${parsedScore}`
+  );
+  apply({ score: parsedScore, comment: newComment });
+}
+
+function deleteMyRating(num, setIdx) {
+  const old = getMyRating(num, setIdx);
+  if (!old) return;
+
+  const apply = (val) => {
+    if (!ST.myRatings) ST.myRatings = {};
+    if (val === null) {
+      if (ST.myRatings[num]) {
+        delete ST.myRatings[num][setIdx];
+        if (!Object.keys(ST.myRatings[num]).length) delete ST.myRatings[num];
+      }
+    } else {
+      if (!ST.myRatings[num]) ST.myRatings[num] = {};
+      ST.myRatings[num][setIdx] = { score: val.score, comment: val.comment, date: val.date || Date.now() };
+    }
+    save(true);
+    updateCardPrompts(num);
+    updateHmCell(num);
+    renderStats();
+    renderFilterCount();
+    updateLineCopyPreview();
   };
 
   record(
@@ -1539,11 +1541,7 @@ function deleteMyRating(num, setIdx) {
   apply(null);
 }
 
-
-
-
 function updateMyDbBadge() { /* removed */ }
-
 
 /* ── My Rating Modal ─────────────────────────────────────────── */
 let _myRatingModal = null;
@@ -1565,11 +1563,13 @@ function toggleCoveredClip(num) {
     if (val) ST.covered[num] = true;
     else delete ST.covered[num];
     save(true);
+    updateDoneBtnUI(num);
     updateCardPrompts(num);
     updateHmCell(num);
     renderStats();
     renderFilterCount();
     updateLineCopyPreview();
+    syncCardFilterVisibility(num);
   };
 
   record(
@@ -1578,7 +1578,7 @@ function toggleCoveredClip(num) {
     newVal ? `Done #${num}` : `Unmark Done #${num}`
   );
   apply(newVal);
-  toast(newVal ? `✔ B-roll #${num} marked as Done (9+ in Overview)` : `↺ B-roll #${num} unmarked as Done`);
+  toast(newVal ? `✔ B-roll #${num} marked as Done` : `↺ B-roll #${num} unmarked as Done`);
 }
 
 
@@ -1699,7 +1699,14 @@ function showMyRatingModal(triggerEl, num, setIdx) {
 function parseSetRatings(text) {
   const results = [];
   for (const line of text.split('\n')) {
-    const l = line.trim(); if (!l) continue;
+    let l = line.trim(); if (!l) continue;
+
+    // Skip summary / batch headers like "Batch 1 (106-110):", "# 1: 106-110", "106-110:"
+    if (/^(?:batch|ratings?|summary)\s*#?\d+/i.test(l) && !/\d+\s*[:\-–,]\s*[\d.]+/i.test(l)) continue;
+    if (/^\s*#?\s*\d+\s*[-–]\s*\d+\s*:?$/i.test(l)) continue;
+
+    // Strip markdown list numbers before rating lines: e.g. "1. 106S1: 9.5" -> "106S1: 9.5"
+    l = l.replace(/^\s*\d+[\.\)]\s+(?=(?:broll|b-roll|clip|#?\d+\s*[Ss]|#?\d+\s*[:\s]))/i, '');
 
     // Format 1: 14S6: 9.5 (why) or 1.5S6 : 9.5 : why or 1.2S6 - 9.5 - why
     let m = l.match(/^#?(\d+(?:\.\d+)?)\s*[Ss]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
@@ -1713,8 +1720,8 @@ function parseSetRatings(text) {
       }
     }
 
-    // Format 2: 1.5 : 6 : 9.5 : why or 1 : 6 - 9.5 - why
-    m = l.match(/^#?(\d+(?:\.\d+)?)\s*[:\s]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
+    // Format 2: 1.5 : 6 : 9.5 : why or 106 : 1 - 9.5 - why (require colon or clear delimiter between broll & set)
+    m = l.match(/^#?(\d+(?:\.\d+)?)\s*[:\-–]\s*(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/);
     if (m) {
       const score = parseFloat(m[3]);
       if (!isNaN(score) && score >= 0 && score <= 10) {
@@ -1726,7 +1733,8 @@ function parseSetRatings(text) {
     }
 
     // Format 3: B-roll 1.5 Set 6: 9.5 (why) or BROLL 1.2 ALT 6: 9.5 (why)
-    m = l.match(/^(?:broll|b-roll|clip)?\s*#?(\d+(?:\.\d+)?)\s*(?:set|alt|prompt|s)?\s*#?(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/i);
+    m = l.match(/^(?:broll|b-roll|clip)\s*#?(\d+(?:\.\d+)?)\s*(?:set|alt|prompt|s)?\s*#?(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/i)
+      || l.match(/^#?(\d+(?:\.\d+)?)\s+(?:set|alt|prompt|s)\s*#?(\d+)\s*[:\-–,]?\s*([\d.]+)\s*(?:[:\-–,]?\s*(.*))?$/i);
     if (m) {
       const score = parseFloat(m[3]);
       if (!isNaN(score) && score >= 0 && score <= 10) {
@@ -1750,7 +1758,12 @@ function requestApplySetRatings(text) {
     ratingsByBroll[item.brollNum].push(item);
   });
 
-  const brollNums = Object.keys(ratingsByBroll).map(Number).sort((a, b) => a - b);
+  let brollNums = Object.keys(ratingsByBroll).map(Number).sort((a, b) => a - b);
+  // If batch contains isolated outlier #1 and all other items are in a high range (>50), discard #1
+  if (brollNums.length > 1 && brollNums[0] === 1 && brollNums[1] > 50 && !brollNums.includes(2)) {
+    delete ratingsByBroll[1];
+    brollNums = Object.keys(ratingsByBroll).map(Number).sort((a, b) => a - b);
+  }
   const summaryLines = [];
 
   for (const num of brollNums) {
@@ -2228,11 +2241,15 @@ function record(undoFn, redoFn, desc = '') {
 function doUndo() {
   if (H.pos < 0) return;
   const e = H.stack[H.pos]; H.pos--; e.undo(); refreshUR();
+  renderCards();
+  renderHeatmap();
   toast(`↩ ${e.desc || 'Undone'}`);
 }
 function doRedo() {
   if (H.pos >= H.stack.length - 1) return;
   H.pos++; const e = H.stack[H.pos]; e.redo(); refreshUR();
+  renderCards();
+  renderHeatmap();
   toast(`↪ ${e.desc || 'Redone'}`);
 }
 function refreshUR() {
@@ -2318,15 +2335,29 @@ function parseScript(text) {
 /* ── Prompt Batch Parsing ───────────────────────────────────── */
 function parsePromptBatch(text) {
   const result = {};
-  for (const sec of text.split(/(?=(?:BROLL|B-ROLL|CLIP)\s*#?\d+(?:\.\d+)?\s*:|(?<=\n)\s*#\d+(?:\.\d+)?\s*:)/i)) {
-    const numM = sec.match(/^(?:(?:BROLL|B-ROLL|CLIP)\s*#?|#)(\d+(?:\.\d+)?)\s*:/i); if (!numM) continue;
+  // Strip markdown list numbers before BROLL/CLIP headers, e.g. "1. BROLL 106:" -> "BROLL 106:"
+  const cleanedText = text
+    .split('\n')
+    .map(line => line.replace(/^\s*\d+[\.\)]\s+(?=(?:broll|b-roll|clip|#?\d+\s*:))/i, ''))
+    .join('\n');
+
+  // Split on valid B-roll headers, avoiding false positive splits on markdown headings like "# 1: Prompts 106-110"
+  for (const sec of cleanedText.split(/(?=(?:BROLL|B-ROLL|CLIP)\s*#?\d+(?:\.\d+)?\s*:|(?<=\n)\s*#(?:broll|clip)?\s*\d+(?:\.\d+)?\s*:)/i)) {
+    const numM = sec.match(/^(?:(?:BROLL|B-ROLL|CLIP)\s*#?|#)\s*(\d+(?:\.\d+)?)\s*:/i);
+    if (!numM) continue;
     const num = parseFloat(numM[1]);
-    const vpIdx = sec.search(/VIDEO\s+PROMPT\s*:/i); if (vpIdx === -1) continue;
+    const vpIdx = sec.search(/VIDEO\s+PROMPT\s*:/i);
+    if (vpIdx === -1) continue;
     const chunks = sec.slice(vpIdx).split(/(?:ALT|SET|PROMPT)\s*#?\d+\s*:/i).slice(1);
-    if (!result[num]) result[num] = [];
+    const validPrompts = [];
     for (const c of chunks) {
       const t = c.replace(/^[\s—\-]+|[\s—\-]+$/g, '').trim();
-      if (t) result[num].push(t);
+      if (t) validPrompts.push(t);
+    }
+    // Only register B-roll number if it contains actual prompt text
+    if (validPrompts.length > 0) {
+      if (!result[num]) result[num] = [];
+      result[num].push(...validPrompts);
     }
   }
   return result;
@@ -2336,10 +2367,16 @@ function uid() { return 'b' + Date.now().toString(36) + Math.random().toString(3
 
 function requestImportPrompts(text) {
   const parsed = parsePromptBatch(text);
-  const keys   = Object.keys(parsed);
+  let keys = Object.keys(parsed);
   if (!keys.length) { toast('⚠️ No valid BROLL blocks found'); return; }
 
-  const brollNums = keys.map(Number).sort((a, b) => a - b);
+  let numKeys = keys.map(Number).sort((a, b) => a - b);
+  // If batch contains isolated outlier #1 and all other items are in a high range (>50), discard #1
+  if (numKeys.length > 1 && numKeys[0] === 1 && numKeys[1] > 50 && !numKeys.includes(2)) {
+    delete parsed['1'];
+    numKeys = Object.keys(parsed).map(Number).sort((a, b) => a - b);
+  }
+  const brollNums = numKeys;
   let totalPrompts = 0;
   const summaryLines = [];
 
@@ -2985,8 +3022,8 @@ function updateCardPrompts(num) {
     doneBtn.className = 'c-done-btn' + (isCovered ? ' active' : '');
     doneBtn.innerHTML = isCovered ? '✔' : '◻';
     doneBtn.title = isCovered
-      ? `B-roll #${num} is Done (9+ in Overview)\nClick to unmark`
-      : `Mark B-roll #${num} as Done (9+ in Overview)`;
+      ? `B-roll #${num} is Done (✔)\nClick to unmark`
+      : `Mark B-roll #${num} as Done`;
   }
 }
 
@@ -2999,7 +3036,6 @@ function updateAllPromptChips() { ST.brolls.forEach(b => updateCardPrompts(b.num
 
 /* ── Real Rating Line Representation ──────────────────────── */
 function getLineRealRating(num) {
-  const isCovered = !!(ST.covered && ST.covered[num]);
   const sets = ST.myRatings?.[num];
   let highestScore = null;
   let hasRetry = false;
@@ -3015,14 +3051,7 @@ function getLineRealRating(num) {
     }
   }
 
-  if (isCovered) {
-    return {
-      score: highestScore !== null ? Math.max(9, highestScore) : 9,
-      isCovered: true,
-      hasRetry: false,
-      isRated: true
-    };
-  }
+
 
   if (highestScore !== null) {
     return {
@@ -3044,17 +3073,19 @@ function getLineRealRating(num) {
 /* ── Prompt View: Needs Work + high-real skip ──────────────── */
 function passes(b) {
   const mainScore = ST.scores[b.num] ?? null;
+  const isTicked = !!(ST.covered && ST.covered[b.num]);
   const real = getLineRealRating(b.num);
   const needsThreshold = ST.needsWorkThreshold ?? 9;
   const skipThreshold = ST.skipHighRealThreshold ?? 9;
   const belowMain = mainScore === null || mainScore < needsThreshold;
   const belowReal = !real.isRated || real.score < needsThreshold;
 
-  // Needs Work always requires a low/unrated Main score. Real-score exclusion is
-  // controlled exclusively by the Skip button, so turning it off truly reveals
-  // high-Real cards whose Main score still needs work.
-  if (ST.needsWorkEnabled && !belowMain) return false;
-  if (ST.needsWorkEnabled && ST.skipHighReal && !belowReal) return false;
+  if (ST.needsWorkEnabled) {
+    if (!belowMain) return false;
+    // In Need Work mode, toggle button controls whether ticked (done) cards are shown
+    if (!ST.showTickedInNeedsWork && isTicked) return false;
+    if (ST.skipHighReal && !belowReal) return false;
+  }
   if (ST.skipHighReal && real.isRated && real.score >= skipThreshold) return false;
   return true;
 }
@@ -3079,7 +3110,6 @@ function sortedList(arr) {
 
 
 function getRealRatingOverviewData(num) {
-  const isCovered = !!(ST.covered && ST.covered[num]);
   const sets = ST.myRatings?.[num];
   let ratingData = null;
 
@@ -3104,16 +3134,7 @@ function getRealRatingOverviewData(num) {
     }
   }
 
-  // If marked as covered, the real rating overview bar displays Green 9+
-  if (isCovered) {
-    return {
-      score: 9,
-      isCovered: true,
-      rawRating: ratingData,
-      comment: 'Covered / Used alternative clip (9+)',
-      setIdx: ratingData ? ratingData.setIdx : null
-    };
-  }
+
 
   return ratingData;
 }
@@ -3145,7 +3166,20 @@ function updateOverviewModeUI() {
   }
 }
 
-/* ── Heatmap (Unified Linked 2-Tier: Top Main / Bottom Real) ── */
+/* ── Done Overview Color ────────────────────────────────────── */
+function getDoneOverviewColor(num) {
+  const isDone = !!(ST.covered && ST.covered[num]);
+  if (!isDone) {
+    return '#dc2626'; // red when done is not ticked
+  }
+  const mainScore = ST.scores[num] ?? null;
+  if (mainScore !== null && mainScore >= 9) {
+    return getC(mainScore).bg; // exact shade of green matching main rating (9, 9.5, 10)
+  }
+  return '#00922e'; // green when done is ticked
+}
+
+/* ── Heatmap (Unified Linked 2-Tier: Top Main / Bottom Done) ── */
 function renderHeatmap() {
   const grid = _el('heatmap-grid');
   if (!grid) return;
@@ -3168,8 +3202,8 @@ function renderHeatmap() {
   ST.brolls.forEach(b => {
     const mainScore = ST.scores[b.num] ?? null;
     const mainCol = getC(mainScore);
-    const rData = getRealRatingOverviewData(b.num);
-    const rCol = rData ? (rData.isCovered ? getC(9) : getMyRatingColor(rData.score)) : getC(null);
+    const isDone = !!(ST.covered && ST.covered[b.num]);
+    const botBg = getDoneOverviewColor(b.num);
 
     const col = document.createElement('div');
     col.className = 'hm-col';
@@ -3185,15 +3219,11 @@ function renderHeatmap() {
     topTier.id = `hm-top-${b.num}`;
     topTier.style.background = mainCol.bg;
 
-    // Bottom tier (Real)
+    // Bottom tier (Done Status)
     const botTier = document.createElement('div');
     botTier.className = 'hm-col-tier bottom';
     botTier.id = `hm-bot-${b.num}`;
-    let botBg = rCol ? rCol.bg : '#151525';
     botTier.style.background = botBg;
-    if (rData && rData.score === 0 && !rData.isCovered) {
-      botTier.style.boxShadow = 'inset 0 0 4px #9333ea';
-    }
 
     col.appendChild(topTier);
     col.appendChild(botTier);
@@ -3209,17 +3239,8 @@ function renderHeatmap() {
 
     // Tooltip
     const mainTitle = mainScore !== null ? `Main: ${mainScore}/10` : 'Main: unscored';
-    let realTitle = 'Real: unrated';
-    if (rData) {
-      if (rData.isCovered) {
-        realTitle = 'Real: 9+ (Covered with other clip)';
-      } else if (rData.score === 0) {
-        realTitle = 'Real: 0 (Model Retry / Glitch)';
-      } else {
-        realTitle = `Real: ${rData.score}/10 (Set ${rData.setIdx + 1}${rData.comment ? ': ' + rData.comment : ''})`;
-      }
-    }
-    col.title = `#${b.num} · ${mainTitle} · ${realTitle}\n"${b.line.slice(0, 70)}"`;
+    const doneTitle = isDone ? 'Done: ✔' : 'Done: ◻ (Not Done)';
+    col.title = `#${b.num} · ${mainTitle} · ${doneTitle}\n"${b.line.slice(0, 70)}"`;
 
     col.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3341,30 +3362,16 @@ function updateHmCell(num) {
   const mainCol = getC(mainScore);
   if (topTier) topTier.style.background = mainCol.bg;
 
-  const rData = getRealRatingOverviewData(num);
-  const rCol = rData ? (rData.isCovered ? getC(9) : getMyRatingColor(rData.score)) : getC(null);
   if (botTier) {
-    botTier.style.background = rCol ? rCol.bg : '#151525';
-    if (rData && rData.score === 0 && !rData.isCovered) {
-      botTier.style.boxShadow = 'inset 0 0 4px #9333ea';
-    } else {
-      botTier.style.boxShadow = 'none';
-    }
+    botTier.style.background = getDoneOverviewColor(num);
+    botTier.style.boxShadow = 'none';
   }
 
   const broll = ST.brolls.find(x => x.num === num);
+  const isDone = !!(ST.covered && ST.covered[num]);
   const mainTitle = mainScore !== null ? `Main: ${mainScore}/10` : 'Main: unscored';
-  let realTitle = 'Real: unrated';
-  if (rData) {
-    if (rData.isCovered) {
-      realTitle = 'Real: 9+ (Covered with other clip)';
-    } else if (rData.score === 0) {
-      realTitle = 'Real: 0 (Model Retry / Glitch)';
-    } else {
-      realTitle = `Real: ${rData.score}/10 (Set ${rData.setIdx + 1}${rData.comment ? ': ' + rData.comment : ''})`;
-    }
-  }
-  col.title = `#${num} · ${mainTitle} · ${realTitle}\n"${broll ? broll.line.slice(0, 70) : ''}"`;
+  const doneTitle = isDone ? 'Done: ✔' : 'Done: ◻ (Not Done)';
+  col.title = `#${num} · ${mainTitle} · ${doneTitle}\n"${broll ? broll.line.slice(0, 70) : ''}"`;
 }
 
 /* ── Stats ──────────────────────────────────────────────────── */
@@ -3505,9 +3512,10 @@ function renderCards(animate=false) {
 function buildCard(b, allowedSetIndices = null, idPrefix = '') {
   const score=ST.scores[b.num]??null, col=getC(score), prompts=ST.prompts[b.num]||[];
   const used=ST.usedSets[b.num];
+  const isCov = !!(ST.covered && ST.covered[b.num]);
 
   const card=document.createElement('div');
-  card.className='broll-card';
+  card.className='broll-card' + (isCov ? ' is-ticked' : '');
   card.id = idPrefix ? `${idPrefix}card-${b.num}` : `card-${b.num}`;
   card.style.borderLeftColor=col.border;
 
@@ -3625,37 +3633,18 @@ function buildCard(b, allowedSetIndices = null, idPrefix = '') {
   right.appendChild(copyLineBtn);
 
   // Done toggle button (below copy line)
-  const isCov = !!(ST.covered && ST.covered[b.num]);
   const doneBtn = document.createElement('button');
   doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
   doneBtn.id = idPrefix ? `${idPrefix}done-btn-${b.num}` : `done-btn-${b.num}`;
   doneBtn.innerHTML = isCov ? '✔' : '◻';
   doneBtn.title = isCov
-    ? `B-roll #${b.num} is Done (9+ in Overview)\nClick to unmark`
-    : `Mark B-roll #${b.num} as Done (9+ in Overview)`;
+    ? `B-roll #${b.num} is Done (✔)\nClick to unmark`
+    : `Mark B-roll #${b.num} as Done`;
   doneBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleCoveredClip(b.num);
   });
   right.appendChild(doneBtn);
-
-  const countDisplay = allowedSetIndices ? allowedSetIndices.length : prompts.length;
-  // Open / Expand prompt boxes button (below Copy & Done buttons)
-  if (countDisplay > 0) {
-    const expBtn = document.createElement('button');
-    expBtn.className = 'c-exp-card-btn';
-    expBtn.id = idPrefix ? `${idPrefix}exp-btn-${b.num}` : `exp-btn-${b.num}`;
-    expBtn.innerHTML = `<span class="exp-count">${countDisplay}</span><span class="exp-arrow">▾</span>`;
-    expBtn.title = `Expand prompt sets for #${b.num} (${countDisplay} set${countDisplay>1?'s':''})`;
-    expBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isExp = card.classList.toggle('is-expanded');
-      expBtn.classList.toggle('active', isExp);
-      const arr = expBtn.querySelector('.exp-arrow');
-      if (arr) arr.textContent = isExp ? '▴' : '▾';
-    });
-    right.appendChild(expBtn);
-  }
 
   card.appendChild(right);
   return card;
@@ -3669,6 +3658,41 @@ function buildCard(b, allowedSetIndices = null, idPrefix = '') {
 function applySliderStyle(inp,score){const col=getC(score);const pct=score!==null?(parseFloat(score)/10*100).toFixed(1)+'%':'0%';inp.style.setProperty('--fp',pct);inp.style.setProperty('--fc',score!==null?col.bg:'#1c1c28');inp.style.setProperty('--tg',col.glow!=='transparent'?col.glow:'rgba(255,255,255,0.06)');}
 function updateScoreVal(num,val){const sv=_el(`sv-${num}`);if(!sv)return;const col=getC(val);sv.textContent=(val!==null&&val!==undefined)?`${snap(val)}`:'—';sv.style.background=col.bg;sv.style.borderColor=col.border;}
 
+/* ── Card Filter Visibility Sync (Need Work / Undo / Redo) ── */
+const _cardFilterTimers = {};
+
+function syncCardFilterVisibility(num) {
+  const brl = ST.brolls.find(x => x.num === num);
+  if (!brl) return;
+  const willPass = passes(brl);
+  const card = _el(`card-${num}`);
+
+  if (_cardFilterTimers[num]) {
+    clearTimeout(_cardFilterTimers[num]);
+    delete _cardFilterTimers[num];
+  }
+
+  if (card && !willPass) {
+    card.style.opacity = '0.35';
+    card.style.transform = 'translateX(6px)';
+    _cardFilterTimers[num] = setTimeout(() => {
+      delete _cardFilterTimers[num];
+      renderCards();
+    }, 500);
+  } else if (card && willPass) {
+    card.style.opacity = '';
+    card.style.transform = '';
+  } else if (!card && willPass) {
+    renderCards();
+    const restoredCard = _el(`card-${num}`);
+    if (restoredCard) {
+      restoredCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      restoredCard.classList.add('card-highlight');
+      setTimeout(() => restoredCard && restoredCard.classList.remove('card-highlight'), 1400);
+    }
+  }
+}
+
 /* ── Score actions ──────────────────────────────────────────── */
 function setScore(num, val) {
   const oldScore = ST.scores[num] ?? null, newScore = snap(val);
@@ -3677,7 +3701,8 @@ function setScore(num, val) {
     try { localStorage.setItem('br_last_scored_' + ACTIVE_PID, num); } catch {}
   }
   const oldCovered = !!(ST.covered && ST.covered[num]);
-  const newCovered = (newScore !== null && newScore >= 9) ? true : oldCovered;
+  // Rating >= 9 ticks automatically; rating < 9 unticks automatically
+  const newCovered = (newScore !== null && newScore >= 9);
 
   const apply = (s, cov) => {
     if (s === null) delete ST.scores[num]; else ST.scores[num] = s;
@@ -3690,6 +3715,7 @@ function setScore(num, val) {
     renderStats();
     renderFilterCount();
     updateLineCopyPreview();
+    syncCardFilterVisibility(num);
   };
 
   record(
@@ -3704,8 +3730,10 @@ function clearScore(num) {
   const old = ST.scores[num] ?? null; if (old === null) return;
   const oldCovered = !!(ST.covered && ST.covered[num]);
 
-  const apply = (s) => {
+  const apply = (s, cov) => {
     if (s === null) delete ST.scores[num]; else ST.scores[num] = s;
+    if (!ST.covered) ST.covered = {};
+    if (cov) ST.covered[num] = true; else delete ST.covered[num];
     save(true);
     updateCardVisuals(num, s);
     updateDoneBtnUI(num);
@@ -3713,14 +3741,15 @@ function clearScore(num) {
     renderStats();
     renderFilterCount();
     updateLineCopyPreview();
+    syncCardFilterVisibility(num);
   };
 
   record(
-    () => apply(old),
-    () => apply(null),
+    () => apply(old, oldCovered),
+    () => apply(null, false),
     `Clear score #${num}`
   );
-  apply(null);
+  apply(null, false);
 }
 
 
@@ -3754,21 +3783,28 @@ function scrollToLastScoredBroll() {
 function updateCardVisuals(num,score){
   const col=getC(score),card=_el(`card-${num}`),cn=_el(`cn-${num}`),sv=_el(`sv-${num}`),sl=_el(`sl-${num}`);
   if(!card)return;
+  const isCov = !!(ST.covered && ST.covered[num]);
+  card.classList.toggle('is-ticked', isCov);
   card.style.borderLeftColor=col.border;
   if(cn){cn.style.background=col.bg;cn.style.boxShadow=col.glow!=='transparent'?`0 3px 14px ${col.glow}`:'none';cn.classList.remove('pop');void cn.offsetWidth;cn.classList.add('pop');setTimeout(()=>cn&&cn.classList.remove('pop'),320);}
   if(sv){sv.textContent=score!==null?`${score}`:'—';sv.style.background=col.bg;sv.style.borderColor=col.border;}
   if(sl){sl.value=score!==null?score:'0';applySliderStyle(sl,score);}
-  const brl=ST.brolls.find(x=>x.num===num);
-  if(brl&&!passes(brl)){card.style.opacity='0.35';card.style.transform='translateX(6px)';setTimeout(()=>renderCards(),500);}
 }
 
 /* ── Bengali / 2nd Language Script Parser ──────────────────── */
+function convertBengaliDigits(str) {
+  if (!str) return '';
+  const bnDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  return str.replace(/[০-৯]/g, d => bnDigits.indexOf(d));
+}
+
 function parseAltScript(text) {
   const map = {};
   if (!text) return map;
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  for (const l of lines) {
-    const m = l.match(/^#?(?:broll|b-roll|clip)?\s*(\d+(?:\.\d+)?)\s*[:\.\-–]?\s+(.+)/i);
+  for (const rawLine of lines) {
+    const l = convertBengaliDigits(rawLine);
+    const m = l.match(/^#?(?:broll|b-roll|clip)?\s*(\d+(?:\.\d+)?)\s*[:\.\-––]?\s*(.+)/i) || l.match(/^(\d+(?:\.\d+)?)\s+(.+)/);
     if (m) {
       map[parseFloat(m[1])] = m[2].trim();
     }
@@ -3885,20 +3921,30 @@ function setFilter(f) {
 function updatePromptViewControls() {
   const needs = _el('tb-needs-work');
   const skip = _el('tb-skip-high-real');
+  const tickedBtn = _el('tb-toggle-ticked');
   const needsCount = ST.brolls.filter(passes).length;
   const highRealCount = ST.brolls.filter(b => {
     const real = getLineRealRating(b.num);
     return real.isRated && real.score >= (ST.skipHighRealThreshold ?? 9);
   }).length;
+  const tickedCount = ST.brolls.filter(b => !!(ST.covered && ST.covered[b.num])).length;
   const needsBadge = _el('needs-work-count');
   const skipBadge = _el('skip-high-real-count');
+  const tickedBadge = _el('ticked-count');
   if (needsBadge) needsBadge.textContent = needsCount;
   if (skipBadge) skipBadge.textContent = highRealCount;
+  if (tickedBadge) tickedBadge.textContent = tickedCount;
   if (needs) {
     needs.classList.toggle('active', !!ST.needsWorkEnabled);
     needs.title = ST.needsWorkEnabled
       ? `Needs Work ON: ${needsCount} cards shown`
       : `Needs Work OFF: ${needsCount} cards shown`;
+  }
+  if (tickedBtn) {
+    tickedBtn.classList.toggle('active', !!ST.showTickedInNeedsWork);
+    tickedBtn.title = ST.showTickedInNeedsWork
+      ? `Ticked (Done) cards SHOWN in Need Work mode (${tickedCount} ticked)\nClick to hide them`
+      : `Ticked (Done) cards HIDDEN in Need Work mode (${tickedCount} ticked)\nClick to show them`;
   }
   if (skip) {
     skip.classList.toggle('active', !!ST.skipHighReal);
@@ -3918,7 +3964,7 @@ function getFilteredLines() {
   const min = (minVal !== undefined && minVal !== '') ? parseFloat(minVal) : 0;
   const max = (maxVal !== undefined && maxVal !== '') ? parseFloat(maxVal) : 8.9;
   const includeUnscored = _el('lc-include-unscored') ? _el('lc-include-unscored').checked : true;
-  const skipReal9 = _el('lc-skip-real-9') ? _el('lc-skip-real-9').checked : false;
+  const skipDone = _el('lc-skip-done') ? _el('lc-skip-done').checked : (_el('lc-skip-real-9') ? _el('lc-skip-real-9').checked : false);
   const target = LC_TARGET;
 
   const matches = [];
@@ -3926,12 +3972,9 @@ function getFilteredLines() {
   for (const b of (ST.brolls || [])) {
     if (!b || !b.line) continue;
 
-    // If skipReal9 is active, check if this line already has Real Rating >= 9 or is marked as Done
-    if (skipReal9) {
-      const lr = getLineRealRating(b.num);
-      if (lr.isRated && lr.score >= 9) {
-        continue;
-      }
+    // If skipDone is active, skip if marked as Done (independent of real rating)
+    if (skipDone && ST.covered && ST.covered[b.num]) {
+      continue;
     }
 
     let score = null;
@@ -4028,23 +4071,15 @@ function copyFilteredLines() {
 
 function getNeedsWorkLines() {
   if (!ST.brolls || !ST.brolls.length) return [];
-  const skipReal9 = _el('lc-skip-real-9') ? _el('lc-skip-real-9').checked : true;
+  const skipDone = _el('lc-skip-done') ? _el('lc-skip-done').checked : (_el('lc-skip-real-9') ? _el('lc-skip-real-9').checked : false);
 
   return ST.brolls.filter(b => {
-    // If skip real >= 9 or covered is checked
-    if (skipReal9) {
-      if (ST.covered && ST.covered[b.num]) return false;
-      const lr = getLineRealRating(b.num);
-      if (lr.isRated && lr.score >= 9) return false;
-    }
+    // If Done checkbox is checked, skip marked Done lines
+    if (skipDone && ST.covered && ST.covered[b.num]) return false;
 
-    if (LC_TARGET === 'main') {
-      const s = ST.scores[b.num] ?? null;
-      return s === null || s < 9;
-    } else {
-      const lr = getLineRealRating(b.num);
-      return !lr.isRated || lr.score < 9;
-    }
+    // Needs Work copying ignores Real Rating completely. It only sees if Main score < 9 (or unrated)
+    const s = ST.scores[b.num] ?? null;
+    return s === null || s < 9;
   });
 }
 
@@ -4653,6 +4688,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   ST.ratingBatches = proj.ratingBatches || [];
   ST.myRatings     = proj.myRatings     || {};
   ST.covered       = _migrateCovered(proj.covered || {});
+  ST.bengaliScript = proj.bengaliScript || '';
+  ST.bengaliLines  = JSON.parse(JSON.stringify(proj.bengaliLines || parseAltScript(proj.bengaliScript || '')));
   ST.brolls        = parseScript(proj.script || '');
 
   loadGlobalCset();   // Load prefix/suffix from global key
@@ -4676,6 +4713,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   } catch {}
 
   const ta = _el('script-textarea'); if (ta) ta.value = proj.script || '';
+  const _initBnTa = _el('script-bengali-textarea'); if (_initBnTa) _initBnTa.value = proj.bengaliScript || '';
 
   _el('library-section')?.classList.add('collapsed');
   _el('cset-section')?.classList.add('collapsed');
@@ -4774,6 +4812,16 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   };
   scriptTa?.addEventListener('paste', () => autoPad(scriptTa));
   bnTa?.addEventListener('paste', () => autoPad(bnTa));
+  bnTa?.addEventListener('input', () => {
+    ST.bengaliScript = bnTa.value;
+    ST.bengaliLines = parseAltScript(bnTa.value);
+    if (ACTIVE_PID && PROJECTS[ACTIVE_PID]) {
+      PROJECTS[ACTIVE_PID].bengaliScript = bnTa.value;
+      PROJECTS[ACTIVE_PID].bengaliLines = ST.bengaliLines;
+    }
+    saveProjects();
+    renderCards(false);
+  });
   _el('prompt-textarea')?.addEventListener('paste', () => autoPad(_el('prompt-textarea')));
   _el('srating-textarea')?.addEventListener('paste', () => autoPad(_el('srating-textarea')));
 
@@ -4923,6 +4971,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   _el('lc-min-score')?.addEventListener('input', updateLineCopyPreview);
   _el('lc-max-score')?.addEventListener('input', updateLineCopyPreview);
   _el('lc-include-unscored')?.addEventListener('change', updateLineCopyPreview);
+  _el('lc-skip-done')?.addEventListener('change', updateLineCopyPreview);
   _el('lc-skip-real-9')?.addEventListener('change', updateLineCopyPreview);
   _el('lc-include-num')?.addEventListener('change', updateLineCopyPreview);
   _el('lc-line-gap')?.addEventListener('change', updateLineCopyPreview);
@@ -5071,6 +5120,13 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     try { localStorage.setItem('br_needs_work_enabled', ST.needsWorkEnabled ? 'true' : 'false'); } catch {}
     updatePromptViewControls(); renderCards();
     toast(ST.needsWorkEnabled ? '⚡ Needs Work view on' : '👁 All cards visible');
+  });
+  _el('tb-toggle-ticked')?.addEventListener('click', () => {
+    switchBottomTab('p');
+    ST.showTickedInNeedsWork = !ST.showTickedInNeedsWork;
+    try { localStorage.setItem('br_show_ticked_in_needs_work', ST.showTickedInNeedsWork ? 'true' : 'false'); } catch {}
+    updatePromptViewControls(); renderCards();
+    toast(ST.showTickedInNeedsWork ? '✔ Showing ticked (done) cards in Needs Work' : '◻ Hiding ticked (done) cards in Needs Work');
   });
   _el('tb-skip-high-real')?.addEventListener('click', () => {
     switchBottomTab('p');

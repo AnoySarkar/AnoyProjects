@@ -49,6 +49,7 @@
     <div id="top-toolbar">
       <div class="tb-group tb-left">
         <button class="tb-btn prompt-view-btn active" id="tb-needs-work" title="Show only lines below the Needs Work thresholds">⚡ <span class="prompt-view-count" id="needs-work-count">0</span></button>
+        <button class="tb-btn prompt-view-btn" id="tb-toggle-ticked" title="Toggle showing ticked (Done) cards in Need Work mode">✔ <span class="prompt-view-count" id="ticked-count">0</span></button>
         <button class="tb-btn prompt-view-btn active" id="tb-skip-high-real" title="Skip lines at or above the Real Rating threshold">⏭ <span class="prompt-view-count" id="skip-high-real-count">0</span></button>
         <button class="tb-btn" id="tb-compact-toggle" title="Toggle Compact View (Hide Prompts)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">
@@ -223,7 +224,7 @@
             </div>
             <div class="lc-ctrl-grp">
               <label class="lc-checkbox-label">
-                <input type="checkbox" id="lc-skip-real-9" checked /> Skip Real ≥9/Done
+                <input type="checkbox" id="lc-skip-done" /> Done
               </label>
             </div>
             <div class="lc-ctrl-grp">
@@ -329,8 +330,8 @@
 
           <div class="settings-row">
             <div class="settings-row-info">
-              <div class="settings-row-title">Auto-Done on 9+ Real Rating</div>
-              <div class="settings-row-sub">Automatically check the Done (✔) mark when real rating is 9 or above</div>
+              <div class="settings-row-title">Auto-Done on 9+ Main Rating</div>
+              <div class="settings-row-sub">Automatically check the Done (✔) mark when main rating is 9 or above, untick when less than 9</div>
             </div>
             <input type="checkbox" class="settings-switch" id="setting-autodone-9" checked />
           </div>
