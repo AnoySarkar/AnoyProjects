@@ -46,6 +46,9 @@ function snap(val) {
 function getC(score) { return C[snap(score)] ?? C[null]; }
 function scoreLbl(s) { return (s === null || s === undefined) ? '—' : `${s}`; }
 
+/* ── Overview Bar Unscored Color (cozy blue — shown before any score is given) ── */
+const HM_UNSCORED_BG = '#1a3060'; // deep cozy blue for unscored top tier cells
+
 /* ── State ─────────────────────────────────────────────────── */
 const ST = {
   brolls:            [],
@@ -2292,12 +2295,14 @@ function clearCopyHistory() {
     save(true);
     updateAllPromptChips();
     renderLibraryView();
+    renderHeatmap();
   };
   const applyRestore = (oldState) => {
     ST.prompts = JSON.parse(JSON.stringify(oldState));
     save(true);
     updateAllPromptChips();
     renderLibraryView();
+    renderHeatmap();
   };
   record(
     () => applyRestore(oldPromptsState),
@@ -2634,6 +2639,8 @@ function fbCopy(text, cb) {
 function refreshCopyState(num, idx) {
   // Rebuild the card chip so rating styling + copied state are both shown correctly
   updateCardPrompts(num);
+  // Update overview bar bottom tier (copy-count based color)
+  updateHmCell(num);
   // Also update library chip
   const lc = _el(`lcp-${num}-${idx}`);
   if (lc) {
@@ -3241,17 +3248,31 @@ function updateOverviewModeUI() {
   }
 }
 
-/* ── Done Overview Color ────────────────────────────────────── */
+/* ── Bottom Tier Color: based on prompt copy count ──────────── */
+function getCopiedCountForBroll(num) {
+  const prompts = ST.prompts[num];
+  if (!prompts || !Array.isArray(prompts)) return 0;
+  return prompts.filter(e => !!e.copied).length;
+}
+
 function getDoneOverviewColor(num) {
-  const isDone = !!(ST.covered && ST.covered[num]);
-  if (!isDone) {
-    return '#dc2626'; // red when done is not ticked
-  }
   const mainScore = ST.scores[num] ?? null;
-  if (mainScore !== null && mainScore >= 9) {
-    return getC(mainScore).bg; // exact shade of green matching main rating (9, 9.5, 10)
+  const isDone = !!(ST.covered && ST.covered[num]);
+
+  if (mainScore !== null) {
+    const mainCol = getC(mainScore);
+    // Score >= 9: both tiers locked to score color — done has no extra effect
+    if (mainScore >= 9) return mainCol.bg;
+    // Score < 9: done overrides bottom to green, else bottom matches score color
+    if (isDone) return '#00922e';
+    return mainCol.bg; // same shade as top tier
   }
-  return '#00922e'; // green when done is ticked
+
+  // No score yet — done → green, copied → cozy blue, else empty/dark
+  if (isDone) return '#00922e';
+  const copiedCount = getCopiedCountForBroll(num);
+  if (copiedCount > 0) return HM_UNSCORED_BG;
+  return '#16162a'; // empty / dark
 }
 
 /* ── Heatmap (Unified Linked 2-Tier: Top Main / Bottom Done) ── */
@@ -3288,13 +3309,13 @@ function renderHeatmap() {
       col.style.flex = '0 0 18px';
     }
 
-    // Top tier (Main)
+    // Top tier (Main score color)
     const topTier = document.createElement('div');
     topTier.className = 'hm-col-tier top';
     topTier.id = `hm-top-${b.num}`;
     topTier.style.background = mainCol.bg;
 
-    // Bottom tier (Done Status)
+    // Bottom tier — cozy blue when unscored/not done, green when done
     const botTier = document.createElement('div');
     botTier.className = 'hm-col-tier bottom';
     botTier.id = `hm-bot-${b.num}`;
@@ -3435,6 +3456,7 @@ function updateHmCell(num) {
 
   const mainScore = ST.scores[num] ?? null;
   const mainCol = getC(mainScore);
+  // Top tier = score color; bottom tier handles blue/green via getDoneOverviewColor
   if (topTier) topTier.style.background = mainCol.bg;
 
   if (botTier) {
