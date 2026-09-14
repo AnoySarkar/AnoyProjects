@@ -3259,7 +3259,8 @@ function getDoneOverviewColor(num) {
   const mainScore = ST.scores[num] ?? null;
   const isDone = !!(ST.covered && ST.covered[num]);
 
-  if (mainScore !== null) {
+  // Score > 0: use score-based color rules
+  if (mainScore !== null && mainScore > 0) {
     const mainCol = getC(mainScore);
     // Score >= 9: both tiers locked to score color — done has no extra effect
     if (mainScore >= 9) return mainCol.bg;
@@ -3268,7 +3269,7 @@ function getDoneOverviewColor(num) {
     return mainCol.bg; // same shade as top tier
   }
 
-  // No score yet — done → green, copied → cozy blue, else empty/dark
+  // No score, or score = 0 — done → green, copied → cozy blue, else empty/dark
   if (isDone) return '#00922e';
   const copiedCount = getCopiedCountForBroll(num);
   if (copiedCount > 0) return HM_UNSCORED_BG;
