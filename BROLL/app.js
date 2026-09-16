@@ -3663,6 +3663,7 @@ function buildCard(b, allowedSetIndices = null, idPrefix = '') {
       return;
     }
     setScore(b.num,parseFloat(inp.value));
+    autoScrollToNext(b.num); // smoothly advance to next card after rating
   });
   inp.addEventListener('keydown',e=>{
     if(e.key==='Enter'){
@@ -3672,8 +3673,7 @@ function buildCard(b, allowedSetIndices = null, idPrefix = '') {
         return;
       }
       setScore(b.num,parseFloat(inp.value));
-      const idx=ST.brolls.findIndex(x=>x.num===b.num);
-      if(idx<ST.brolls.length-1){const ns=_el(`sl-${ST.brolls[idx+1].num}`);if(ns){ns.focus();ns.scrollIntoView({behavior:'smooth',block:'center'});}}
+      autoScrollToNext(b.num);
     }
   });
 
@@ -3771,6 +3771,41 @@ function syncCardFilterVisibility(num) {
       setTimeout(() => restoredCard && restoredCard.classList.remove('card-highlight'), 1400);
     }
   }
+}
+
+/* ── Auto-scroll to next card after rating ───────────────────
+   After rating card #num, waits delayMs then smoothly scrolls
+   so that card #(num+1) sits at the same vertical position
+   card #num was at when rating finished. ─────────────────── */
+let _autoScrollTimer = null;
+function autoScrollToNext(num, delayMs = 900) {
+  // Cancel any pending auto-scroll (e.g. user rated multiple quickly)
+  if (_autoScrollTimer) { clearTimeout(_autoScrollTimer); _autoScrollTimer = null; }
+
+  const idx = ST.brolls.findIndex(b => b.num === num);
+  if (idx < 0 || idx >= ST.brolls.length - 1) return; // last card, nothing to scroll to
+
+  const currentCard = _el(`card-${num}`);
+  if (!currentCard) return;
+
+  // Capture the TOP position of the current card relative to the viewport RIGHT NOW
+  const currentCardTop = currentCard.getBoundingClientRect().top;
+
+  _autoScrollTimer = setTimeout(() => {
+    _autoScrollTimer = null;
+    const nextNum = ST.brolls[idx + 1].num;
+    const nextCard = _el(`card-${nextNum}`);
+    if (!nextCard) return;
+
+    // Where is the next card now?
+    const nextCardTop = nextCard.getBoundingClientRect().top;
+
+    // Scroll by the difference so next card sits where current card was
+    const delta = nextCardTop - currentCardTop;
+    if (Math.abs(delta) < 2) return; // already there
+
+    window.scrollBy({ top: delta, behavior: 'smooth' });
+  }, delayMs);
 }
 
 /* ── Score actions ──────────────────────────────────────────── */
