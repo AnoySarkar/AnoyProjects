@@ -82,7 +82,7 @@ const ST = {
   activeBatch:       'new',
   inputOpen:         true,
   libOpen:           false,
-  csetOpen:          false,
+  csetOpen:          true,
   overviewScroll:    false, // false = auto-compressed full view, true = horizontal scrollable
 };
 
@@ -4957,7 +4957,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   const _initBnTa = _el('script-bengali-textarea'); if (_initBnTa) _initBnTa.value = proj.bengaliScript || '';
 
   _el('library-section')?.classList.add('collapsed');
-  _el('cset-section')?.classList.add('collapsed');
+  // cset-section: open by default in the Settings tab (ST.csetOpen controls collapse state)
+  _el('cset-section')?.classList.toggle('collapsed', !ST.csetOpen);
 
   if (ST.brolls.length) collapseInput();
 

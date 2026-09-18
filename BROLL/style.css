@@ -938,7 +938,7 @@ kbd { background:var(--bg-4); border:1px solid var(--border); border-radius:3px;
 #cset-section:not(.collapsed) #cset-toggle { border-bottom-color:var(--border) }
 .cset-hint { font-size:9px; font-weight:600; transition:all 0.2s; color:var(--text-3); background:var(--bg-4); border:1px solid var(--border); border-radius:99px; padding:1px 7px }
 .cset-hint.active { color:var(--accent); border-color:rgba(124,109,250,0.3); background:var(--accent-dim) }
-#cset-body { max-height:220px; overflow:hidden; transition:max-height 0.28s ease }
+#cset-body { max-height:600px; overflow:hidden; transition:max-height 0.28s ease }
 #cset-section.collapsed #cset-body { max-height:0 }
 
 /* 3-col flow */
