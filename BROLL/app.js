@@ -1481,16 +1481,16 @@ function getMyRating(num, setIdx) {
 }
 
 function updateDoneBtnUI(num) {
-  const doneBtn = _el(`done-btn-${num}`);
   const card = _el(`card-${num}`);
+  const badge = _el(`cn-${num}`);
   const isCov = !!(ST.covered && ST.covered[num]);
   if (card) card.classList.toggle('is-ticked', isCov);
-  if (!doneBtn) return;
-  doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
-  doneBtn.innerHTML = isCov ? '✔' : '◻';
-  doneBtn.title = isCov
-    ? `B-roll #${num} is Done (✔)\nClick to unmark`
-    : `Mark B-roll #${num} as Done`;
+  // Update badge tooltip to reflect new state
+  if (badge) {
+    badge.title = isCov
+      ? `B-roll #${num} is Done ✔\nClick to unmark`
+      : `Mark #${num} as Done`;
+  }
 }
 
 function saveMyRating(num, setIdx, score, comment) {
@@ -3096,17 +3096,6 @@ function updateCardPrompts(num) {
   if (existingPr) existingPr.remove();
   const prow = buildPromptChipsElement(num, prompts, allowedSets);
   if (prow) mid.appendChild(prow);
-
-  // Also refresh the Done button in the right column
-  const doneBtn = _el(`done-btn-${num}`);
-  if (doneBtn) {
-    const isCovered = !!(ST.covered && ST.covered[num]);
-    doneBtn.className = 'c-done-btn' + (isCovered ? ' active' : '');
-    doneBtn.innerHTML = isCovered ? '✔' : '◻';
-    doneBtn.title = isCovered
-      ? `B-roll #${num} is Done (✔)\nClick to unmark`
-      : `Mark B-roll #${num} as Done`;
-  }
 }
 
 
@@ -3617,13 +3606,16 @@ function buildCard(b, allowedSetIndices = null, idPrefix = '') {
   card.id = idPrefix ? `${idPrefix}card-${b.num}` : `card-${b.num}`;
   card.style.borderLeftColor=col.border;
 
-  /* Badge */
+  /* Badge — doubles as Done/Tick toggle; number stays visible */
   const badge=document.createElement('div');
   badge.className='c-num';
   badge.id = idPrefix ? `${idPrefix}cn-${b.num}` : `cn-${b.num}`;
   badge.style.background=col.bg;
   badge.style.boxShadow=col.glow!=='transparent'?`0 3px 14px ${col.glow}`:'none';
-  badge.textContent=b.num; card.appendChild(badge);
+  badge.textContent=b.num;
+  badge.title = isCov ? `B-roll #${b.num} is Done ✔\nClick to unmark` : `Mark #${b.num} as Done`;
+  badge.addEventListener('click', (e) => { e.stopPropagation(); toggleCoveredClip(b.num); });
+  card.appendChild(badge);
 
   /* Middle */
   const mid=document.createElement('div'); mid.className='c-mid';
@@ -3712,19 +3704,7 @@ function buildCard(b, allowedSetIndices = null, idPrefix = '') {
   scoreWrap.appendChild(suBadge);
   right.appendChild(scoreWrap);
 
-  // Done toggle button
-  const doneBtn = document.createElement('button');
-  doneBtn.className = 'c-done-btn' + (isCov ? ' active' : '');
-  doneBtn.id = idPrefix ? `${idPrefix}done-btn-${b.num}` : `done-btn-${b.num}`;
-  doneBtn.innerHTML = isCov ? '✔' : '◻';
-  doneBtn.title = isCov
-    ? `B-roll #${b.num} is Done (✔)\nClick to unmark`
-    : `Mark B-roll #${b.num} as Done`;
-  doneBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleCoveredClip(b.num);
-  });
-  right.appendChild(doneBtn);
+  // Done is now the number badge (c-num) on the left — no separate button needed
 
   card.appendChild(right);
   return card;
